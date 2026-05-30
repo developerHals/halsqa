@@ -1,0 +1,8 @@
+name = "esolqa"
+main = "src/index.ts"
+compatibility_date = "2026-05-30"
+
+[[d1_databases]]
+binding = "esol_marking_db"
+database_name = "esol-marking-db"
+database_id = "a815fe83-e17c-4d4e-a36b-7460765010a8"
