@@ -1,0 +1,4 @@
+MICROSOFT_CLIENT_ID="your-microsoft-application-client-id"
+MICROSOFT_CLIENT_SECRET="your-microsoft-client-secret"
+MICROSOFT_TENANT_ID="your-microsoft-tenant-id"
+SESSION_SECRET="generate-a-long-random-string"
