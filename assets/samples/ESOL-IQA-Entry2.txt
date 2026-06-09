@@ -1,0 +1,570 @@
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+<!--
+*
+	{box-sizing:border-box;
+	margin:0;
+	padding:0}
+body
+	{font-family:Arial,sans-serif;
+	font-size:13px;
+	color:#222;
+	background:#fff;
+	line-height:1.6}
+h2
+	{font-size:15px;
+	font-weight:bold;
+	color:#1e3a5f;
+	margin:16px 0 8px;
+	border-bottom:2px solid #1e3a5f;
+	padding-bottom:4px}
+h3
+	{font-size:13px;
+	font-weight:bold;
+	color:#1e3a5f;
+	margin:12px 0 6px}
+h4
+	{font-size:13px;
+	font-weight:bold;
+	margin:10px 0 6px}
+.header
+	{background:#1e3a5f;
+	color:#fff;
+	padding:16px 20px;
+	margin-bottom:20px}
+.header h1
+	{font-size:18px;
+	font-weight:bold;
+	color:#fff;
+	margin-bottom:6px}
+.badge
+	{display:inline-block;
+	background:#fff;
+	color:#1e3a5f;
+	font-weight:bold;
+	font-size:12px;
+	padding:2px 10px;
+	border-radius:2px}
+.wrap
+	{max-width:860px;
+	margin:0 auto;
+	padding:0 16px 40px}
+.section
+	{background:#fff;
+	border:1px solid #dde2ea;
+	padding:14px 16px;
+	margin-bottom:14px}
+.section-grey
+	{background:#f4f6f9;
+	border:1px solid #dde2ea;
+	padding:14px 16px;
+	margin-bottom:14px}
+.section-red
+	{background:#fff0f0;
+	border:1px solid #c62828;
+	padding:14px 16px;
+	margin-bottom:14px}
+.section-amber
+	{background:#fff8e1;
+	border:1px solid #ffe082;
+	border-left:4px solid #e65100;
+	padding:14px 16px;
+	margin-bottom:14px}
+.field-row
+	{display:flex;
+	flex-wrap:wrap;
+	margin-bottom:8px}
+.field
+	{display:flex;
+	flex-direction:column;
+	flex:1;
+	min-width:160px}
+.field label
+	{font-size:11px;
+	font-weight:bold;
+	color:#555;
+	margin-bottom:3px;
+	text-transform:uppercase}
+.field input[type=text], .field input[type=date]
+	{border:1px solid #bbb;
+	padding:5px 8px;
+	font-family:Arial,sans-serif;
+	font-size:13px;
+	width:100%}
+ul.cl
+	{list-style:none;
+	padding:0;
+	margin:6px 0}
+ul.cl li
+	{display:flex;
+	align-items:flex-start;
+	padding:4px 0;
+	border-bottom:1px solid #eee;
+	font-size:13px}
+ul.cl li:last-child
+	{border-bottom:none}
+ul.cl li input[type=checkbox]
+	{margin-top:2px;
+	flex-shrink:0;
+	width:15px;
+	height:15px}
+.green-box
+	{background:#e8f5e9;
+	border-left:4px solid #2e7d32;
+	padding:10px 14px;
+	margin:10px 0;
+	color:#2e7d32;
+	font-size:13px}
+.red-box
+	{background:#fff0f0;
+	border-left:4px solid #c62828;
+	padding:10px 14px;
+	margin:10px 0;
+	color:#c62828;
+	font-size:13px}
+.amber-box
+	{background:#fff8e1;
+	border-left:4px solid #e65100;
+	padding:10px 14px;
+	margin:10px 0;
+	color:#5d4037;
+	font-size:13px}
+.card
+	{border-left:4px solid #1e3a5f;
+	padding:10px 14px;
+	margin-bottom:10px;
+	background:#f9fafc}
+.subh
+	{font-size:12px;
+	font-weight:bold;
+	color:#1e3a5f;
+	text-transform:uppercase;
+	margin:10px 0 4px;
+	display:block}
+table
+	{width:100%;
+	border-collapse:collapse;
+	margin:8px 0;
+	font-size:13px}
+th
+	{background:#1e3a5f;
+	color:#fff;
+	padding:7px 10px;
+	text-align:left;
+	font-size:12px}
+td
+	{border:1px solid #ccc;
+	padding:6px 10px;
+	vertical-align:top}
+td input[type=text]
+	{width:100%;
+	border:1px solid #bbb;
+	padding:3px 6px;
+	font-family:Arial,sans-serif;
+	font-size:12px}
+.rg
+	{display:flex}
+.rg label
+	{font-size:12px;
+	display:flex;
+	align-items:center}
+.gold
+	{background:#1e3a5f;
+	color:#fff;
+	padding:16px 20px;
+	margin:16px 0}
+.gold h2
+	{color:#fff;
+	border-bottom-color:rgba(255,255,255,0.3)}
+.gold p
+	{font-style:italic;
+	font-size:13px;
+	color:#d0dce8;
+	margin-top:6px}
+.print-btn
+	{background:#1e3a5f;
+	color:#fff;
+	border:none;
+	padding:8px 18px;
+	font-size:13px;
+	font-weight:bold;
+	margin-bottom:16px;
+	display:block}
+.fail
+	{color:#c62828;
+	font-weight:bold}
+hr
+	{border:none;
+	border-top:2px solid #1e3a5f;
+	margin:20px 0}
+.tc
+	{text-align:center}
+-->
+</style>
+</head>
+<body>
+<div class="header">
+<h1>ESOL Writing IQA — Sampling and Moderation Form</h1>
+<div class="badge">Entry 2</div>
+</div>
+<div class="wrap"><button class="print-btn">Print / Save as PDF</button>
+<div class="section">
+<h2>Section 1 — Sampling Overview</h2>
+<div class="field-row">
+<div class="field"><label>IQA Name</label><input type="text"></div>
+<div class="field"><label>Assessor Name</label><input type="text"></div>
+<div class="field"><label>Date</label><input type="date"></div>
+</div>
+</div>
+<div class="section-grey">
+<h2>Task 1 — Form Filling</h2>
+<ul class="cl">
+<li><input type="checkbox"><label>Full name (first + surname)</label></li><li><input type="checkbox"><label>Full address (minimum 3 parts: number, street, city)</label></li><li><input type="checkbox"><label>Postcode included</label></li><li><input type="checkbox"><label>At least 2 additional responses completed</label></li><li><input type="checkbox"><label>Correct use of tick/circle instructions</label></li></ul>
+<div class="green-box"><strong>Pass Rule:</strong> Full name + address + postcode + 2 additional responses + instructions followed correctly</div>
+</div>
+<div class="section">
+<h2>Tasks 2 &amp; 3 — Extended Writing</h2>
+<div class="card">
+<h4>1 — Content <span style="font-weight:normal; color:#555">(Very Important)</span></h4>
+<ul class="cl">
+<li><input type="checkbox"><label>Minimum 60 words achieved</label></li><li><input type="checkbox"><label>Covers task bullet — Description (e.g. appearance, person, place)</label></li><li><input type="checkbox"><label>Covers task bullet — Opinion (like/dislike)</label></li><li><input type="checkbox"><label>Covers task bullet — Information (what/who/where)</label></li><li><input type="checkbox"><label>Covers task bullet — Question (email task)</label></li></ul>
+<div class="green-box"><strong>Minimum expectation:</strong> 4 content points present. Writing must address the task purpose.</div>
+</div>
+<div class="card">
+<h4>2 — Structure</h4>
+<ul class="cl">
+<li><input type="checkbox"><label>At least 5–6 sentences written (to reach 60-word standard)</label></li><li><input type="checkbox"><label>Logical order: beginning → middle → end</label></li><li><input type="checkbox"><label>Basic cohesion used: <em>and / because / then</em></label></li></ul>
+</div>
+<div class="card">
+<h4>3 — Grammar</h4>
+<span class="subh">AC 1.1 — Sentence Formation</span>
+<ul class="cl">
+<li><input type="checkbox"><label>At least <strong>2</strong> correctly formed sentences (subject + verb + clear meaning)</label></li><li><input type="checkbox"><label>Uses simple present or past tense appropriately</label></li><li><input type="checkbox"><label>Tense is mostly consistent — no unexplained shifts</label></li></ul>
+<span class="subh">AC 1.2 — Conjunctions</span>
+<ul class="cl">
+<li><input type="checkbox"><label>Uses at least <strong>2</strong> basic conjunctions:
+<em>and / but / because / so / or</em></label></li><li><input type="checkbox"><label>Conjunctions used correctly to join ideas or sentences</label></li></ul>
+<div class="green-box"><strong>Grammar Pass Rule (AC 1.1 &amp; 1.2):</strong><br>
+✓ Minimum 2 correctly formed sentences<br>
+✓ Minimum 2 conjunctions used correctly </div>
+</div>
+<div class="card">
+<h4>4 — Vocabulary</h4>
+<ul class="cl">
+<li><input type="checkbox"><label>At least 2 descriptive adjectives (e.g. <em>&quot;friendly teacher&quot;, &quot;nice holiday&quot;</em>)</label></li><li><input type="checkbox"><label>Some topic-specific vocabulary used appropriately</label></li></ul>
+</div>
+<div class="card">
+<h4>5 — Punctuation</h4>
+<span class="subh">AC 1.4 — Punctuation</span>
+<ul class="cl">
+<li><input type="checkbox"><label>Capital letters used correctly at sentence starts</label></li><li><input type="checkbox"><label>Full stops used correctly at sentence ends</label></li><li><input type="checkbox"><label>Sentences clearly separated (not run-on)</label></li></ul>
+<div class="green-box"><strong>Minimum (AC 1.4):</strong> At least <strong>2</strong> sentences correctly punctuated with capital letter and full stop.</div>
+</div>
+<div class="card">
+<h4>6 — Spelling</h4>
+<ul class="cl">
+<li><input type="checkbox"><label>Most common words spelled correctly</label></li><li><input type="checkbox"><label>Phonetic spelling acceptable where meaning remains clear</label></li><li><input type="checkbox"><label>Errors do not block understanding</label></li></ul>
+</div>
+<div class="green-box" style="margin-top:14px"><strong>Overall Pass Rule — Tasks 2 &amp; 3:</strong><br>
+✓ Length achieved (60+ words)<br>
+✓ All content points covered<br>
+✓ At least 2 correctly formed sentences (AC 1.1)<br>
+✓ At least 2 conjunctions used correctly (AC 1.2)<br>
+✓ At least 2 sentences correctly punctuated (AC 1.4)<br>
+✓ Evidence of independence (not copied or over-scaffolded) </div>
+</div>
+<div class="section-red">
+<h2 style="color:#c62828; border-bottom-color:#c62828">Red Flags — Automatic Fail / Borderline</h2>
+<ul class="cl">
+<li><input type="checkbox"><label><span class="fail">Under 60 words — FAIL</span></label></li><li><input type="checkbox"><label><span class="fail">Missing task bullet points — FAIL</span></label></li><li><input type="checkbox"><label><span class="fail">Fewer than 2 correctly formed sentences — FAIL</span></label></li><li><input type="checkbox"><label><span class="fail">Fewer than 2 conjunctions used — FAIL</span></label></li><li><input type="checkbox"><label><span class="fail">Fewer than 2 sentences correctly punctuated — FAIL</span></label></li><li><input type="checkbox"><label><span class="fail">Over-scaffolded / sentence frames copied — INVALID</span></label></li><li><input type="checkbox"><label><span style="color:#c62828; font-weight:bold">No descriptive language — Borderline</span></label></li><li><input type="checkbox"><label><span style="color:#c62828; font-weight:bold">Only simple repetition — Borderline</span></label></li></ul>
+</div>
+<div class="section-amber">
+<h2 style="color:#bf360c; border-bottom-color:#e65100">Task 3 — Important Guidance Note</h2>
+<p style="margin-bottom:8px">Learners must address <strong>all four bullet points:</strong></p>
+<ul style="padding-left:18px; margin-bottom:10px; font-size:13px">
+<li>Where you went</li><li>Who you went with</li><li>What you did</li><li>What you liked or did not like</li></ul>
+<table>
+<thead>
+<tr>
+<th>Sentence(s)</th>
+<th>Recommended Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sentence 1</td>
+<td>Where they went + who they went with</td>
+</tr>
+<tr>
+<td>Sentences 2–3</td>
+<td>What they did — include a compound sentence using conjunctions (<em>and / but / because</em>)</td>
+</tr>
+<tr>
+<td>Sentence 4</td>
+<td>What they liked (opinion + adjective)</td>
+</tr>
+<tr>
+<td>Sentence 5</td>
+<td>What they did not like (contrasting opinion)</td>
+</tr>
+</tbody>
+</table>
+<p style="font-size:12px; font-style:italic; margin-top:8px; color:#5d4037"><strong>Note:</strong> Technically a learner could pass without meeting criterion 1.1 but this is not good practice — writing may lack purpose and could be challenged in moderation.</p>
+</div>
+<div class="section">
+<h2>Standardisation Decision</h2>
+<table>
+<thead>
+<tr>
+<th width="42%">Area</th>
+<th width="23%">Agreed?</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Level correct (Entry 2)</td>
+<td>
+<div class="rg"><label><input type="radio" name="s1"> Yes</label><label><input type="radio" name="s1"> No</label></div>
+</td>
+<td><input type="text"></td>
+</tr>
+<tr>
+<td>Meets all key thresholds</td>
+<td>
+<div class="rg"><label><input type="radio" name="s2"> Yes</label><label><input type="radio" name="s2"> No</label></div>
+</td>
+<td><input type="text"></td>
+</tr>
+<tr>
+<td>AC 1.1 — 2 correctly formed sentences met</td>
+<td>
+<div class="rg"><label><input type="radio" name="s3"> Yes</label><label><input type="radio" name="s3"> No</label></div>
+</td>
+<td><input type="text"></td>
+</tr>
+<tr>
+<td>AC 1.2 — 2 conjunctions used correctly</td>
+<td>
+<div class="rg"><label><input type="radio" name="s4"> Yes</label><label><input type="radio" name="s4"> No</label></div>
+</td>
+<td><input type="text"></td>
+</tr>
+<tr>
+<td>AC 1.4 — 2 sentences correctly punctuated</td>
+<td>
+<div class="rg"><label><input type="radio" name="s5"> Yes</label><label><input type="radio" name="s5"> No</label></div>
+</td>
+<td><input type="text"></td>
+</tr>
+<tr>
+<td>Support level appropriate</td>
+<td>
+<div class="rg"><label><input type="radio" name="s6"> Yes</label><label><input type="radio" name="s6"> No</label></div>
+</td>
+<td><input type="text"></td>
+</tr>
+<tr>
+<td>Assessor decision correct</td>
+<td>
+<div class="rg"><label><input type="radio" name="s7"> Yes</label><label><input type="radio" name="s7"> No</label></div>
+</td>
+<td><input type="text"></td>
+</tr>
+</tbody>
+</table>
+<h3 style="margin-top:14px">Final Decision</h3>
+<table>
+<tbody>
+<tr>
+<td width="45%"><strong>Original Assessor Decision</strong></td>
+<td>
+<div class="rg"><label><input type="radio" name="orig"> Pass</label><label><input type="radio" name="orig"> Refer</label></div>
+</td>
+</tr>
+<tr>
+<td><strong>Standardised Outcome</strong></td>
+<td>
+<div class="rg"><label><input type="radio" name="std"> Pass</label><label><input type="radio" name="std"> Refer</label></div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section">
+<h2>IQA Actions</h2>
+<table>
+<thead>
+<tr>
+<th>Issue</th>
+<th>Action</th>
+<th width="22%">Deadline</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><input type="text"></td>
+<td><input type="text"></td>
+<td><input type="text"></td>
+</tr>
+<tr>
+<td><input type="text"></td>
+<td><input type="text"></td>
+<td><input type="text"></td>
+</tr>
+<tr>
+<td><input type="text"></td>
+<td><input type="text"></td>
+<td><input type="text"></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="gold">
+<h2>Gold Standard — Entry 2</h2>
+<p>&quot;Can the learner write a short, meaningful 60+ word text with structure, content, at least 2 correctly formed sentences, 2 conjunctions, and basic punctuation control?&quot;</p>
+</div>
+<hr>
+<div class="section">
+<h2>Sentence Grid — Entry 2</h2>
+<p style="font-style:italic; color:#555; margin-bottom:12px; font-size:12px">Focus: Sentence control + conjunction use. Use for Tasks 2 &amp; 3.</p>
+<div style="overflow-x:auto">
+<table>
+<thead>
+<tr>
+<th width="38">#</th>
+<th>Sentence Written</th>
+<th width="80" class="tc">Subject Present</th>
+<th width="78" class="tc">Verb Correct</th>
+<th width="80" class="tc">Word Order</th>
+<th width="82" class="tc">Meaning Clear</th>
+<th width="82" class="tc">Correct Overall</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>S1</strong></td>
+<td><input type="text" style="width:100%; border:1px solid #bbb; padding:3px 6px; font-family:Arial,sans-serif"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td><strong>S2</strong></td>
+<td><input type="text" style="width:100%; border:1px solid #bbb; padding:3px 6px; font-family:Arial,sans-serif"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td><strong>S3</strong></td>
+<td><input type="text" style="width:100%; border:1px solid #bbb; padding:3px 6px; font-family:Arial,sans-serif"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td><strong>S4</strong></td>
+<td><input type="text" style="width:100%; border:1px solid #bbb; padding:3px 6px; font-family:Arial,sans-serif"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td><strong>S5</strong></td>
+<td><input type="text" style="width:100%; border:1px solid #bbb; padding:3px 6px; font-family:Arial,sans-serif"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3 style="margin-top:14px">Sentence Features</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th width="60" class="tc">Tick</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>At least 5 sentences written overall</td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td><strong>At least 2 sentences fully correct</strong> (AC 1.1)</td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td><strong>Conjunction 1 used correctly</strong> — e.g. <em>and / but / because / so / or</em> (AC 1.2)</td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td><strong>Conjunction 2 used correctly</strong> — e.g. <em>and / but / because / so / or</em> (AC 1.2)</td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td>Basic sequencing evident (<em>then / after / first / next</em>)</td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td>At least 2 adjectives used</td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+</tbody>
+</table>
+<h3 style="margin-top:14px">Punctuation Check</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th width="60" class="tc">Tick</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Sentence 1 correctly punctuated</strong> — capital letter + full stop (AC 1.4)</td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td><strong>Sentence 2 correctly punctuated</strong> — capital letter + full stop (AC 1.4)</td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td>Further sentences correctly punctuated (beyond minimum)</td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+<tr>
+<td>No run-on sentences — sentences clearly separated</td>
+<td class="tc"><input type="checkbox"></td>
+</tr>
+</tbody>
+</table>
+<div class="green-box" style="margin-top:12px"><strong>Decision</strong>
+<ul class="cl" style="margin-top:6px">
+<li><input type="checkbox"><label>At least 2 sentences correctly formed (AC 1.1) ✓</label></li><li><input type="checkbox"><label>At least 2 conjunctions used correctly (AC 1.2) ✓</label></li><li><input type="checkbox"><label>At least 2 sentences correctly punctuated (AC 1.4) ✓</label></li><li><input type="checkbox"><label>60+ words achieved ✓</label></li></ul>
+</div>
+<div class="red-box" style="margin-top:12px"><strong>Fail Flags</strong>
+<ul class="cl" style="margin-top:6px">
+<li><input type="checkbox"><label class="fail">Under 60 words — FAIL</label></li><li><input type="checkbox"><label class="fail">Fewer than 2 correctly formed sentences (AC 1.1) — FAIL</label></li><li><input type="checkbox"><label class="fail">Fewer than 2 conjunctions used (AC 1.2) — FAIL</label></li><li><input type="checkbox"><label class="fail">Fewer than 2 sentences correctly punctuated (AC 1.4) — FAIL</label></li><li><input type="checkbox"><label class="fail">No linking words used — FAIL</label></li></ul>
+</div>
+</div>
+<p style="font-size:11px; color:#888; text-align:center; padding-bottom:20px">For internal use only. Aligned to Ascentis ESOL Writing standards.</p>
+</div>
+</body>
+</html>

@@ -1,0 +1,414 @@
+"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESOL Writing IQA — Entry 3</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:13px;color:#222;background:#fff;line-height:1.6}
+h2{font-size:15px;font-weight:bold;color:#1e3a5f;margin:16px 0 8px;border-bottom:2px solid #1e3a5f;padding-bottom:4px}
+h3{font-size:13px;font-weight:bold;color:#1e3a5f;margin:12px 0 6px}
+h4{font-size:13px;font-weight:bold;margin:10px 0 6px}
+.header{background:#1e3a5f;color:#fff;padding:16px 20px;margin-bottom:20px}
+.header h1{font-size:18px;font-weight:bold;color:#fff;margin-bottom:6px}
+.badge{display:inline-block;background:#fff;color:#1e3a5f;font-weight:bold;font-size:12px;padding:2px 10px;border-radius:2px}
+.wrap{max-width:860px;margin:0 auto;padding:0 16px 40px}
+.section{background:#fff;border:1px solid #dde2ea;padding:14px 16px;margin-bottom:14px}
+.section-grey{background:#f4f6f9;border:1px solid #dde2ea;padding:14px 16px;margin-bottom:14px}
+.section-red{background:#fff0f0;border:1px solid #c62828;padding:14px 16px;margin-bottom:14px}
+.field-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+.field{display:flex;flex-direction:column;flex:1;min-width:160px}
+.field label{font-size:11px;font-weight:bold;color:#555;margin-bottom:3px;text-transform:uppercase}
+.field input[type=text],.field input[type=date]{border:1px solid #bbb;padding:5px 8px;font-family:Arial,sans-serif;font-size:13px;width:100%}
+ul.cl{list-style:none;padding:0;margin:6px 0}
+ul.cl li{display:flex;align-items:flex-start;gap:8px;padding:4px 0;border-bottom:1px solid #eee;font-size:13px}
+ul.cl li:last-child{border-bottom:none}
+ul.cl li input[type=checkbox]{margin-top:2px;flex-shrink:0;width:15px;height:15px}
+.green-box{background:#e8f5e9;border-left:4px solid #2e7d32;padding:10px 14px;margin:10px 0;color:#2e7d32;font-size:13px}
+.red-box{background:#fff0f0;border-left:4px solid #c62828;padding:10px 14px;margin:10px 0;color:#c62828;font-size:13px}
+.navy-box{border-left:4px solid #1e3a5f;background:#f0f4f9;padding:10px 14px;margin:10px 0;font-size:13px}
+.mandatory-box{border:3px solid #c62828;background:#fff0f0;padding:12px 14px;margin:12px 0}
+.mandatory-title{font-size:13px;font-weight:bold;color:#c62828;margin-bottom:8px;text-transform:uppercase}
+.card{border-left:4px solid #1e3a5f;padding:10px 14px;margin-bottom:10px;background:#f9fafc}
+.card.green{border-left-color:#2e7d32}
+.card.amber{border-left-color:#e65100}
+.subh{font-size:12px;font-weight:bold;color:#1e3a5f;text-transform:uppercase;margin:10px 0 4px;display:block}
+table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
+th{background:#1e3a5f;color:#fff;padding:7px 10px;text-align:left;font-size:12px}
+td{border:1px solid #ccc;padding:6px 10px;vertical-align:top}
+tr:nth-child(even) td{background:#f9f9f9}
+td input[type=text]{width:100%;border:1px solid #bbb;padding:3px 6px;font-family:Arial,sans-serif;font-size:12px}
+.rg{display:flex;gap:12px}
+.rg label{font-size:12px;display:flex;align-items:center;gap:3px;cursor:pointer}
+.gold{background:#1e3a5f;color:#fff;padding:16px 20px;margin:16px 0}
+.gold h2{color:#fff;border-bottom-color:rgba(255,255,255,0.3)}
+.gold p{font-style:italic;font-size:13px;color:#d0dce8;margin-top:6px}
+.print-btn{background:#1e3a5f;color:#fff;border:none;padding:8px 18px;font-size:13px;font-weight:bold;cursor:pointer;margin-bottom:16px;display:block}
+.fail{color:#c62828;font-weight:bold}
+hr{border:none;border-top:2px solid #1e3a5f;margin:20px 0}
+.tc{text-align:center}
+@media print{
+  .print-btn{display:none}
+  body{background:#fff}
+  .wrap{padding:0}
+  .section,.section-grey,.section-red{border:1px solid #ccc;page-break-inside:avoid}
+  .card,.mandatory-box{page-break-inside:avoid}
+  table{page-break-inside:avoid}
+  .gold,.header{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .green-box,.red-box,.navy-box,.mandatory-box{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>ESOL Writing IQA — Sampling and Moderation Form</h1>
+  <div class="badge">Entry 3</div>
+</div>
+
+<div class="wrap">
+<button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+
+<!-- SAMPLING OVERVIEW -->
+<div class="section">
+  <h2>Section 1 — Sampling Overview</h2>
+  <div class="field-row">
+    <div class="field"><label>IQA Name</label><input type="text" placeholder="Enter name"></div>
+    <div class="field"><label>Assessor Name</label><input type="text" placeholder="Enter name"></div>
+    <div class="field"><label>Date</label><input type="date"></div>
+  </div>
+</div>
+
+<!-- TASK 1 -->
+<div class="section-grey">
+  <h2>Task 1 — Form Filling</h2>
+
+  <h3>Required Fields</h3>
+  <ul class="cl">
+    <li><input type="checkbox"><label>Full name (first + surname)</label></li>
+    <li><input type="checkbox"><label>Full address (minimum 3 parts: number, street, city)</label></li>
+    <li><input type="checkbox"><label>Additional element 1 (postcode, email, phone, or date)</label></li>
+    <li><input type="checkbox"><label>Additional element 2</label></li>
+    <li><input type="checkbox"><label>Additional element 3</label></li>
+  </ul>
+  <div class="green-box"><strong>Total required:</strong> Name + Address + 3 additional items minimum</div>
+
+  <h3>Instructions</h3>
+  <ul class="cl">
+    <li><input type="checkbox"><label>Instruction 1 followed correctly (e.g. tick)</label></li>
+    <li><input type="checkbox"><label>Instruction 2 followed correctly (e.g. circle)</label></li>
+    <li><input type="checkbox"><label>Instruction 3 followed correctly (e.g. delete)</label></li>
+  </ul>
+  <p style="font-size:12px;color:#555;font-style:italic;margin-top:4px">Minimum: 2 out of 3 instructions followed correctly</p>
+
+  <h3>Open Response</h3>
+  <ul class="cl">
+    <li><input type="checkbox"><label>At least 1 full sentence written correctly</label></li>
+    <li><input type="checkbox"><label>Sentence includes subject + verb + clear meaning</label></li>
+  </ul>
+
+  <div class="green-box" style="margin-top:10px">
+    <strong>Task 1 Pass Rule — all must be met:</strong><br>
+    ✓ Required fields achieved (Name + Address + 3 additional)<br>
+    ✓ At least 2/3 instructions correct<br>
+    ✓ At least 1 valid full sentence present
+  </div>
+
+  <div class="red-box">
+    <strong>Fail Conditions:</strong><br>
+    Fewer than 3 additional fields — <strong>FAIL</strong><br>
+    No full sentence — <strong>FAIL</strong><br>
+    Instructions ignored — <strong>FAIL</strong>
+  </div>
+</div>
+
+<!-- TASKS 2 AND 3 -->
+<div class="section">
+  <h2>Tasks 2 &amp; 3 — Extended Writing</h2>
+
+  <!-- Criterion 1: Content -->
+  <div class="card green">
+    <h4>Criterion 1 — Content</h4>
+    <ul class="cl">
+      <li><input type="checkbox"><label>Covers most bullet points in the task</label></li>
+      <li><input type="checkbox"><label>Minimum 75% of required content present (e.g. 3 out of 4 points)</label></li>
+      <li><input type="checkbox"><label>Writing achieves the purpose of the task</label></li>
+    </ul>
+  </div>
+
+  <!-- Criterion 2: Structure -->
+  <div class="card green">
+    <h4>Criterion 2 — Structure</h4>
+    <ul class="cl">
+      <li><input type="checkbox"><label>Minimum 2 paragraphs present</label></li>
+      <li><input type="checkbox"><label>Each paragraph contains at least 2 sentences</label></li>
+    </ul>
+    <div class="green-box"><strong>Minimum total:</strong> 4 sentences (2 paragraphs x 2 sentences each)</div>
+  </div>
+
+  <!-- Criterion 3: Sequencing -->
+  <div class="card">
+    <h4>Criterion 3 — Sequencing</h4>
+    <ul class="cl">
+      <li><input type="checkbox"><label>Logical order maintained throughout</label></li>
+      <li><input type="checkbox"><label>At least 2 linking devices used: <em>and / then / because / after / when</em></label></li>
+    </ul>
+  </div>
+
+  <!-- Criterion 4: Grammar -->
+  <div class="card">
+    <h4>Criterion 4 — Grammar</h4>
+
+    <span class="subh">Sentence Count</span>
+    <ul class="cl">
+      <li><input type="checkbox"><label>At least 4 correct sentences overall</label></li>
+    </ul>
+
+    <span class="subh">Clause Accuracy</span>
+    <ul class="cl">
+      <li><input type="checkbox"><label>At least 4 clauses contain subject + correct verb + correct word order</label></li>
+    </ul>
+
+    <span class="subh">Compound Sentences</span>
+    <ul class="cl">
+      <li><input type="checkbox"><label>At least 1 compound sentence (2 main clauses + correct conjunction)</label></li>
+    </ul>
+
+    <!-- MANDATORY COMPLEX SENTENCE -->
+    <div class="mandatory-box">
+      <div class="mandatory-title">⚠ Complex Sentence — Mandatory / Non-Negotiable</div>
+      <ul class="cl">
+        <li><input type="checkbox"><label><strong>At least 1 correct complex sentence present</strong></label></li>
+      </ul>
+      <div class="navy-box" style="margin-top:8px">
+        <strong>Complex Sentence Validation — all must be met:</strong>
+        <ul class="cl" style="margin-top:6px">
+          <li><input type="checkbox"><label>Contains main clause (subject + verb)</label></li>
+          <li><input type="checkbox"><label>Contains subordinate clause</label></li>
+          <li><input type="checkbox"><label>Uses correct linking word</label></li>
+          <li><input type="checkbox"><label>Subordinate clause adds meaning</label></li>
+          <li><input type="checkbox"><label>Sentence is fully understandable</label></li>
+        </ul>
+      </div>
+      <p style="font-size:12px;font-weight:bold;color:#333;margin:10px 0 6px">Accepted Subordinate Clause Types:</p>
+      <table>
+        <thead><tr><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><em>because</em></td><td>Reason clause — core, expected at Entry 3</td></tr>
+          <tr><td><em>when</em></td><td>Time clause — core, expected at Entry 3</td></tr>
+          <tr><td><em>if</em></td><td>Conditional clause — core, expected at Entry 3</td></tr>
+          <tr><td><em>after / before</em></td><td>Time clause — core, expected at Entry 3</td></tr>
+          <tr><td><em>who / which / where</em></td><td>Relative clause — additional valid type</td></tr>
+          <tr><td><em>-ing</em></td><td>Participle clause — higher, optional but valid</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- VERB TENSES — OWN SUBSECTION -->
+    <span class="subh">Verb Tenses</span>
+    <ul class="cl">
+      <li><input type="checkbox"><label>Past simple used correctly where required (e.g. <em>I went, she said, we visited</em>)</label></li>
+      <li><input type="checkbox"><label>Present simple used correctly where required (e.g. <em>I like, it is, they have</em>)</label></li>
+      <li><input type="checkbox"><label>Tense is mostly consistent throughout — no unexplained shifts</label></li>
+      <li><input type="checkbox"><label>Tense errors do not impede meaning</label></li>
+    </ul>
+    <div class="navy-box">
+      <strong>Note:</strong> At Entry 3 learners are not expected to use a wide range of tenses, but the tense chosen must be mostly correct and consistent. Tense shifts that confuse meaning should be flagged.
+    </div>
+
+    <span class="subh">Sentence Range</span>
+    <ul class="cl">
+      <li><input type="checkbox"><label>Mix of simple / compound / complex sentences present</label></li>
+    </ul>
+
+    <span class="subh">Grammar Control</span>
+    <ul class="cl">
+      <li><input type="checkbox"><label>Subject–verb agreement mostly correct</label></li>
+      <li><input type="checkbox"><label>Errors do not impede meaning</label></li>
+    </ul>
+  </div>
+
+  <!-- Criterion 5: Vocabulary -->
+  <div class="card amber">
+    <h4>Criterion 5 — Vocabulary</h4>
+    <ul class="cl">
+      <li><input type="checkbox"><label>At least 3 adjectives used</label></li>
+      <li><input type="checkbox"><label>At least 1 intensifier (e.g. <em>very, really</em>)</label></li>
+      <li><input type="checkbox"><label>Topic-specific vocabulary used appropriately</label></li>
+    </ul>
+  </div>
+
+  <!-- Criterion 6: Punctuation -->
+  <div class="card">
+    <h4>Criterion 6 — Punctuation</h4>
+    <ul class="cl">
+      <li><input type="checkbox"><label>Capital letters used correctly</label></li>
+      <li><input type="checkbox"><label>Full stops used correctly</label></li>
+      <li><input type="checkbox"><label>Proper noun capitals used correctly</label></li>
+      <li><input type="checkbox"><label>Question mark or exclamation mark used correctly</label></li>
+    </ul>
+    <div class="green-box"><strong>Minimum:</strong> 4 different punctuation types demonstrated correctly</div>
+  </div>
+
+  <!-- Criterion 7: Spelling -->
+  <div class="card">
+    <h4>Criterion 7 — Spelling</h4>
+    <ul class="cl">
+      <li><input type="checkbox"><label>Most common words spelled correctly</label></li>
+      <li><input type="checkbox"><label>Errors do not block meaning</label></li>
+    </ul>
+  </div>
+
+  <div class="green-box" style="margin-top:14px">
+    <strong>Overall Pass Rule:</strong><br>
+    ✓ Minimum 4 criteria met out of 6 areas<br>
+    ✓ Core thresholds: 2 paragraphs / 1 complex sentence / 4 punctuation types
+  </div>
+</div>
+
+<!-- RED FLAGS -->
+<div class="section-red">
+  <h2 style="color:#c62828;border-bottom-color:#c62828">Red Flags — Automatic Fail / Invalid</h2>
+  <ul class="cl">
+    <li><input type="checkbox"><label><span class="fail">No complex sentence — FAIL</span></label></li>
+    <li><input type="checkbox"><label><span class="fail">Only 1 paragraph — FAIL</span></label></li>
+    <li><input type="checkbox"><label><span class="fail">Fewer than 4 sentences — FAIL</span></label></li>
+    <li><input type="checkbox"><label><span class="fail">Fewer than 4 punctuation types — FAIL</span></label></li>
+    <li><input type="checkbox"><label><span class="fail">Clauses missing subject/verb throughout — FAIL</span></label></li>
+    <li><input type="checkbox"><label><span class="fail">Tense errors block meaning throughout — FAIL</span></label></li>
+    <li><input type="checkbox"><label><span class="fail">Writing not independent — INVALID</span></label></li>
+  </ul>
+</div>
+
+<!-- STANDARDISATION DECISION -->
+<div class="section">
+  <h2>Standardisation Decision</h2>
+  <table>
+    <thead><tr><th width="42%">Area</th><th width="23%">Agreed?</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Level correct (Entry 3)</td><td><div class="rg"><label><input type="radio" name="s1"> Yes</label><label><input type="radio" name="s1"> No</label></div></td><td><input type="text" placeholder="Notes..."></td></tr>
+      <tr><td>Meets all key thresholds</td><td><div class="rg"><label><input type="radio" name="s2"> Yes</label><label><input type="radio" name="s2"> No</label></div></td><td><input type="text" placeholder="Notes..."></td></tr>
+      <tr><td>Complex sentence valid and confirmed</td><td><div class="rg"><label><input type="radio" name="s3"> Yes</label><label><input type="radio" name="s3"> No</label></div></td><td><input type="text" placeholder="Notes..."></td></tr>
+      <tr><td>Tense use mostly correct and consistent</td><td><div class="rg"><label><input type="radio" name="s4"> Yes</label><label><input type="radio" name="s4"> No</label></div></td><td><input type="text" placeholder="Notes..."></td></tr>
+      <tr><td>Assessor decision correct</td><td><div class="rg"><label><input type="radio" name="s5"> Yes</label><label><input type="radio" name="s5"> No</label></div></td><td><input type="text" placeholder="Notes..."></td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:14px">Final Decision</h3>
+  <table>
+    <tbody>
+      <tr><td width="45%"><strong>Original Assessor Decision</strong></td><td><div class="rg"><label><input type="radio" name="orig"> Pass</label><label><input type="radio" name="orig"> Refer</label></div></td></tr>
+      <tr><td><strong>Standardised Outcome</strong></td><td><div class="rg"><label><input type="radio" name="std"> Pass</label><label><input type="radio" name="std"> Refer</label></div></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- IQA ACTIONS -->
+<div class="section">
+  <h2>IQA Actions</h2>
+  <table>
+    <thead><tr><th>Issue</th><th>Action</th><th width="18%">Owner</th><th width="18%">Deadline</th></tr></thead>
+    <tbody>
+      <tr><td><input type="text" placeholder="Issue..."></td><td><input type="text" placeholder="Action..."></td><td><input type="text" placeholder="Name..."></td><td><input type="text" placeholder="Date..."></td></tr>
+      <tr><td><input type="text" placeholder="Issue..."></td><td><input type="text" placeholder="Action..."></td><td><input type="text" placeholder="Name..."></td><td><input type="text" placeholder="Date..."></td></tr>
+      <tr><td><input type="text" placeholder="Issue..."></td><td><input type="text" placeholder="Action..."></td><td><input type="text" placeholder="Name..."></td><td><input type="text" placeholder="Date..."></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- GOLD STANDARD -->
+<div class="gold">
+  <h2>Gold Standard — Entry 3</h2>
+  <p>"A learner must produce a structured multi-sentence text with at least one valid complex sentence, clear paragraphing, consistent tense use, and a controlled range of grammar and punctuation — with meaning consistently clear."</p>
+</div>
+
+<hr>
+
+<!-- SENTENCE GRID -->
+<div class="section">
+  <h2>Sentence Grid — Entry 3</h2>
+  <p style="font-style:italic;color:#555;margin-bottom:12px;font-size:12px">Focus: Range — simple, compound and complex. Use for Tasks 2 &amp; 3.</p>
+
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr><th width="38">#</th><th>Sentence Written</th><th width="70" class="tc">Subject</th><th width="70" class="tc">Verb</th><th width="80" class="tc">Word Order</th><th width="74" class="tc">Tense Correct</th><th width="74" class="tc">Meaning</th><th width="74" class="tc">Correct</th></tr></thead>
+    <tbody>
+      <tr><td><strong>S1</strong></td><td><input type="text" style="width:100%;border:1px solid #bbb;padding:3px 6px;font-family:Arial,sans-serif"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td></tr>
+      <tr><td><strong>S2</strong></td><td><input type="text" style="width:100%;border:1px solid #bbb;padding:3px 6px;font-family:Arial,sans-serif"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td></tr>
+      <tr><td><strong>S3</strong></td><td><input type="text" style="width:100%;border:1px solid #bbb;padding:3px 6px;font-family:Arial,sans-serif"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td></tr>
+      <tr><td><strong>S4</strong></td><td><input type="text" style="width:100%;border:1px solid #bbb;padding:3px 6px;font-family:Arial,sans-serif"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td></tr>
+      <tr><td><strong>S5</strong></td><td><input type="text" style="width:100%;border:1px solid #bbb;padding:3px 6px;font-family:Arial,sans-serif"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3 style="margin-top:14px">Sentence Type Identification</h3>
+  <table>
+    <thead><tr><th width="70">Sentence</th><th class="tc">Simple</th><th class="tc">Compound</th><th class="tc">Complex</th><th class="tc">Correct</th></tr></thead>
+    <tbody>
+      <tr><td><strong>S1</strong></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td></tr>
+      <tr><td><strong>S2</strong></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td></tr>
+      <tr><td><strong>S3</strong></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td></tr>
+      <tr><td><strong>S4</strong></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:14px">Verb Tense Check</h3>
+  <table>
+    <thead><tr><th>Tense Used</th><th class="tc" width="80">Correct</th><th class="tc" width="80">Consistent</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Past simple (e.g. <em>I went, she said</em>)</td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td><input type="text" placeholder="Notes..."></td></tr>
+      <tr><td>Present simple (e.g. <em>I like, it is</em>)</td><td class="tc"><input type="checkbox"></td><td class="tc"><input type="checkbox"></td><td><input type="text" placeholder="Notes..."></td></tr>
+      <tr><td>Tense consistent throughout (no unexplained shifts)</td><td class="tc"><input type="checkbox"></td><td class="tc">—</td><td><input type="text" placeholder="Notes..."></td></tr>
+      <tr><td>Tense errors do not impede meaning</td><td class="tc"><input type="checkbox"></td><td class="tc">—</td><td><input type="text" placeholder="Notes..."></td></tr>
+    </tbody>
+  </table>
+
+  <div class="navy-box" style="margin-top:10px">
+    <strong>Complex Sentence Check — Mandatory</strong>
+    <ul class="cl" style="margin-top:8px">
+      <li><input type="checkbox"><label>At least 1 complex sentence present</label></li>
+      <li><input type="checkbox"><label>Contains main clause (subject + verb)</label></li>
+      <li><input type="checkbox"><label>Contains subordinate clause</label></li>
+      <li><input type="checkbox"><label>Uses correct connector</label></li>
+      <li><input type="checkbox"><label>Sentence makes full sense and meaning is clear</label></li>
+    </ul>
+  </div>
+
+  <h3 style="margin-top:14px">Subordinate Clause Types Used</h3>
+  <ul class="cl">
+    <li><input type="checkbox"><label><em>because</em></label></li>
+    <li><input type="checkbox"><label><em>when</em></label></li>
+    <li><input type="checkbox"><label><em>if</em></label></li>
+    <li><input type="checkbox"><label><em>after / before</em></label></li>
+    <li><input type="checkbox"><label>Relative clause: <em>who / which / where</em></label></li>
+    <li><input type="checkbox"><label>Participle clause: <em>-ing</em> (higher — optional)</label></li>
+  </ul>
+
+  <div class="green-box" style="margin-top:12px">
+    <strong>Decision</strong>
+    <ul class="cl" style="margin-top:6px">
+      <li><input type="checkbox"><label>At least 4 sentences written</label></li>
+      <li><input type="checkbox"><label>At least 3 sentences correct or mostly correct</label></li>
+      <li><input type="checkbox"><label>Tense mostly correct and consistent</label></li>
+      <li><input type="checkbox"><label>At least 1 valid complex sentence confirmed</label></li>
+    </ul>
+  </div>
+
+  <div class="red-box">
+    <strong>Fail Flags</strong>
+    <ul class="cl" style="margin-top:6px">
+      <li><input type="checkbox"><label class="fail">No complex sentence — FAIL</label></li>
+      <li><input type="checkbox"><label class="fail">Only simple sentences throughout — FAIL</label></li>
+      <li><input type="checkbox"><label class="fail">Tense errors block meaning — FAIL</label></li>
+      <li><input type="checkbox"><label class="fail">Clause errors throughout — FAIL</label></li>
+    </ul>
+  </div>
+</div>
+
+<p style="font-size:11px;color:#888;text-align:center;padding-bottom:20px">For internal use only. Aligned to Ascentis ESOL Writing standards.</p>
+</div>
+</body>
+</html>
