@@ -83,6 +83,102 @@ type ChecklistItem = {
   text: string;
 };
 
+// Question types for modular forms
+type QuestionType =
+  | "single_choice"
+  | "multiple_choice"
+  | "dropdown"
+  | "text"
+  | "textarea"
+  | "date"
+  | "currency"
+  | "ranking"
+  | "likert"
+  | "yes_no"
+  | "file_upload";
+
+type QuestionOption = {
+  id: string;
+  label: string;
+  value: string;
+};
+
+type TemplateQuestion = {
+  id: string;
+  template_id: string;
+  question_text: string;
+  question_type: QuestionType;
+  options: QuestionOption[] | null;
+  has_text_entry: number;
+  text_entry_label: string | null;
+  is_required: number;
+  sort_order: number;
+  visible_to_assessor: number;
+  visible_to_iqa: number;
+  visible_to_eqa: number;
+};
+
+type CommentCategory = {
+  id: string;
+  template_id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+};
+
+type TemplateWithQuestions = TemplateRecord & {
+  questions: TemplateQuestion[];
+  commentCategories: CommentCategory[];
+};
+
+type EntryHeader = {
+  id: string;
+  form_entry_id: string;
+  course_id: string;
+  qualification_aim: string;
+  course_name: string;
+  assessor_id: string | null;
+  assessor_date: string | null;
+  iqa_id: string | null;
+  iqa_date: string | null;
+  eqa_id: string | null;
+  eqa_name: string | null;
+  eqa_date: string | null;
+};
+
+type EnhancedEntryRecord = EntryRecord & {
+  header: EntryHeader | null;
+  is_finalized: number;
+};
+
+type StageData = {
+  answers: Record<string, string | string[]>;
+  textEntries: Record<string, string>;
+  agreed_with_previous: number;
+  marked_complete_at: string | null;
+  marked_complete_by: string | null;
+};
+
+type EnhancedStageEntryRecord = {
+  stage: Stage;
+  data: string | null;
+  updated_at: string;
+  email: string | null;
+  agreed_with_previous: number;
+  marked_complete_at: string | null;
+  marked_complete_by: string | null;
+};
+
+type CommentWithCategory = {
+  id: string;
+  comment: string;
+  created_at: string;
+  email: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  is_pinned: number;
+};
+
 const htmlHeaders = { "content-type": "text/html; charset=utf-8" };
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 const oauthStateCookie = "esolqa_oauth_state";
@@ -114,10 +210,18 @@ export default {
     if (url.pathname === "/api/users" && request.method === "POST") return createUser(request, env, identity);
     if (url.pathname.startsWith("/api/users/") && request.method === "POST") return deleteUser(request, env, identity, url.pathname.split("/")[3]);
     if (url.pathname === "/api/templates" && request.method === "POST") return createTemplate(request, env, identity);
+    if (url.pathname === "/api/templates" && request.method === "GET") return listTemplatesJson(env, identity);
+    if (url.pathname.startsWith("/api/templates/") && request.method === "GET" && url.pathname.endsWith("/questions")) return getTemplateQuestions(env, identity, url.pathname.split("/")[3]);
+    if (url.pathname.startsWith("/api/templates/") && request.method === "POST" && url.pathname.endsWith("/questions")) return addTemplateQuestion(request, env, identity, url.pathname.split("/")[3]);
+    if (url.pathname.startsWith("/api/templates/") && request.method === "DELETE" && url.pathname.includes("/questions/")) return deleteTemplateQuestion(env, identity, url.pathname.split("/")[3], url.pathname.split("/")[5]);
+    if (url.pathname.startsWith("/api/templates/") && request.method === "POST" && url.pathname.endsWith("/categories")) return addCommentCategory(request, env, identity, url.pathname.split("/")[3]);
     if (url.pathname === "/api/entries" && request.method === "POST") return createEntry(request, env, identity);
+    if (url.pathname.startsWith("/api/entries/") && url.pathname.endsWith("/header") && request.method === "POST") return updateEntryHeader(request, env, identity, url.pathname.split("/")[3]);
     if (url.pathname.startsWith("/api/entries/") && url.pathname.endsWith("/stage") && request.method === "POST") return saveEntryStage(request, env, identity, url.pathname.split("/")[3]);
     if (url.pathname.startsWith("/api/entries/") && url.pathname.endsWith("/complete") && request.method === "POST") return markEntryComplete(env, identity, url.pathname.split("/")[3]);
+    if (url.pathname.startsWith("/api/entries/") && url.pathname.endsWith("/agree") && request.method === "POST") return agreeWithAssessor(env, identity, url.pathname.split("/")[3]);
     if (url.pathname.startsWith("/api/entries/") && url.pathname.endsWith("/comments") && request.method === "POST") return addComment(request, env, identity, url.pathname.split("/")[3]);
+    if (url.pathname.startsWith("/api/entries/") && url.pathname.endsWith("/attachments") && request.method === "POST") return uploadAttachment(request, env, identity, url.pathname.split("/")[3]);
 
     return htmlResponse(renderNotFoundPage(), 404);
   },
@@ -149,22 +253,37 @@ async function renderNewEntryPage(env: Env, identity: Identity): Promise<Respons
   if (!canAssess(identity.user!)) return htmlResponse(renderForbiddenPage(identity), 403);
   const templates = await listTemplates(env, "");
   const iqas = await env.esol_marking_db.prepare("SELECT id, email, role, stage FROM users WHERE role IN ('iqa','admin','superuser') ORDER BY email ASC").all<UserRecord>();
+  const eqas = await env.esol_marking_db.prepare("SELECT id, email, role, stage FROM users WHERE role IN ('eqa','admin','superuser') ORDER BY email ASC").all<UserRecord>();
 
-  return htmlResponse(renderEntryStartForm(identity, templates, iqas.results));
+  return htmlResponse(renderEntryStartForm(identity, templates, iqas.results, eqas.results));
 }
 
 async function renderEntryPage(env: Env, identity: Identity, id?: string): Promise<Response> {
   if (!id) return htmlResponse(renderNotFoundPage(), 404);
-  const entry = await getVisibleEntry(env, identity.user!, id);
+  const entry = await getEnhancedEntry(env, identity.user!, id);
   if (!entry) return htmlResponse(renderNotFoundPage(), 404);
 
-  const template = await env.esol_marking_db.prepare("SELECT id, title, description, structure, is_active, created_at FROM form_templates WHERE id = ?").bind(entry.template_id).first<TemplateRecord>();
-  if (!template) return htmlResponse(renderNotFoundPage(), 404);
+  const templateWithQuestions = await getTemplateWithQuestions(env, entry.template_id);
+  if (!templateWithQuestions) return htmlResponse(renderNotFoundPage(), 404);
 
-  const stageEntries = await env.esol_marking_db.prepare("SELECT fse.stage, fse.data, fse.updated_at, users.email FROM form_stage_entries fse LEFT JOIN users ON users.id = fse.updated_by WHERE fse.form_entry_id = ?").bind(id).all<StageEntryRecord>();
-  const comments = await env.esol_marking_db.prepare("SELECT fc.comment, fc.created_at, users.email FROM form_comments fc LEFT JOIN users ON users.id = fc.created_by WHERE fc.form_entry_id = ? ORDER BY fc.created_at ASC").bind(id).all<CommentRecord>();
+  const stageEntries = await env.esol_marking_db.prepare(
+    "SELECT fse.stage, fse.data, fse.updated_at, fse.agreed_with_previous, fse.marked_complete_at, users.email FROM form_stage_entries fse LEFT JOIN users ON users.id = fse.updated_by WHERE fse.form_entry_id = ?"
+  ).bind(id).all<EnhancedStageEntryRecord>();
 
-  return htmlResponse(renderChecklistEntry(identity, entry, template, stageEntries.results, comments.results));
+  const comments = await env.esol_marking_db.prepare(
+    `SELECT fc.id, fc.comment, fc.created_at, users.email, tcc.name as category_name, fc.is_pinned
+     FROM form_comments fc
+     LEFT JOIN users ON users.id = fc.created_by
+     LEFT JOIN template_comment_categories tcc ON tcc.id = fc.category_id
+     WHERE fc.form_entry_id = ?
+     ORDER BY fc.is_pinned DESC, fc.created_at DESC`
+  ).bind(id).all<CommentWithCategory>();
+
+  const attachments = await env.esol_marking_db.prepare(
+    "SELECT id, file_name, file_size, content_type, description, created_at FROM form_attachments WHERE form_entry_id = ? ORDER BY created_at DESC"
+  ).bind(id).all<{ id: string; file_name: string; file_size: number; content_type: string; description: string | null; created_at: string }>();
+
+  return htmlResponse(renderModularEntry(identity, entry, templateWithQuestions, stageEntries.results, comments.results, attachments.results));
 }
 
 async function listTemplates(env: Env, search: string): Promise<TemplateRecord[]> {
@@ -201,6 +320,49 @@ async function getVisibleEntry(env: Env, user: UserRecord, id: string): Promise<
     LEFT JOIN users eqa ON eqa.id = fe.eqa_id
     WHERE fe.id = ? AND (? IN ('superuser','admin') OR fe.assessor_id = ? OR fe.iqa_id = ? OR fe.eqa_id = ?)`;
   return env.esol_marking_db.prepare(query).bind(id, user.role, user.id, user.id, user.id).first<EntryRecord>();
+}
+
+async function getEnhancedEntry(env: Env, user: UserRecord, id: string): Promise<EnhancedEntryRecord | null> {
+  const entryQuery = `SELECT fe.id, fe.template_id, ft.title AS template_title, fe.status, fe.course_code, fe.qualification, fe.teacher, fe.created_at, fe.is_finalized,
+    assessor.email AS assessor_email, iqa.email AS iqa_email, eqa.email AS eqa_email
+    FROM form_entries fe
+    JOIN form_templates ft ON ft.id = fe.template_id
+    LEFT JOIN users assessor ON assessor.id = fe.assessor_id
+    LEFT JOIN users iqa ON iqa.id = fe.iqa_id
+    LEFT JOIN users eqa ON eqa.id = fe.eqa_id
+    WHERE fe.id = ? AND (? IN ('superuser','admin') OR fe.assessor_id = ? OR fe.iqa_id = ? OR fe.eqa_id = ?)`;
+  const entry = await env.esol_marking_db.prepare(entryQuery).bind(id, user.role, user.id, user.id, user.id).first<EnhancedEntryRecord>();
+  if (!entry) return null;
+
+  const header = await env.esol_marking_db.prepare(
+    `SELECT feh.id, feh.form_entry_id, feh.course_id, feh.qualification_aim, feh.course_name,
+      feh.assessor_id, feh.assessor_date, feh.iqa_id, feh.iqa_date, feh.eqa_id, feh.eqa_name, feh.eqa_date
+     FROM form_entry_headers feh WHERE feh.form_entry_id = ?`
+  ).bind(id).first<EntryHeader>();
+
+  entry.header = header || null;
+  return entry;
+}
+
+async function getTemplateWithQuestions(env: Env, templateId: string): Promise<TemplateWithQuestions | null> {
+  const template = await env.esol_marking_db.prepare(
+    "SELECT id, title, description, structure, is_active, created_at FROM form_templates WHERE id = ? AND is_active = 1"
+  ).bind(templateId).first<TemplateRecord>();
+  if (!template) return null;
+
+  const questions = await env.esol_marking_db.prepare(
+    "SELECT id, template_id, question_text, question_type, options, has_text_entry, text_entry_label, is_required, sort_order, visible_to_assessor, visible_to_iqa, visible_to_eqa FROM template_questions WHERE template_id = ? ORDER BY sort_order"
+  ).bind(templateId).all<TemplateQuestion>();
+
+  const categories = await env.esol_marking_db.prepare(
+    "SELECT id, template_id, name, description, sort_order FROM template_comment_categories WHERE template_id = ? ORDER BY sort_order"
+  ).bind(templateId).all<CommentCategory>();
+
+  return {
+    ...template,
+    questions: questions.results,
+    commentCategories: categories.results,
+  };
 }
 
 async function createUser(request: Request, env: Env, identity: Identity): Promise<Response> {
@@ -284,8 +446,174 @@ async function addComment(request: Request, env: Env, identity: Identity, id?: s
   if (!entry) return json({ error: "Not found" }, 404);
   const body = await request.formData();
   const comment = String(body.get("comment") ?? "").trim();
-  if (comment) await env.esol_marking_db.prepare("INSERT INTO form_comments (id, form_entry_id, comment, created_by) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), id, comment, identity.user!.id).run();
+  const categoryId = String(body.get("category_id") ?? "").trim() || null;
+  if (comment) {
+    await env.esol_marking_db.prepare(
+      "INSERT INTO form_comments (id, form_entry_id, comment, category_id, created_by) VALUES (?, ?, ?, ?, ?)"
+    ).bind(crypto.randomUUID(), id, comment, categoryId, identity.user!.id).run();
+  }
   return Response.redirect(new URL(`/entries/${id}`, request.url).toString(), 303);
+}
+
+async function listTemplatesJson(env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return json({ error: "Forbidden" }, 403);
+  const templates = await env.esol_marking_db.prepare(
+    "SELECT id, title, description, is_active, created_at FROM form_templates WHERE is_active = 1 ORDER BY created_at DESC"
+  ).all<TemplateRecord>();
+  return json(templates.results);
+}
+
+async function getTemplateQuestions(env: Env, identity: Identity, templateId?: string): Promise<Response> {
+  if (!templateId || !identity.user) return json({ error: "Invalid request" }, 400);
+  const questions = await env.esol_marking_db.prepare(
+    "SELECT id, template_id, question_text, question_type, options, has_text_entry, text_entry_label, is_required, sort_order, visible_to_assessor, visible_to_iqa, visible_to_eqa FROM template_questions WHERE template_id = ? ORDER BY sort_order"
+  ).bind(templateId).all<TemplateQuestion>();
+  const categories = await env.esol_marking_db.prepare(
+    "SELECT id, template_id, name, description, sort_order FROM template_comment_categories WHERE template_id = ? ORDER BY sort_order"
+  ).bind(templateId).all<CommentCategory>();
+  return json({ questions: questions.results, commentCategories: categories.results });
+}
+
+async function addTemplateQuestion(request: Request, env: Env, identity: Identity, templateId?: string): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return json({ error: "Forbidden" }, 403);
+  if (!templateId) return json({ error: "Invalid template" }, 400);
+
+  const body = await request.formData();
+  const questionText = String(body.get("question_text") ?? "").trim();
+  const questionType = String(body.get("question_type") ?? "text") as QuestionType;
+  const optionsJson = String(body.get("options") ?? "[]");
+  const hasTextEntry = body.get("has_text_entry") === "1" ? 1 : 0;
+  const textEntryLabel = String(body.get("text_entry_label") ?? "").trim() || null;
+  const isRequired = body.get("is_required") === "1" ? 1 : 0;
+  const sortOrder = parseInt(String(body.get("sort_order") ?? "0"), 10);
+  const visibleToAssessor = body.get("visible_to_assessor") !== "0" ? 1 : 0;
+  const visibleToIqa = body.get("visible_to_iqa") !== "0" ? 1 : 0;
+  const visibleToEqa = body.get("visible_to_eqa") !== "0" ? 1 : 0;
+
+  if (!questionText) return json({ error: "Question text is required" }, 400);
+
+  const validTypes: QuestionType[] = ["single_choice", "multiple_choice", "dropdown", "text", "textarea", "date", "currency", "ranking", "likert", "yes_no", "file_upload"];
+  if (!validTypes.includes(questionType)) return json({ error: "Invalid question type" }, 400);
+
+  await env.esol_marking_db.prepare(
+    "INSERT INTO template_questions (id, template_id, question_text, question_type, options, has_text_entry, text_entry_label, is_required, sort_order, visible_to_assessor, visible_to_iqa, visible_to_eqa) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(crypto.randomUUID(), templateId, questionText, questionType, optionsJson, hasTextEntry, textEntryLabel, isRequired, sortOrder, visibleToAssessor, visibleToIqa, visibleToEqa).run();
+
+  return json({ success: true });
+}
+
+async function deleteTemplateQuestion(env: Env, identity: Identity, templateId?: string, questionId?: string): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return json({ error: "Forbidden" }, 403);
+  if (!templateId || !questionId) return json({ error: "Invalid request" }, 400);
+  await env.esol_marking_db.prepare("DELETE FROM template_questions WHERE id = ? AND template_id = ?").bind(questionId, templateId).run();
+  return json({ success: true });
+}
+
+async function addCommentCategory(request: Request, env: Env, identity: Identity, templateId?: string): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return json({ error: "Forbidden" }, 403);
+  if (!templateId) return json({ error: "Invalid template" }, 400);
+
+  const body = await request.formData();
+  const name = String(body.get("name") ?? "").trim();
+  const description = String(body.get("description") ?? "").trim() || null;
+  const sortOrder = parseInt(String(body.get("sort_order") ?? "0"), 10);
+
+  if (!name) return json({ error: "Category name is required" }, 400);
+
+  await env.esol_marking_db.prepare(
+    "INSERT INTO template_comment_categories (id, template_id, name, description, sort_order) VALUES (?, ?, ?, ?, ?)"
+  ).bind(crypto.randomUUID(), templateId, name, description, sortOrder).run();
+
+  return json({ success: true });
+}
+
+async function updateEntryHeader(request: Request, env: Env, identity: Identity, entryId?: string): Promise<Response> {
+  if (!entryId) return json({ error: "Missing entry" }, 400);
+  const entry = await getVisibleEntry(env, identity.user!, entryId);
+  if (!entry) return json({ error: "Not found" }, 404);
+
+  // Only assessor can set header, and only once
+  if (entry.status !== "assessment" || identity.user!.role !== "assessor") {
+    return json({ error: "Only assessor can set header during assessment stage" }, 403);
+  }
+
+  const body = await request.formData();
+  const courseId = String(body.get("course_id") ?? "").trim();
+  const qualificationAim = String(body.get("qualification_aim") ?? "").trim();
+  const courseName = String(body.get("course_name") ?? "").trim();
+  const assessorId = identity.user!.id;
+  const iqaId = String(body.get("iqa_id") ?? "").trim() || null;
+
+  if (!courseId || !qualificationAim || !courseName) {
+    return json({ error: "Course ID, qualification aim, and course name are required" }, 400);
+  }
+
+  // Check if header already exists
+  const existing = await env.esol_marking_db.prepare(
+    "SELECT id FROM form_entry_headers WHERE form_entry_id = ?"
+  ).bind(entryId).first<{ id: string }>();
+
+  if (existing) {
+    return json({ error: "Header already set and cannot be modified" }, 400);
+  }
+
+  await env.esol_marking_db.prepare(
+    "INSERT INTO form_entry_headers (id, form_entry_id, course_id, qualification_aim, course_name, assessor_id, assessor_date, iqa_id) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)"
+  ).bind(crypto.randomUUID(), entryId, courseId, qualificationAim, courseName, assessorId, iqaId).run();
+
+  return json({ success: true });
+}
+
+async function agreeWithAssessor(env: Env, identity: Identity, entryId?: string): Promise<Response> {
+  if (!entryId) return json({ error: "Missing entry" }, 400);
+  const entry = await getVisibleEntry(env, identity.user!, entryId);
+  if (!entry) return json({ error: "Not found" }, 404);
+
+  const userStage = stageForUser(identity.user!);
+  if (userStage === "assess") return json({ error: "Assessor cannot agree with themselves" }, 400);
+
+  // Get assessor's data
+  const assessorEntry = await env.esol_marking_db.prepare(
+    "SELECT data FROM form_stage_entries WHERE form_entry_id = ? AND stage = 'assess'"
+  ).bind(entryId).first<{ data: string }>();
+
+  if (!assessorEntry?.data) return json({ error: "No assessor data to agree with" }, 400);
+
+  // Copy assessor data to current user's stage with agreement flag
+  await env.esol_marking_db.prepare(
+    "INSERT INTO form_stage_entries (id, form_entry_id, stage, data, updated_by, agreed_with_previous) VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT(form_entry_id, stage) DO UPDATE SET data = excluded.data, updated_at = CURRENT_TIMESTAMP, updated_by = excluded.updated_by, agreed_with_previous = 1"
+  ).bind(crypto.randomUUID(), entryId, userStage, assessorEntry.data, identity.user!.id).run();
+
+  return Response.redirect(new URL(`/entries/${entryId}`, "https://placeholder").toString(), 303);
+}
+
+async function uploadAttachment(request: Request, env: Env, identity: Identity, entryId?: string): Promise<Response> {
+  if (!entryId) return json({ error: "Missing entry" }, 400);
+  const entry = await getVisibleEntry(env, identity.user!, entryId);
+  if (!entry) return json({ error: "Not found" }, 404);
+
+  // Check if R2 bucket binding exists (env.R2_BUCKET)
+  const r2Bucket = (env as unknown as { R2_BUCKET?: { put: (key: string, data: ArrayBuffer, opts: { httpMetadata: { contentType?: string } }) => Promise<void> } }).R2_BUCKET;
+  if (!r2Bucket) return json({ error: "File storage not configured" }, 500);
+
+  const formData = await request.formData();
+  const file = formData.get("file") as File | null;
+  const description = String(formData.get("description") ?? "").trim();
+
+  if (!file) return json({ error: "No file uploaded" }, 400);
+
+  const fileKey = `attachments/${entryId}/${crypto.randomUUID()}_${file.name}`;
+  const arrayBuffer = await file.arrayBuffer();
+
+  await r2Bucket.put(fileKey, arrayBuffer, {
+    httpMetadata: { contentType: file.type },
+  });
+
+  await env.esol_marking_db.prepare(
+    "INSERT INTO form_attachments (id, form_entry_id, uploaded_by, file_name, file_size, content_type, r2_key, r2_bucket, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(crypto.randomUUID(), entryId, identity.user!.id, file.name, file.size, file.type, fileKey, "esolqa-attachments", description).run();
+
+  return json({ success: true, fileKey });
 }
 
 async function requireIdentity(request: Request, env: Env): Promise<Identity | null> {
@@ -363,13 +691,96 @@ function renderTemplateForm(identity: Identity) {
     <main class="dashboard-shell">
       ${renderSidebar(identity, "create")}
       <section class="content">
-        ${renderTopbar(identity, "Create checklist form")}
+        ${renderTopbar(identity, "Create modular form")}
         <section class="panel narrow-panel">
-          <form method="POST" action="/api/templates" class="stack-form">
-            <label>Title<input name="title" required placeholder="Speaking and listening checklist"></label>
-            <label>Description<textarea name="description" rows="3" placeholder="What this checklist is used for"></textarea></label>
-            <label>Checklist rows<textarea name="items" rows="12" required placeholder="One checklist item per line"></textarea></label>
-            <button type="submit">Create form</button>
+          <form method="POST" action="/api/templates" class="stack-form" id="template-form">
+            <label>Title<input name="title" required placeholder="ESOL Writing IQA — Entry 1"></label>
+            <label>Description<textarea name="description" rows="3" placeholder="What this form is used for"></textarea></label>
+            <button type="submit">Create form template</button>
+          </form>
+          <p class="hint">After creating the template, you'll be able to add questions and comment categories.</p>
+        </section>
+      </section>
+    </main>
+  `);
+}
+
+function renderTemplateBuilder(identity: Identity, template: TemplateWithQuestions) {
+  const questionTypeOptions = [
+    { value: "single_choice", label: "Single choice (radio)" },
+    { value: "multiple_choice", label: "Multiple choice (checkboxes)" },
+    { value: "dropdown", label: "Dropdown" },
+    { value: "text", label: "Text field" },
+    { value: "textarea", label: "Text area" },
+    { value: "date", label: "Date picker" },
+    { value: "currency", label: "Currency amount" },
+    { value: "ranking", label: "Ranking" },
+    { value: "likert", label: "Likert scale" },
+    { value: "yes_no", label: "Yes/No" },
+    { value: "file_upload", label: "File upload" },
+  ];
+
+  return pageShell(`Edit: ${template.title}`, `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "create")}
+      <section class="content">
+        ${renderTopbar(identity, `Edit template: ${template.title}`)}
+        
+        <section class="panel">
+          <h3>Questions</h3>
+          <div id="questions-list">
+            ${template.questions.map((q, idx) => `
+              <div class="question-item">
+                <strong>${idx + 1}. ${escapeHtml(q.question_text)}</strong>
+                <span class="badge">${q.question_type}</span>
+                ${q.has_text_entry ? '<span class="badge">+ text entry</span>' : ''}
+                <span class="visibility">Assessor:${q.visible_to_assessor ? '✓' : '✗'} IQA:${q.visible_to_iqa ? '✓' : '✗'} EQA:${q.visible_to_eqa ? '✓' : '✗'}</span>
+              </div>
+            `).join('') || '<p class="empty">No questions yet</p>'}
+          </div>
+          
+          <form method="POST" action="/api/templates/${template.id}/questions" class="stack-form" id="add-question-form">
+            <h4>Add new question</h4>
+            <label>Question text<input name="question_text" required placeholder="e.g., Full name provided"></label>
+            <label>Question type<select name="question_type" required>
+              ${questionTypeOptions.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('')}
+            </select></label>
+            <label>Options (JSON array for choice-based types)<textarea name="options" rows="3" placeholder='[{"id":"opt1","label":"Yes","value":"yes"}]'></textarea></label>
+            <div class="checkbox-row">
+              <label><input type="checkbox" name="has_text_entry" value="1"> Include text entry field below</label>
+            </div>
+            <label>Text entry label<input name="text_entry_label" placeholder="e.g., Student sentence"></label>
+            <div class="checkbox-row">
+              <label><input type="checkbox" name="is_required" value="1" checked> Required</label>
+            </div>
+            <label>Sort order<input type="number" name="sort_order" value="${template.questions.length}"></label>
+            <div class="visibility-row">
+              <label>Visible to:</label>
+              <label><input type="checkbox" name="visible_to_assessor" value="1" checked> Assessor</label>
+              <label><input type="checkbox" name="visible_to_iqa" value="1" checked> IQA</label>
+              <label><input type="checkbox" name="visible_to_eqa" value="1" checked> EQA</label>
+            </div>
+            <button type="submit">Add question</button>
+          </form>
+        </section>
+        
+        <section class="panel">
+          <h3>Comment Categories</h3>
+          <div id="categories-list">
+            ${template.commentCategories.map((c, idx) => `
+              <div class="category-item">
+                <strong>${idx + 1}. ${escapeHtml(c.name)}</strong>
+                ${c.description ? `<span>${escapeHtml(c.description)}</span>` : ''}
+              </div>
+            `).join('') || '<p class="empty">No comment categories yet</p>'}
+          </div>
+          
+          <form method="POST" action="/api/templates/${template.id}/categories" class="stack-form">
+            <h4>Add comment category</h4>
+            <label>Category name<input name="name" required placeholder="e.g., IQA Actions"></label>
+            <label>Description<textarea name="description" rows="2" placeholder="What type of comments go here"></textarea></label>
+            <label>Sort order<input type="number" name="sort_order" value="${template.commentCategories.length}"></label>
+            <button type="submit">Add category</button>
           </form>
         </section>
       </section>
@@ -377,7 +788,7 @@ function renderTemplateForm(identity: Identity) {
   `);
 }
 
-function renderEntryStartForm(identity: Identity, templates: TemplateRecord[], iqas: UserRecord[]) {
+function renderEntryStartForm(identity: Identity, templates: TemplateRecord[], iqas: UserRecord[], eqas: UserRecord[]) {
   return pageShell("New entry", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "assessment")}
@@ -385,13 +796,21 @@ function renderEntryStartForm(identity: Identity, templates: TemplateRecord[], i
         ${renderTopbar(identity, "New assessment entry")}
         <section class="panel narrow-panel modal-like">
           <form method="POST" action="/api/entries" class="stack-form">
+            <h3>Select Template</h3>
             <label>Template<select name="template_id" required>${templates.map((template) => `<option value="${template.id}">${escapeHtml(template.title)}</option>`).join("")}</select></label>
-            <label>Course code<input name="course_code" required></label>
-            <label>Qualification<input name="qualification" required></label>
+            
+            <h3>Entry Details (set by assessor)</h3>
+            <label>Course ID<input name="course_code" required placeholder="e.g., ESOL-2024-001"></label>
+            <label>Qualification aim (UK qualification code)<input name="qualification" required placeholder="e.g., 603/4999/5"></label>
+            <label>Course name<input name="course_name" required placeholder="e.g., ESOL Entry Level 1"></label>
             <label>Teacher / assessor<input name="teacher" value="${escapeHtml(identity.name ?? identity.email)}"></label>
             <label>Student nickname<input name="student" placeholder="Optional anonymous nickname"></label>
+            
+            <h3>Quality Assurance Assignment</h3>
             <label>Allocated IQA<select name="iqa_id"><option value="">Choose later</option>${iqas.map((user) => `<option value="${user.id}">${escapeHtml(user.email)}</option>`).join("")}</select></label>
-            <button type="submit">Open form</button>
+            <label>Allocated EQA (optional)<select name="eqa_id"><option value="">Choose later</option>${eqas.map((user) => `<option value="${user.id}">${escapeHtml(user.email)} (${user.role})</option>`).join("")}</select></label>
+            
+            <button type="submit">Create entry</button>
           </form>
         </section>
       </section>
@@ -470,6 +889,309 @@ function renderUserRow(user: UserRecord, currentUserId: string) {
 
 function renderChecklistRow(item: ChecklistItem, stageData: Record<Stage, Record<string, string>>, userStage: Stage, editable: boolean) {
   return `<tr><td>${escapeHtml(item.text)}</td>${stages.map((stage) => `<td>${editable && stage === userStage ? `<textarea name="item_${item.id}" rows="2">${escapeHtml(stageData[stage]?.[item.id] ?? "")}</textarea>` : `<div class="readonly-cell">${escapeHtml(stageData[stage]?.[item.id] ?? "—")}</div>`}</td>`).join("")}</tr>`;
+}
+
+// New modular entry renderer with 3-column layout
+function renderModularEntry(
+  identity: Identity,
+  entry: EnhancedEntryRecord,
+  template: TemplateWithQuestions,
+  stageEntries: EnhancedStageEntryRecord[],
+  comments: CommentWithCategory[],
+  attachments: { id: string; file_name: string; file_size: number; content_type: string; description: string | null; created_at: string }[]
+) {
+  const userStage = stageForUser(identity.user!);
+  const editable = Boolean(canEditStage(identity.user!, entry.status, userStage));
+  const readonly = entry.status === "complete" || entry.is_finalized === 1;
+  const header = entry.header;
+
+  // Parse stage data
+  const stageData: Record<Stage, StageData> = {
+    assess: { answers: {}, textEntries: {}, agreed_with_previous: 0, marked_complete_at: null, marked_complete_by: null },
+    iqa: { answers: {}, textEntries: {}, agreed_with_previous: 0, marked_complete_at: null, marked_complete_by: null },
+    eqa: { answers: {}, textEntries: {}, agreed_with_previous: 0, marked_complete_at: null, marked_complete_by: null },
+  };
+
+  for (const entry of stageEntries) {
+    const parsed = parseStageData(entry.data);
+    stageData[entry.stage] = {
+      ...parsed,
+      agreed_with_previous: entry.agreed_with_previous,
+      marked_complete_at: entry.marked_complete_at,
+      marked_complete_by: entry.marked_complete_by,
+    };
+  }
+
+  // Find assessor's stage completion info
+  const assessorCompleted = stageData.assess.marked_complete_at !== null;
+  const iqaCompleted = stageData.iqa.marked_complete_at !== null;
+
+  return pageShell(template.title, `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, entry.status)}
+      <section class="content">
+        ${renderTopbar(identity, template.title)}
+
+        ${!header ? renderHeaderSetupForm(entry, identity) : renderHeaderDisplay(header)}
+
+        ${editable && !readonly && !assessorCompleted && userStage === "assess" ? `
+          <section class="panel actions-panel">
+            <form method="POST" action="/api/entries/${entry.id}/complete" class="inline-form">
+              <button type="submit" class="primary-action">Mark as completed and submit to IQA</button>
+            </form>
+          </section>
+        ` : ""}
+
+        ${editable && !readonly && assessorCompleted && !iqaCompleted && userStage !== "assess" ? `
+          <section class="panel actions-panel">
+            <form method="POST" action="/api/entries/${entry.id}/agree" class="inline-form">
+              <button type="submit" class="secondary-action">Agree with assessor (copy all responses)</button>
+            </form>
+          </section>
+        ` : ""}
+
+        <form method="POST" action="/api/entries/${entry.id}/stage" class="panel checklist-panel">
+          <table class="checklist-table modular-table">
+            <thead>
+              <tr>
+                <th class="question-col">Question / Criteria</th>
+                <th class="stage-col assess-col">Assessor</th>
+                <th class="stage-col iqa-col">IQA</th>
+                <th class="stage-col eqa-col">EQA</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${template.questions.map((q) => renderQuestionRow(q, stageData, userStage, Boolean(editable && !readonly))).join("")}
+            </tbody>
+          </table>
+          ${editable && !readonly ? `<button type="submit" class="save-btn">Save ${userStage} responses</button>` : '<p class="hint">View-only for your current role/status.</p>'}
+        </form>
+
+        ${renderAttachmentsSection(attachments, entry.id, editable && !readonly)}
+
+        <section class="panel comments-panel">
+          <h3>Comments & Notes</h3>
+          <div class="comment-categories">
+            ${template.commentCategories.map(cat => renderCommentCategory(cat, comments, entry.id, !readonly)).join("")}
+          </div>
+          ${!readonly ? renderNewCommentForm(entry.id, template.commentCategories) : ''}
+        </section>
+
+        <section class="actions-row">
+          <button onclick="window.print()" type="button">Print</button>
+        </section>
+      </section>
+    </main>
+  `);
+}
+
+function renderHeaderSetupForm(entry: EnhancedEntryRecord, identity: Identity) {
+  return `
+    <section class="panel header-setup">
+      <h3>Set Entry Details</h3>
+      <form method="POST" action="/api/entries/${entry.id}/header" class="stack-form">
+        <div class="form-grid-3">
+          <label>Course ID<input name="course_id" required placeholder="e.g., ESOL-2024-001"></label>
+          <label>Qualification aim (UK code)<input name="qualification_aim" required placeholder="e.g., 603/4999/5"></label>
+          <label>Course name<input name="course_name" required placeholder="e.g., ESOL Entry Level 1"></label>
+        </div>
+        <input type="hidden" name="assessor_id" value="${identity.user!.id}">
+        <button type="submit">Set entry details (immutable after save)</button>
+      </form>
+    </section>
+  `;
+}
+
+function renderHeaderDisplay(header: EntryHeader) {
+  return `
+    <section class="panel meta-panel header-display">
+      <div class="header-row">
+        <strong>Course ID:</strong> ${escapeHtml(header.course_id)}
+        <strong>Qualification:</strong> ${escapeHtml(header.qualification_aim)}
+        <strong>Course:</strong> ${escapeHtml(header.course_name)}
+      </div>
+      <div class="header-row roles">
+        ${header.assessor_date ? `<span class="role-badge assessor">Assessor completed: ${escapeHtml(header.assessor_date)}</span>` : ""}
+        ${header.iqa_date ? `<span class="role-badge iqa">IQA completed: ${escapeHtml(header.iqa_date)}</span>` : ""}
+        ${header.eqa_date ? `<span class="role-badge eqa">EQA completed: ${escapeHtml(header.eqa_date)}</span>` : ""}
+      </div>
+    </section>
+  `;
+}
+
+function renderQuestionRow(q: TemplateQuestion, stageData: Record<Stage, StageData>, userStage: Stage, editable: boolean): string {
+  const assessorData = stageData.assess;
+  const iqaData = stageData.iqa;
+  const eqaData = stageData.eqa;
+
+  const canEditAssessor = Boolean(editable && userStage === "assess" && q.visible_to_assessor);
+  const canEditIqa = Boolean(editable && userStage === "iqa" && q.visible_to_iqa);
+  const canEditEqa = Boolean(editable && userStage === "eqa" && q.visible_to_eqa);
+
+  return `
+    <tr class="question-row">
+      <td class="question-cell">
+        <div class="question-text">${escapeHtml(q.question_text)} ${q.is_required ? '<span class="required">*</span>' : ""}</div>
+        ${q.text_entry_label ? `<div class="text-entry-label">${escapeHtml(q.text_entry_label)}</div>` : ""}
+      </td>
+      <td class="stage-cell assess-cell">
+        ${q.visible_to_assessor ? renderQuestionInput(q, "assess", assessorData, canEditAssessor) : "—"}
+      </td>
+      <td class="stage-cell iqa-cell">
+        ${q.visible_to_iqa ? renderQuestionInput(q, "iqa", iqaData, canEditIqa) : "—"}
+      </td>
+      <td class="stage-cell eqa-cell">
+        ${q.visible_to_eqa ? renderQuestionInput(q, "eqa", eqaData, canEditEqa) : "—"}
+      </td>
+    </tr>
+  `;
+}
+
+function renderQuestionInput(q: TemplateQuestion, stage: Stage, data: StageData, editable: boolean): string {
+  const inputName = `q_${q.id}`;
+  const textEntryName = `text_${q.id}`;
+  const currentValue = data.answers[q.id] || "";
+  const textEntryValue = data.textEntries[q.id] || "";
+
+  if (!editable) {
+    // Read-only view
+    const displayValue = Array.isArray(currentValue) ? currentValue.join(", ") : currentValue;
+    return `
+      <div class="readonly-answer">${displayValue || "—"}</div>
+      ${q.has_text_entry ? `<div class="readonly-text">${escapeHtml(textEntryValue) || "—"}</div>` : ""}
+    `;
+  }
+
+  // Editable input based on question type
+  let inputHtml = "";
+
+  switch (q.question_type) {
+    case "yes_no":
+      inputHtml = `
+        <label><input type="radio" name="${inputName}" value="yes" ${currentValue === "yes" ? "checked" : ""}> Yes</label>
+        <label><input type="radio" name="${inputName}" value="no" ${currentValue === "no" ? "checked" : ""}> No</label>
+      `;
+      break;
+    case "single_choice":
+      inputHtml = (q.options || []).map(opt =>
+        `<label><input type="radio" name="${inputName}" value="${escapeHtml(opt.value)}" ${currentValue === opt.value ? "checked" : ""}> ${escapeHtml(opt.label)}</label>`
+      ).join("");
+      break;
+    case "multiple_choice":
+      const selectedValues = Array.isArray(currentValue) ? currentValue : currentValue ? [currentValue] : [];
+      inputHtml = (q.options || []).map(opt =>
+        `<label><input type="checkbox" name="${inputName}[]" value="${escapeHtml(opt.value)}" ${selectedValues.includes(opt.value) ? "checked" : ""}> ${escapeHtml(opt.label)}</label>`
+      ).join("");
+      break;
+    case "dropdown":
+      inputHtml = `
+        <select name="${inputName}">
+          <option value="">Select...</option>
+          ${(q.options || []).map(opt => `<option value="${escapeHtml(opt.value)}" ${currentValue === opt.value ? "selected" : ""}>${escapeHtml(opt.label)}</option>`).join("")}
+        </select>
+      `;
+      break;
+    case "textarea":
+      inputHtml = `<textarea name="${inputName}" rows="3" placeholder="Enter response...">${escapeHtml(currentValue as string)}</textarea>`;
+      break;
+    case "text":
+    case "currency":
+    default:
+      inputHtml = `<input type="text" name="${inputName}" value="${escapeHtml(currentValue as string)}" placeholder="Enter response...">`;
+      break;
+  }
+
+  // Add text entry field if configured
+  const textEntryHtml = q.has_text_entry
+    ? `<div class="text-entry"><label>${escapeHtml(q.text_entry_label || "Notes")}<input type="text" name="${textEntryName}" value="${escapeHtml(textEntryValue)}" placeholder="Enter details..."></label></div>`
+    : "";
+
+  return `<div class="question-input">${inputHtml}${textEntryHtml}</div>`;
+}
+
+function renderCommentCategory(cat: CommentCategory, comments: CommentWithCategory[], entryId: string, canAdd: boolean): string {
+  const catComments = comments.filter(c => c.category_id === cat.id);
+
+  return `
+    <div class="comment-category">
+      <h4>${escapeHtml(cat.name)}</h4>
+      ${cat.description ? `<p class="category-desc">${escapeHtml(cat.description)}</p>` : ""}
+      <div class="comments-list">
+        ${catComments.map(c => `
+          <div class="comment-item ${c.is_pinned ? "pinned" : ""}">
+            <div class="comment-meta">
+              <strong>${escapeHtml(c.email || "Unknown")}</strong>
+              <span>${escapeHtml(c.created_at)}</span>
+              ${c.is_pinned ? "📌" : ""}
+            </div>
+            <div class="comment-text">${escapeHtml(c.comment)}</div>
+          </div>
+        `).join("") || '<p class="empty">No comments yet</p>'}
+      </div>
+    </div>
+  `;
+}
+
+function renderNewCommentForm(entryId: string, categories: CommentCategory[]): string {
+  if (categories.length === 0) {
+    return `
+      <form method="POST" action="/api/entries/${entryId}/comments" class="comment-form">
+        <textarea name="comment" rows="3" placeholder="Add a comment..."></textarea>
+        <button type="submit">Add comment</button>
+      </form>
+    `;
+  }
+
+  return `
+    <form method="POST" action="/api/entries/${entryId}/comments" class="comment-form">
+      <select name="category_id">
+        <option value="">Select category...</option>
+        ${categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("")}
+      </select>
+      <textarea name="comment" rows="3" placeholder="Add a comment..."></textarea>
+      <button type="submit">Add comment</button>
+    </form>
+  `;
+}
+
+function renderAttachmentsSection(attachments: { id: string; file_name: string; file_size: number; content_type: string; description: string | null; created_at: string }[], entryId: string, canUpload: boolean): string {
+  return `
+    <section class="panel attachments-panel">
+      <h3>Attachments</h3>
+      <div class="attachments-list">
+        ${attachments.map(a => `
+          <div class="attachment-item">
+            <span class="file-name">${escapeHtml(a.file_name)}</span>
+            <span class="file-size">${(a.file_size / 1024).toFixed(1)} KB</span>
+            ${a.description ? `<span class="file-desc">${escapeHtml(a.description)}</span>` : ""}
+          </div>
+        `).join("") || '<p class="empty">No attachments</p>'}
+      </div>
+      ${canUpload ? `
+        <form method="POST" action="/api/entries/${entryId}/attachments" enctype="multipart/form-data" class="upload-form">
+          <input type="file" name="file" required>
+          <input type="text" name="description" placeholder="File description (optional)">
+          <button type="submit">Upload file</button>
+        </form>
+      ` : ''}
+    </section>
+  `;
+}
+
+function parseStageData(data: string | null): StageData {
+  if (!data) return { answers: {}, textEntries: {}, agreed_with_previous: 0, marked_complete_at: null, marked_complete_by: null };
+  try {
+    const parsed = JSON.parse(data) as StageData;
+    return {
+      answers: parsed.answers || {},
+      textEntries: parsed.textEntries || {},
+      agreed_with_previous: parsed.agreed_with_previous || 0,
+      marked_complete_at: parsed.marked_complete_at || null,
+      marked_complete_by: parsed.marked_complete_by || null,
+    };
+  } catch {
+    return { answers: {}, textEntries: {}, agreed_with_previous: 0, marked_complete_at: null, marked_complete_by: null };
+  }
 }
 
 function renderComment(comment: CommentRecord) {
@@ -575,7 +1297,7 @@ function safeMicrosoftError(value: string): string { try { const parsed = JSON.p
 function htmlResponse(body: string, status = 200) { return new Response(body, { status, headers: htmlHeaders }); }
 
 function pageShell(title: string, body: string) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)} | ESOLQA</title><style>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)} | ESOLQA</title><link rel="icon" type="image/png" href="/favicon.png"><style>
     :root{--bg:#eef4ff;--panel:#fff;--text:#14213d;--muted:#637083;--primary:#4f00d8;--primary-dark:#35009a;--border:#d9e2f1;--success:#e9f8ef;--warn:#fff7e6;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,#dbe9ff,transparent 34rem),var(--bg);color:var(--text);min-height:100vh}a{color:inherit;text-decoration:none}button,.small-action,.primary-action{border:0;border-radius:999px;background:var(--primary);color:#fff;font-weight:800;padding:.8rem 1.1rem;cursor:pointer;display:inline-flex;justify-content:center}.primary-action{width:100%;margin:1rem 0}.small-action{width:auto}.primary-action:hover,button:hover,.small-action:hover{background:var(--primary-dark)}input,select,textarea{width:100%;border:1px solid var(--border);border-radius:.9rem;padding:.75rem;font:inherit}textarea{resize:vertical}.auth-shell{min-height:100vh;display:grid;place-items:center;padding:2rem}.auth-card{width:min(100%,30rem);background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:2rem;box-shadow:0 1.5rem 5rem rgba(20,33,61,.12);padding:2.5rem;text-align:center}.brand-mark{width:3rem;height:3rem;display:inline-grid;place-items:center;border-radius:1rem;background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;font-weight:800}.eyebrow{margin:0 0 .5rem;color:var(--primary);font-size:.75rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}h1,h2,p{margin-top:0}h1{font-size:clamp(2rem,5vw,3rem);line-height:1;margin-bottom:1rem}.lede,.hint{color:var(--muted);line-height:1.6}.dashboard-shell{display:grid;grid-template-columns:17rem 1fr;min-height:100vh}.sidebar{background:#0f1b33;color:#fff;padding:1.5rem}.sidebar-brand{display:flex;align-items:center;gap:.8rem;margin-bottom:2rem}.sidebar-brand span{display:block;color:#9fb0cc;font-size:.85rem}nav{display:grid;gap:.4rem}nav a{padding:.8rem 1rem;border-radius:.9rem;color:#c8d3e7}nav a:hover,.nav-active{background:rgba(255,255,255,.1);color:#fff}.content{padding:2rem}.topbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.5rem}.profile-pill{background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:.7rem 1rem;color:var(--muted);font-weight:700}.logout-link{color:var(--primary);font-weight:800}.panel{background:var(--panel);border:1px solid var(--border);border-radius:1.5rem;box-shadow:0 1rem 3rem rgba(20,33,61,.08);padding:1.5rem;margin-bottom:1.5rem}.toolbar{display:flex;justify-content:space-between;gap:1rem;align-items:center}.search-form{display:flex;gap:.8rem;flex:1}.actions-row{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap}.grid-two{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.list-stack{display:grid;gap:.8rem}.list-card{display:grid;gap:.35rem;border:1px solid var(--border);border-radius:1rem;padding:1rem}.list-card span,.list-card small{color:var(--muted)}.empty-state{border:1px dashed var(--border);border-radius:1rem;padding:1.5rem;text-align:center;color:var(--muted)}.form-grid{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:1rem;align-items:end}.stack-form{display:grid;gap:1rem}.narrow-panel{max-width:54rem}.modal-like{margin:auto}.user-table{display:grid;gap:.8rem}.user-row{display:flex;justify-content:space-between;gap:1rem;align-items:center;border-bottom:1px solid var(--border);padding:.8rem 0}.user-row span{display:block;color:var(--muted)}.user-row form{display:flex;gap:.5rem}.meta-panel{display:flex;gap:1rem;flex-wrap:wrap}.checklist-panel{overflow:auto}.checklist-table{width:100%;border-collapse:collapse}.checklist-table th,.checklist-table td{border:1px solid var(--border);padding:.8rem;vertical-align:top}.checklist-table th{background:#f6f8fc;text-align:left}.readonly-cell{min-height:3rem;color:var(--muted);white-space:pre-wrap}.comment-form{display:grid;gap:.8rem;margin-top:1rem}@media(max-width:900px){.dashboard-shell,.grid-two{grid-template-columns:1fr}.toolbar,.topbar,.form-grid{display:grid;grid-template-columns:1fr}.search-form{display:grid}.user-row{display:grid}}
   </style></head><body>${body}</body></html>`;
 }
