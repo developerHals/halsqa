@@ -603,14 +603,20 @@ async function addTemplateQuestion(request: Request, env: Env, identity: Identit
 
   if (!questionText) return json({ error: "Question text is required" }, 400);
 
-  const validTypes: QuestionType[] = ["single_choice", "multiple_choice", "dropdown", "text", "textarea", "date", "currency", "ranking", "likert", "yes_no", "file_upload"];
-  if (!validTypes.includes(questionType)) return json({ error: "Invalid question type" }, 400);
+  const validTypes = ["single_choice", "multiple_choice", "dropdown", "rag", "text", "textarea", "date", "currency", "ranking", "likert", "yes_no", "file_upload", "rating"];
+  if (!validTypes.includes(questionType)) return json({ error: "Invalid question type: " + questionType }, 400);
+
+  // options field arrives as newline-separated plain text from textarea; convert to JSON array
+  const rawOptions = String(body.get("options") ?? "").trim();
+  const parsedOptions = rawOptions
+    ? JSON.stringify(rawOptions.split("\n").filter(Boolean).map((o, i) => ({ id: `opt_${i}`, label: o.trim(), value: o.trim() })))
+    : null;
 
   await env.esol_marking_db.prepare(
     "INSERT INTO template_questions (id, template_id, question_text, question_type, options, has_text_entry, text_entry_label, is_required, sort_order, visible_to_assessor, visible_to_iqa, visible_to_eqa) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  ).bind(crypto.randomUUID(), templateId, questionText, questionType, optionsJson, hasTextEntry, textEntryLabel, isRequired, sortOrder, visibleToAssessor, visibleToIqa, visibleToEqa).run();
+  ).bind(crypto.randomUUID(), templateId, questionText, questionType, parsedOptions, hasTextEntry, textEntryLabel, isRequired, sortOrder, visibleToAssessor, visibleToIqa, visibleToEqa).run();
 
-  return json({ success: true });
+  return Response.redirect(new URL(`/forms/builder/${templateId}`, request.url).toString(), 303);
 }
 
 async function deleteTemplateQuestion(env: Env, identity: Identity, templateId?: string, questionId?: string): Promise<Response> {
@@ -635,7 +641,7 @@ async function addCommentCategory(request: Request, env: Env, identity: Identity
     "INSERT INTO template_comment_categories (id, template_id, name, description, sort_order) VALUES (?, ?, ?, ?, ?)"
   ).bind(crypto.randomUUID(), templateId, name, description, sortOrder).run();
 
-  return json({ success: true });
+  return Response.redirect(new URL(`/forms/builder/${templateId}`, request.url).toString(), 303);
 }
 
 async function updateTemplate(request: Request, env: Env, identity: Identity, templateId?: string): Promise<Response> {
@@ -912,6 +918,7 @@ function renderTemplateBuilder(identity: Identity, template: TemplateWithQuestio
             <form method="POST" action="/api/templates/${template.id}/update" class="header-form">
               <input type="text" name="title" class="form-title-input" value="${escapeHtml(template.title)}" placeholder="Untitled form">
               <textarea name="description" class="form-desc-input" rows="2" placeholder="Form description">${escapeHtml(template.description || "")}</textarea>
+              <button type="submit" class="secondary-btn" style="margin-top:0.75rem">💾 Save title &amp; description</button>
             </form>
           </div>
 
