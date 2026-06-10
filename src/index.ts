@@ -941,102 +941,12 @@ function renderTemplateBuilder(identity: Identity, template: TemplateWithQuestio
             ${template.questions.map((q, idx) => renderQuestionCard(q, idx)).join('')}
           </div>
 
-          <!-- Add Question Button (MS Forms style) -->
+          <!-- Add Question Button -->
           <div class="add-question-wrapper">
-            <button type="button" class="add-question-btn" onclick="document.getElementById('question-type-picker').classList.toggle('hidden')">
+            <button type="button" class="add-question-btn" onclick="openTypePicker()">
               <span class="plus-icon">+</span>
               <span>Add new</span>
             </button>
-            
-            <!-- Question Type Picker (MS Forms style grid) -->
-            <div id="question-type-picker" class="question-type-picker hidden">
-              <div class="picker-header">
-                <span>Select question type</span>
-                <button type="button" class="close-picker" onclick="document.getElementById('question-type-picker').classList.add('hidden')">✕</button>
-              </div>
-              <div class="picker-grid">
-                ${questionTypes.map(t => `
-                  <button type="button" class="type-option" onclick="selectQuestionType('${t.type}', '${template.id}')">
-                    <span class="type-icon">${t.icon}</span>
-                    <span class="type-label">${t.label}</span>
-                    <span class="type-desc">${t.desc}</span>
-                  </button>
-                `).join('')}
-              </div>
-            </div>
-          </div>
-
-          <!-- Question Form (shown when type selected) -->
-          <div id="question-form-container" class="form-section-card hidden">
-            <form method="POST" action="/api/templates/${template.id}/questions" class="question-form" id="add-question-form">
-              <input type="hidden" name="question_type" id="selected-question-type">
-              
-              <div class="form-group">
-                <label>Question <span class="req">*</span></label>
-                <input type="text" name="question_text" required placeholder="Enter your question" class="question-input">
-              </div>
-
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Type</label>
-                  <select name="question_type_display" id="question-type-display" disabled class="type-select">
-                    <option>Choice</option>
-                  </select>
-                </div>
-                <div class="form-group checkbox-group">
-                  <label class="checkbox-label">
-                    <input type="checkbox" name="is_required" value="1" checked>
-                    <span>Required</span>
-                  </label>
-                </div>
-              </div>
-
-              <!-- Options for choice-based types -->
-              <div id="options-section" class="form-group hidden">
-                <label>Options (one per line)</label>
-                <textarea name="options" rows="4" placeholder="Option 1&#10;Option 2&#10;Option 3" class="options-textarea"></textarea>
-                <p class="field-hint">For single/multiple choice and dropdown questions</p>
-              </div>
-
-              <!-- Text entry option -->
-              <div class="form-group checkbox-group">
-                <label class="checkbox-label">
-                  <input type="checkbox" name="has_text_entry" value="1" id="has-text-entry">
-                  <span>Add text field below question</span>
-                </label>
-              </div>
-
-              <div id="text-entry-label-group" class="form-group hidden">
-                <label>Text field label</label>
-                <input type="text" name="text_entry_label" placeholder="e.g., Student sentence, Additional notes...">
-              </div>
-
-              <!-- Role Visibility -->
-              <div class="form-group">
-                <label>Visible to roles</label>
-                <div class="role-checkboxes">
-                  <label class="checkbox-label">
-                    <input type="checkbox" name="visible_to_assessor" value="1" checked>
-                    <span>Assessor</span>
-                  </label>
-                  <label class="checkbox-label">
-                    <input type="checkbox" name="visible_to_iqa" value="1" checked>
-                    <span>IQA</span>
-                  </label>
-                  <label class="checkbox-label">
-                    <input type="checkbox" name="visible_to_eqa" value="1" checked>
-                    <span>EQA</span>
-                  </label>
-                </div>
-              </div>
-
-              <input type="hidden" name="sort_order" value="${template.questions.length}">
-
-              <div class="form-actions">
-                <button type="submit" class="primary-btn">Add question</button>
-                <button type="button" class="secondary-btn" onclick="cancelQuestionAdd()">Cancel</button>
-              </div>
-            </form>
           </div>
 
           <!-- Comment Categories Section -->
@@ -1068,47 +978,121 @@ function renderTemplateBuilder(identity: Identity, template: TemplateWithQuestio
       </section>
     </main>
 
+    <!-- Modal overlay: type picker + question form (outside all page forms) -->
+    <div id="qmodal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:14px;width:min(680px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.2)">
+
+        <!-- Step 1: Type picker -->
+        <div id="qstep-picker" style="padding:1.5rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+            <strong style="font-size:1.1rem">Select question type</strong>
+            <button type="button" onclick="closeQModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#666">✕</button>
+          </div>
+          <div class="picker-grid">
+            ${questionTypes.map(t => `
+              <button type="button" class="type-option" onclick="selectQType('${t.type}')">
+                <span class="type-icon">${t.icon}</span>
+                <span class="type-label">${t.label}</span>
+                <span class="type-desc">${t.desc}</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Step 2: Question form -->
+        <div id="qstep-form" style="display:none;padding:1.5rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+            <strong style="font-size:1.1rem">Add question — <span id="qtype-label"></span></strong>
+            <button type="button" onclick="closeQModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#666">✕</button>
+          </div>
+          <form method="POST" action="/api/templates/${template.id}/questions" id="add-question-form">
+            <input type="hidden" name="question_type" id="selected-question-type">
+            <input type="hidden" name="sort_order" value="${template.questions.length}">
+
+            <div class="form-group">
+              <label style="display:block;font-weight:600;margin-bottom:0.4rem">Question text <span style="color:#dc2626">*</span></label>
+              <input type="text" name="question_text" required placeholder="Enter your question" style="width:100%">
+            </div>
+
+            <div id="qoptions-section" style="display:none" class="form-group">
+              <label style="display:block;font-weight:600;margin-bottom:0.4rem">Options (one per line)</label>
+              <textarea name="options" rows="4" id="qoptions-textarea" placeholder="Option A&#10;Option B&#10;Option C" style="width:100%"></textarea>
+            </div>
+
+            <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;margin-top:0.75rem">
+              <input type="checkbox" name="is_required" value="1" id="q-is-required" checked>
+              <label for="q-is-required" style="margin:0;font-weight:500">Required</label>
+            </div>
+
+            <div class="form-group" style="display:flex;align-items:center;gap:0.5rem">
+              <input type="checkbox" name="has_text_entry" value="1" id="q-has-text" onchange="document.getElementById('q-text-label-wrap').style.display=this.checked?'block':'none'">
+              <label for="q-has-text" style="margin:0;font-weight:500">Add text field below question</label>
+            </div>
+            <div id="q-text-label-wrap" style="display:none" class="form-group">
+              <label style="display:block;font-weight:600;margin-bottom:0.4rem">Text field label</label>
+              <input type="text" name="text_entry_label" placeholder="e.g., Additional comments" style="width:100%">
+            </div>
+
+            <div class="form-group">
+              <label style="display:block;font-weight:600;margin-bottom:0.4rem">Visible to roles</label>
+              <div style="display:flex;gap:1.25rem">
+                <label style="display:flex;gap:0.4rem;align-items:center"><input type="checkbox" name="visible_to_assessor" value="1" checked> Assessor</label>
+                <label style="display:flex;gap:0.4rem;align-items:center"><input type="checkbox" name="visible_to_iqa" value="1" checked> IQA</label>
+                <label style="display:flex;gap:0.4rem;align-items:center"><input type="checkbox" name="visible_to_eqa" value="1" checked> EQA</label>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:0.75rem;margin-top:1.25rem">
+              <button type="button" onclick="showQPicker()" style="flex:0 0 auto;background:#f1f5f9;border:none;border-radius:8px;padding:0.65rem 1.25rem;cursor:pointer;font-weight:600">← Back</button>
+              <button type="submit" style="flex:1;background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff;border:none;border-radius:8px;padding:0.65rem 1.25rem;cursor:pointer;font-weight:700;font-size:1rem">Add question</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <script>
-      // Show/hide text entry label based on checkbox
-      document.getElementById('has-text-entry')?.addEventListener('change', function() {
-        document.getElementById('text-entry-label-group').classList.toggle('hidden', !this.checked);
-      });
-
-      function selectQuestionType(type, templateId) {
-        document.getElementById('question-type-picker').classList.add('hidden');
-        document.getElementById('question-form-container').classList.remove('hidden');
-        document.getElementById('selected-question-type').value = type;
-        
-        // Update display
-        const typeNames = {
-          'single_choice': 'Single Choice',
-          'multiple_choice': 'Multiple Choice',
-          'dropdown': 'Dropdown',
-          'rag': 'RAG Rating (Green/Amber/Red)',
-          'text': 'Text',
-          'rating': 'Rating',
-          'date': 'Date',
-          'ranking': 'Ranking',
-          'likert': 'Likert Scale',
-          'yes_no': 'Yes/No',
-          'file_upload': 'File Upload'
+      function openTypePicker() {
+        var el = document.getElementById('qmodal-overlay');
+        if (el) { el.style.display = 'flex'; showQPicker(); }
+      }
+      function closeQModal() {
+        var el = document.getElementById('qmodal-overlay');
+        if (el) el.style.display = 'none';
+        var f = document.getElementById('add-question-form');
+        if (f) f.reset();
+        var tw = document.getElementById('q-text-label-wrap');
+        if (tw) tw.style.display = 'none';
+      }
+      function showQPicker() {
+        document.getElementById('qstep-picker').style.display = 'block';
+        document.getElementById('qstep-form').style.display = 'none';
+      }
+      function selectQType(type) {
+        var typeNames = {
+          single_choice:'Single Choice', multiple_choice:'Multiple Choice',
+          dropdown:'Dropdown', rag:'RAG Rating', text:'Text', rating:'Rating',
+          date:'Date', ranking:'Ranking', likert:'Likert Scale',
+          yes_no:'Yes/No', file_upload:'File Upload'
         };
-        document.getElementById('question-type-display').innerHTML = '<option>' + (typeNames[type] || type) + '</option>';
-        
-        // Show options section for choice-based types
-        const needsOptions = ['single_choice', 'multiple_choice', 'dropdown', 'yes_no'].includes(type);
-        document.getElementById('options-section').classList.toggle('hidden', !needsOptions);
-        
-        // Pre-fill RAG options
+        document.getElementById('selected-question-type').value = type;
+        document.getElementById('qtype-label').textContent = typeNames[type] || type;
+        var needsOptions = ['single_choice','multiple_choice','dropdown','yes_no','rag'].indexOf(type) !== -1;
+        document.getElementById('qoptions-section').style.display = needsOptions ? 'block' : 'none';
         if (type === 'rag') {
-          document.querySelector('[name="options"]').value = 'Green\nAmber\nRed';
+          document.getElementById('qoptions-textarea').value = 'Green\nAmber\nRed';
         }
+        document.getElementById('qstep-picker').style.display = 'none';
+        document.getElementById('qstep-form').style.display = 'block';
       }
-
-      function cancelQuestionAdd() {
-        document.getElementById('question-form-container').classList.add('hidden');
-        document.getElementById('add-question-form').reset();
-      }
+      document.addEventListener('DOMContentLoaded', function() {
+        var overlay = document.getElementById('qmodal-overlay');
+        if (overlay) {
+          overlay.addEventListener('click', function(e) {
+            if (e.target === this) closeQModal();
+          });
+        }
+      });
     </script>
   `);
 }
