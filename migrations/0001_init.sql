@@ -24,7 +24,7 @@ CREATE TABLE form_templates (
 CREATE TABLE form_entries (
     id TEXT PRIMARY KEY,
     student_id TEXT NOT NULL REFERENCES students(id),
-    template_id TEXT NOT NULL REFERENCES form_templates(id),
+    template_id TEXT NOT NULL REFERENCES form_templates(gggg),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by TEXT REFERENCES users(id),
     assessor_id TEXT REFERENCES users(id),

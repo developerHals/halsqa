@@ -203,6 +203,7 @@ export default {
     if (url.pathname === "/dashboard") return renderDashboard(request, env, identity);
     if (url.pathname === "/users") return renderUsersPage(env, identity);
     if (url.pathname === "/forms/new") return renderCreateTemplatePage(identity);
+    if (url.pathname.startsWith("/forms/builder/")) return renderTemplateBuilderPage(env, identity, url.pathname.split("/")[3]);
     if (url.pathname === "/entries/new") return renderNewEntryPage(env, identity);
     if (url.pathname.startsWith("/entries/")) return renderEntryPage(env, identity, url.pathname.split("/")[2]);
 
@@ -247,6 +248,16 @@ async function renderUsersPage(env: Env, identity: Identity): Promise<Response> 
 async function renderCreateTemplatePage(identity: Identity): Promise<Response> {
   if (!canCreateForms(identity.user!)) return htmlResponse(renderForbiddenPage(identity), 403);
   return htmlResponse(renderTemplateForm(identity));
+}
+
+async function renderTemplateBuilderPage(env: Env, identity: Identity, templateId?: string): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return htmlResponse(renderForbiddenPage(identity), 403);
+  if (!templateId) return htmlResponse(renderNotFoundPage(), 404);
+
+  const template = await getTemplateWithQuestions(env, templateId);
+  if (!template) return htmlResponse(renderNotFoundPage(), 404);
+
+  return htmlResponse(renderTemplateBuilder(identity, template));
 }
 
 async function renderNewEntryPage(env: Env, identity: Identity): Promise<Response> {
@@ -392,12 +403,14 @@ async function createTemplate(request: Request, env: Env, identity: Identity): P
   const body = await request.formData();
   const title = String(body.get("title") ?? "").trim();
   const description = String(body.get("description") ?? "").trim();
-  const rows = String(body.get("items") ?? "").split("\n").map((text) => text.trim()).filter(Boolean).map((text) => ({ id: crypto.randomUUID(), text }));
 
-  if (!title || rows.length === 0) return json({ error: "Title and checklist rows are required" }, 400);
+  if (!title) return json({ error: "Title is required" }, 400);
 
-  await env.esol_marking_db.prepare("INSERT INTO form_templates (id, title, description, structure, created_by) VALUES (?, ?, ?, ?, ?)").bind(crypto.randomUUID(), title, description, JSON.stringify({ items: rows }), identity.user!.id).run();
-  return Response.redirect(new URL("/dashboard", request.url).toString(), 303);
+  const templateId = crypto.randomUUID();
+  await env.esol_marking_db.prepare("INSERT INTO form_templates (id, title, description, structure, created_by) VALUES (?, ?, ?, ?, ?)").bind(templateId, title, description, JSON.stringify({ version: 2, modular: true }), identity.user!.id).run();
+
+  // Redirect to template builder to add questions
+  return Response.redirect(new URL(`/forms/builder/${templateId}`, request.url).toString(), 303);
 }
 
 async function createEntry(request: Request, env: Env, identity: Identity): Promise<Response> {
