@@ -299,6 +299,41 @@ export default {
       return renderLWTemplateBuilder(request, env, identity);
     }
 
+    // Learning Walk Entry Creation - Template Selector
+    if (url.pathname === "/learning-walks/entries/new") {
+      return renderLWEntryTemplateSelector(request, env, identity);
+    }
+
+    // Learning Walk Entry Creation Form
+    if (url.pathname === "/learning-walks/entries/create") {
+      return renderLWEntryForm(request, env, identity);
+    }
+
+    // Learning Walk Entry View Page
+    if (url.pathname.match(/^\/learning-walks\/entries\/[^/]+$/)) {
+      return renderLWEntryView(request, env, identity, url.pathname.split("/")[3]);
+    }
+
+    // Learning Walk Entry API
+    if (url.pathname === "/api/lw/entries" && request.method === "POST") {
+      return saveLWEntry(request, env, identity);
+    }
+
+    // Learning Walk Entry Comment API
+    if (url.pathname.match(/^\/api\/lw\/entries\/[^/]+\/comments$/) && request.method === "POST") {
+      return addLWEntryComment(request, env, identity, url.pathname.split("/")[4]);
+    }
+
+    // Learning Walk Entry Update API (for IQA editing)
+    if (url.pathname.match(/^\/api\/lw\/entries\/[^/]+\/update$/) && request.method === "POST") {
+      return updateLWEntry(request, env, identity, url.pathname.split("/")[4]);
+    }
+
+    // Learning Walk Entry Complete API (for admin)
+    if (url.pathname.match(/^\/api\/lw\/entries\/[^/]+\/complete$/) && request.method === "POST") {
+      return completeLWEntry(request, env, identity, url.pathname.split("/")[4]);
+    }
+
     // Learning Walk Template API
     if (url.pathname === "/api/lw/templates" && request.method === "POST") {
       return saveLWTemplate(request, env, identity);
@@ -601,6 +636,15 @@ async function renderLWDashboard(request: Request, env: Env, identity: Identity)
     getLWNotifications(env, user.id),
   ]);
   return htmlResponse(renderLWDashboardPage(identity, entries, templates, notifications, search));
+}
+
+async function renderLWEntryTemplateSelector(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!canCreateForms(identity.user!)) {
+    return new Response(null, { status: 302, headers: { Location: "/learning-walks" } });
+  }
+
+  const templates = await getLWTemplates(env);
+  return htmlResponse(renderLWEntryTemplateSelectorPage(identity, templates));
 }
 
 // ─── Learning Walks: renderers ─────────────────────────────────────────────────
@@ -1116,6 +1160,361 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
   `);
 }
 
+function renderLWEntryTemplateSelectorPage(identity: Identity, templates: LWTemplateRecord[]): string {
+  const templatesHtml = templates.length > 0
+    ? templates.map(t => `
+        <div class="lw-selector-template-card" data-template-id="${t.id}" data-template-name="${escapeHtml(t.title).toLowerCase()}" onclick="selectTemplate('${t.id}')">
+          <div class="lw-selector-template-icon">📋</div>
+          <div class="lw-selector-template-info">
+            <strong>${escapeHtml(t.title)}</strong>
+            <span>${escapeHtml(t.description ?? "No description")}</span>
+          </div>
+          <div class="lw-selector-template-arrow">→</div>
+        </div>
+      `).join("")
+    : `<div class="lw-selector-empty">No active templates available. Create a template first.</div>`;
+
+  return pageShell("Select Template", `
+    <main class="lwfb-popup-overlay" id="templateSelectorPopup">
+      <div class="lwfb-popup-container" style="max-width:600px;">
+        <div class="lwfb-popup-header">
+          <div>
+            <p class="lwfb-eyebrow">New Learning Walk</p>
+            <h1 class="lwfb-title">Select a Template</h1>
+          </div>
+          <button type="button" class="lwfb-close-btn" onclick="closeSelector()" title="Close">×</button>
+        </div>
+
+        <div class="lwfb-popup-content">
+          <!-- Search Bar -->
+          <div class="lw-selector-search-wrapper">
+            <input type="text" id="templateSearch" class="lw-selector-search" placeholder="🔍 Search templates by name..." oninput="filterTemplates(this.value)">
+          </div>
+
+          <!-- Template List -->
+          <div id="templateList" class="lw-selector-list">
+            ${templatesHtml}
+          </div>
+
+          <!-- No Results Message -->
+          <div id="noResultsMsg" class="lw-selector-no-results hidden">
+            No templates match your search.
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="lwfb-popup-footer">
+          <button type="button" class="lwfb-secondary-btn" onclick="closeSelector()">Cancel</button>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      function closeSelector() {
+        window.location.href = '/learning-walks';
+      }
+
+      function filterTemplates(searchTerm) {
+        const term = searchTerm.toLowerCase().trim();
+        const cards = document.querySelectorAll('.lw-selector-template-card');
+        const noResults = document.getElementById('noResultsMsg');
+        let visibleCount = 0;
+
+        cards.forEach(card => {
+          const name = card.dataset.templateName;
+          const isMatch = name.includes(term);
+          card.style.display = isMatch ? 'flex' : 'none';
+          if (isMatch) visibleCount++;
+        });
+
+        noResults.classList.toggle('hidden', visibleCount > 0);
+      }
+
+      function selectTemplate(templateId) {
+        window.location.href = '/learning-walks/entries/create?templateId=' + encodeURIComponent(templateId);
+      }
+    </script>
+  `);
+}
+
+// ─── Learning Walk Entry Form ───────────────────────────────────────────────
+
+function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuestions, users: UserRecord[]): string {
+  const user = identity.user!;
+  const assessors = users.filter(u => u.role === "assessor" || u.role === "admin" || u.role === "superuser");
+  const iqas = users.filter(u => u.role === "iqa" || u.role === "admin" || u.role === "superuser");
+
+  // Render fixed header fields
+  const fixedFieldsHtml = `
+    <div class="lw-entry-section">
+      <h3 class="lw-entry-section-title">Course Information</h3>
+      <div class="lw-entry-grid">
+        <div class="lw-entry-field">
+          <label class="lw-entry-label" for="course_id">Course ID *</label>
+          <input type="text" id="course_id" name="course_id" class="lw-entry-input" required placeholder="e.g., ESOL-2024-001">
+        </div>
+        <div class="lw-entry-field">
+          <label class="lw-entry-label" for="course_name">Course Name *</label>
+          <input type="text" id="course_name" name="course_name" class="lw-entry-input" required placeholder="e.g., Intermediate English Level 2">
+        </div>
+      </div>
+    </div>
+
+    <div class="lw-entry-section">
+      <h3 class="lw-entry-section-title">Staff Allocation</h3>
+      <div class="lw-entry-grid">
+        <div class="lw-entry-field">
+          <label class="lw-entry-label" for="assessor_name">Assessor Name *</label>
+          <select id="assessor_name" name="assessor_name" class="lw-entry-select" required>
+            <option value="">Select Assessor</option>
+            ${assessors.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="lw-entry-field">
+          <label class="lw-entry-label" for="iqa_name">IQA Name *</label>
+          <select id="iqa_name" name="iqa_name" class="lw-entry-select" required>
+            <option value="">Select IQA</option>
+            ${iqas.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="lw-entry-section">
+      <h3 class="lw-entry-section-title">Schedule</h3>
+      <div class="lw-entry-grid">
+        <div class="lw-entry-field">
+          <label class="lw-entry-label" for="planned_date">Planned Date *</label>
+          <input type="date" id="planned_date" name="planned_date" class="lw-entry-input" required>
+        </div>
+        <div class="lw-entry-field">
+          <label class="lw-entry-label" for="due_date">Due Date</label>
+          <input type="date" id="due_date" name="due_date" class="lw-entry-input">
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Render dynamic questions
+  const questionsHtml = template.questions.map((q, index) => {
+    const answerId = `answer_${q.id}`;
+    const requiredAttr = q.is_required ? 'required' : '';
+    const requiredLabel = q.is_required ? ' <span class="lw-entry-required">*</span>' : '';
+
+    let inputHtml = '';
+
+    switch (q.question_type) {
+      case 'yes_no':
+        inputHtml = `
+          <div class="lw-entry-radio-group">
+            <label class="lw-entry-radio"><input type="radio" name="${answerId}" value="yes" ${requiredAttr}> Yes</label>
+            <label class="lw-entry-radio"><input type="radio" name="${answerId}" value="no" ${requiredAttr}> No</label>
+          </div>`;
+        break;
+      case 'rag':
+        inputHtml = `
+          <div class="lw-entry-rag-group">
+            <label class="lw-entry-rag green"><input type="radio" name="${answerId}" value="green" ${requiredAttr}> Green</label>
+            <label class="lw-entry-rag amber"><input type="radio" name="${answerId}" value="amber" ${requiredAttr}> Amber</label>
+            <label class="lw-entry-rag red"><input type="radio" name="${answerId}" value="red" ${requiredAttr}> Red</label>
+          </div>`;
+        break;
+      case 'ggaw':
+        inputHtml = `
+          <div class="lw-entry-ggaw-group">
+            <label class="lw-entry-ggaw gold"><input type="radio" name="${answerId}" value="gold" ${requiredAttr}> Gold</label>
+            <label class="lw-entry-ggaw green"><input type="radio" name="${answerId}" value="green" ${requiredAttr}> Green</label>
+            <label class="lw-entry-ggaw amber"><input type="radio" name="${answerId}" value="amber" ${requiredAttr}> Amber</label>
+            <label class="lw-entry-ggaw white"><input type="radio" name="${answerId}" value="white" ${requiredAttr}> White</label>
+          </div>`;
+        break;
+      case 'single_choice':
+        const scOptions = q.options?.map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join('') || '';
+        inputHtml = `<select name="${answerId}" class="lw-entry-select" ${requiredAttr}><option value="">Select...</option>${scOptions}</select>`;
+        break;
+      case 'multiple_choice':
+        const mcOptions = q.options?.map(o => `
+          <label class="lw-entry-checkbox"><input type="checkbox" name="${answerId}[]" value="${escapeHtml(o.value)}"> ${escapeHtml(o.label)}</label>
+        `).join('') || '';
+        inputHtml = `<div class="lw-entry-checkbox-group">${mcOptions}</div>`;
+        break;
+      case 'dropdown':
+        const ddOptions = q.options?.map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join('') || '';
+        inputHtml = `<select name="${answerId}" class="lw-entry-select" ${requiredAttr}><option value="">Select...</option>${ddOptions}</select>`;
+        break;
+      case 'text':
+        inputHtml = `<input type="text" name="${answerId}" class="lw-entry-input" ${requiredAttr} placeholder="Enter answer...">`;
+        break;
+      case 'textarea':
+        inputHtml = `<textarea name="${answerId}" class="lw-entry-textarea" ${requiredAttr} rows="4" placeholder="Enter detailed answer..."></textarea>`;
+        break;
+      case 'date':
+        inputHtml = `<input type="date" name="${answerId}" class="lw-entry-input" ${requiredAttr}>`;
+        break;
+      case 'number':
+        inputHtml = `<input type="number" name="${answerId}" class="lw-entry-input" ${requiredAttr} placeholder="Enter number...">`;
+        break;
+      case 'rating':
+        inputHtml = `
+          <div class="lw-entry-rating">
+            ${[0, 1, 2, 3, 4, 5].map(n => `
+              <label class="lw-entry-rating-star"><input type="radio" name="${answerId}" value="${n}" ${requiredAttr}> ${n}</label>
+            `).join('')}
+          </div>`;
+        break;
+      case 'ranking':
+        const rankOptions = q.options?.map((o, i) => `
+          <div class="lw-entry-rank-item">
+            <span class="lw-entry-rank-label">${escapeHtml(o.label)}</span>
+            <input type="number" name="${answerId}_${i}" class="lw-entry-rank-input" min="1" placeholder="Rank">
+          </div>
+        `).join('') || '';
+        inputHtml = `<div class="lw-entry-rank-group">${rankOptions}</div>`;
+        break;
+      default:
+        inputHtml = `<input type="text" name="${answerId}" class="lw-entry-input" placeholder="Enter answer...">`;
+    }
+
+    return `
+      <div class="lw-entry-question" data-question-id="${q.id}" data-question-type="${q.question_type}">
+        <label class="lw-entry-question-label">${index + 1}. ${escapeHtml(q.question_text)}${requiredLabel}</label>
+        <div class="lw-entry-question-input">${inputHtml}</div>
+      </div>
+    `;
+  }).join('');
+
+  return pageShell(`New Learning Walk - ${escapeHtml(template.title)}`, `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "learning-walks")}
+      <section class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">New Learning Walk</p>
+            <h1>${escapeHtml(template.title)}</h1>
+          </div>
+          <div style="display:flex;align-items:center;gap:1rem">
+            <div class="profile-pill">${escapeHtml(identity.email)}</div>
+            <a class="logout-link" href="/logout">Sign out</a>
+          </div>
+        </header>
+
+        <form id="entryForm" class="lw-entry-form" onsubmit="return submitEntry(event)">
+          <input type="hidden" id="template_id" value="${template.id}">
+
+          <!-- Fixed Header Fields -->
+          ${fixedFieldsHtml}
+
+          <!-- Dynamic Questions -->
+          <div class="lw-entry-section">
+            <h3 class="lw-entry-section-title">Assessment Questions</h3>
+            ${questionsHtml || '<p class="lw-entry-empty">No questions in this template.</p>'}
+          </div>
+
+          <!-- Comments Section -->
+          <div class="lw-entry-section lw-entry-comments-section">
+            <h3 class="lw-entry-section-title">Initial Comments (Optional)</h3>
+            <p class="lw-entry-hint">Add any initial notes or context for this learning walk.</p>
+            <textarea id="comments" name="comments" class="lw-entry-textarea" rows="4" placeholder="Enter your comments here..."></textarea>
+          </div>
+
+          <!-- Actions -->
+          <div class="lw-entry-actions">
+            <a href="/learning-walks" class="secondary-action">Cancel</a>
+            <button type="submit" class="primary-action">Save Learning Walk</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      async function submitEntry(e) {
+        e.preventDefault();
+
+        const templateId = document.getElementById('template_id').value;
+        const courseId = document.getElementById('course_id').value;
+        const courseName = document.getElementById('course_name').value;
+        const assessorId = document.getElementById('assessor_name').value;
+        const iqaId = document.getElementById('iqa_name').value;
+        const plannedDate = document.getElementById('planned_date').value;
+        const dueDate = document.getElementById('due_date').value;
+        const comments = document.getElementById('comments').value;
+
+        // Get selected user names
+        const assessorSelect = document.getElementById('assessor_name');
+        const iqaSelect = document.getElementById('iqa_name');
+        const assessorName = assessorSelect.options[assessorSelect.selectedIndex].text;
+        const iqaName = iqaSelect.options[iqaSelect.selectedIndex].text;
+
+        // Collect answers
+        const answers = [];
+        document.querySelectorAll('[data-question-id]').forEach(qEl => {
+          const questionId = qEl.dataset.questionId;
+          const questionType = qEl.dataset.questionType;
+          let answer = '';
+
+          if (questionType === 'yes_no' || questionType === 'rag' || questionType === 'ggaw' || questionType === 'rating') {
+            const selected = qEl.querySelector('input[type="radio"]:checked');
+            answer = selected ? selected.value : '';
+          } else if (questionType === 'multiple_choice') {
+            const selected = qEl.querySelectorAll('input[type="checkbox"]:checked');
+            answer = Array.from(selected).map(cb => cb.value).join(', ');
+          } else if (questionType === 'ranking') {
+            // For ranking, collect all rank inputs
+            const rankInputs = qEl.querySelectorAll('input[type="number"]');
+            const ranks = [];
+            rankInputs.forEach((input, idx) => {
+              if (input.value) {
+                ranks.push({ item: idx, rank: input.value });
+              }
+            });
+            answer = JSON.stringify(ranks);
+          } else {
+            const input = qEl.querySelector('input, select, textarea');
+            answer = input ? input.value : '';
+          }
+
+          answers.push({ question_id: questionId, answer: answer });
+        });
+
+        const payload = {
+          template_id: templateId,
+          course_id: courseId,
+          course_name: courseName,
+          assessor_name: assessorName,
+          iqa_name: iqaName,
+          planned_date: plannedDate,
+          due_date: dueDate,
+          allocated_iqa_id: iqaId,
+          allocated_assessor_id: assessorId,
+          answers: answers,
+          comments: comments
+        };
+
+        try {
+          const response = await fetch('/api/lw/entries', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to save');
+          }
+
+          const result = await response.json();
+          alert('Learning Walk saved successfully!');
+          window.location.href = '/learning-walks';
+        } catch (err) {
+          alert('Error saving Learning Walk: ' + (err.message || String(err)));
+        }
+
+        return false;
+      }
+    </script>
+  `);
+}
+
 // ─── Learning Walk Template Builder ─────────────────────────────────────────
 
 async function renderLWTemplateBuilder(request: Request, env: Env, identity: Identity): Promise<Response> {
@@ -1184,7 +1583,8 @@ async function saveLWTemplate(request: Request, env: Env, identity: Identity): P
 
     return json({ success: true, templateId });
   } catch (err) {
-    return json({ error: "Failed to save template", details: String(err) }, 500);
+    console.error("saveLWTemplate error:", err);
+    return json({ error: "Failed to save template" }, 500);
   }
 }
 
@@ -1194,6 +1594,21 @@ async function updateLWTemplate(request: Request, env: Env, identity: Identity, 
   }
 
   try {
+    // Verify ownership - only creator or admin/superuser can update
+    const template = await env.esol_marking_db.prepare(
+      "SELECT created_by FROM lw_templates WHERE id = ?"
+    ).bind(templateId).first<{ created_by: string }>();
+
+    if (!template) {
+      return json({ error: "Template not found" }, 404);
+    }
+
+    const user = identity.user!;
+    const isPrivileged = user.role === "admin" || user.role === "superuser";
+    if (!isPrivileged && template.created_by !== user.id) {
+      return json({ error: "Forbidden - you can only edit your own templates" }, 403);
+    }
+
     const body = await request.json() as {
       title: string;
       description?: string;
@@ -1265,7 +1680,8 @@ async function updateLWTemplate(request: Request, env: Env, identity: Identity, 
 
     return json({ success: true, templateId });
   } catch (err) {
-    return json({ error: "Failed to update template", details: String(err) }, 500);
+    console.error("updateLWTemplate error:", err);
+    return json({ error: "Failed to update template" }, 500);
   }
 }
 
@@ -1281,6 +1697,21 @@ async function deleteLWTemplate(request: Request, env: Env, identity: Identity, 
 
     if (confirmValue !== "DELETE") {
       return json({ error: "Confirmation required" }, 400);
+    }
+
+    // Verify ownership - only creator or admin/superuser can delete
+    const template = await env.esol_marking_db.prepare(
+      "SELECT created_by FROM lw_templates WHERE id = ?"
+    ).bind(templateId).first<{ created_by: string }>();
+
+    if (!template) {
+      return json({ error: "Template not found" }, 404);
+    }
+
+    const user = identity.user!;
+    const isPrivileged = user.role === "admin" || user.role === "superuser";
+    if (!isPrivileged && template.created_by !== user.id) {
+      return json({ error: "Forbidden - you can only delete your own templates" }, 403);
     }
 
     // Delete in order: answers -> comments -> entries -> questions -> template
@@ -1323,7 +1754,619 @@ async function deleteLWTemplate(request: Request, env: Env, identity: Identity, 
       headers: { Location: "/learning-walks" }
     });
   } catch (err) {
-    return json({ error: "Failed to delete template", details: String(err) }, 500);
+    console.error("deleteLWTemplate error:", err);
+    return json({ error: "Failed to delete template" }, 500);
+  }
+}
+
+// ─── Learning Walk Entry Creation ───────────────────────────────────────────
+
+async function renderLWEntryForm(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const url = new URL(request.url);
+  const templateId = url.searchParams.get("templateId");
+
+  if (!templateId) {
+    return new Response(null, { status: 302, headers: { Location: "/learning-walks/entries/new" } });
+  }
+
+  // Check permission (IQA, Admin, Superuser can create entries)
+  const user = identity.user!;
+  const canCreateEntry = user.role === "iqa" || user.role === "admin" || user.role === "superuser";
+  if (!canCreateEntry) {
+    return htmlResponse(renderForbiddenPage(identity), 403);
+  }
+
+  // Get template with questions
+  const template = await getLWTemplateWithQuestions(env, templateId);
+  if (!template) {
+    return htmlResponse(renderNotFoundPage(), 404);
+  }
+
+  // Get users for dropdowns (assessors and IQAs)
+  const users = await env.esol_marking_db.prepare(
+    "SELECT id, email, role FROM users WHERE role IN ('assessor', 'iqa', 'admin', 'superuser') ORDER BY email ASC"
+  ).all<UserRecord>();
+
+  return htmlResponse(renderLWEntryFormPage(identity, template, users.results));
+}
+
+async function saveLWEntry(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const user = identity.user!;
+  const canCreateEntry = user.role === "iqa" || user.role === "admin" || user.role === "superuser";
+  if (!canCreateEntry) {
+    return json({ error: "Forbidden" }, 403);
+  }
+
+  try {
+    const body = await request.json() as {
+      template_id: string;
+      course_id: string;
+      course_name: string;
+      assessor_name: string;
+      iqa_name: string;
+      planned_date: string;
+      due_date?: string;
+      allocated_iqa_id: string;
+      allocated_assessor_id: string;
+      answers: Array<{ question_id: string; answer: string }>;
+      comments?: string;
+    };
+
+    const entryId = crypto.randomUUID();
+
+    // Insert entry
+    await env.esol_marking_db.prepare(
+      `INSERT INTO lw_entries (
+        id, template_id, course_id, course_name, assessor_name, iqa_name,
+        planned_date, due_date, allocated_iqa_id, allocated_assessor_id,
+        status, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      entryId,
+      body.template_id,
+      body.course_id,
+      body.course_name,
+      body.assessor_name,
+      body.iqa_name,
+      body.planned_date,
+      body.due_date ?? null,
+      body.allocated_iqa_id,
+      body.allocated_assessor_id,
+      "pending",
+      user.id
+    ).run();
+
+    // Insert answers
+    for (const answer of body.answers) {
+      await env.esol_marking_db.prepare(
+        `INSERT INTO lw_answers (id, entry_id, question_id, answer, updated_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).bind(
+        crypto.randomUUID(),
+        entryId,
+        answer.question_id,
+        answer.answer,
+        user.id,
+        new Date().toISOString()
+      ).run();
+    }
+
+    // Insert initial comment if provided
+    if (body.comments && body.comments.trim()) {
+      await env.esol_marking_db.prepare(
+        `INSERT INTO lw_comments (id, entry_id, author_id, author_role, comment)
+         VALUES (?, ?, ?, ?, ?)`
+      ).bind(
+        crypto.randomUUID(),
+        entryId,
+        user.id,
+        user.role,
+        body.comments.trim()
+      ).run();
+    }
+
+    return json({ success: true, entryId });
+  } catch (err) {
+    console.error("saveLWEntry error:", err);
+    return json({ error: "Failed to save entry" }, 500);
+  }
+}
+
+// Learning Walk Entry with Authorization Check
+async function getLWEntryWithAuth(env: Env, identity: Identity, entryId: string): Promise<{ entry: any; canEdit: boolean; canComment: boolean; canComplete: boolean } | null> {
+  const user = identity.user!;
+
+  // Fetch entry
+  const entry = await env.esol_marking_db.prepare(
+    `SELECT e.*, t.title as template_title
+     FROM lw_entries e
+     JOIN lw_templates t ON t.id = e.template_id
+     WHERE e.id = ?`
+  ).bind(entryId).first() as any;
+
+  if (!entry) return null;
+
+  // Check authorization
+  const isSuperuser = user.role === "superuser";
+  const isAdmin = user.role === "admin";
+  const isAllocatedIQA = entry.allocated_iqa_id === user.id;
+  const isAllocatedAssessor = entry.allocated_assessor_id === user.id;
+
+  const canView = isSuperuser || isAdmin || isAllocatedIQA || isAllocatedAssessor;
+  if (!canView) return null;
+
+  // Check if form is locked (assessor has commented)
+  const assessorCommentCount = await env.esol_marking_db.prepare(
+    `SELECT COUNT(*) as count FROM lw_comments WHERE entry_id = ? AND author_role = 'assessor'`
+  ).bind(entryId).first() as { count: number } | null;
+  const isLocked = (assessorCommentCount?.count ?? 0) > 0 || entry.status === "complete";
+
+  // IQA can edit if not locked and they are the allocated IQA
+  const canEdit = (isSuperuser || isAdmin || isAllocatedIQA) && !isLocked;
+
+  // Anyone with access can comment
+  const canComment = canView;
+
+  // Only admin can complete
+  const canComplete = isAdmin || isSuperuser;
+
+  return { entry, canEdit, canComment, canComplete };
+}
+
+// Render Learning Walk Entry View Page
+async function renderLWEntryView(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  const user = identity.user!;
+  const auth = await getLWEntryWithAuth(env, identity, entryId);
+
+  if (!auth) {
+    return htmlResponse(renderNotFoundPage(), 404);
+  }
+
+  const { entry, canEdit, canComment, canComplete } = auth;
+
+  // Fetch template questions
+  const questions = await env.esol_marking_db.prepare(
+    `SELECT * FROM lw_template_questions WHERE template_id = ? ORDER BY sort_order ASC`
+  ).bind(entry.template_id).all();
+
+  // Fetch answers
+  const answers = await env.esol_marking_db.prepare(
+    `SELECT * FROM lw_answers WHERE entry_id = ?`
+  ).bind(entryId).all();
+  const answersMap = new Map(answers.results.map((a: any) => [a.question_id, a.answer]));
+
+  // Fetch comments
+  const comments = await env.esol_marking_db.prepare(
+    `SELECT c.*, u.email as author_email
+     FROM lw_comments c
+     LEFT JOIN users u ON u.id = c.author_id
+     WHERE c.entry_id = ?
+     ORDER BY c.created_at DESC`
+  ).bind(entryId).all();
+
+  return htmlResponse(renderLWEntryViewPage(identity, entry, questions.results, answersMap, comments.results, canEdit, canComment, canComplete));
+}
+
+// Render the Entry View Page HTML
+function renderLWEntryViewPage(
+  identity: Identity,
+  entry: any,
+  questions: any[],
+  answersMap: Map<string, string>,
+  comments: any[],
+  canEdit: boolean,
+  canComment: boolean,
+  canComplete: boolean
+): string {
+  const user = identity.user!;
+  const statusLabels: Record<string, string> = {
+    pending: "Pending",
+    iqa_completed: "IQA Completed",
+    assessor_responded: "Assessor Responded",
+    complete: "Complete"
+  };
+  const statusBadge = `<span class="lw-status-badge ${entry.status}">${statusLabels[entry.status] || entry.status}</span>`;
+
+  const formatDate = (d: string) => d ? new Date(d).toLocaleDateString() : "-";
+
+  // Render questions
+  const questionsHtml = questions.map((q: any, index: number) => {
+    const answer = answersMap.get(q.id) || "";
+    const isEditable = canEdit;
+    const questionId = `question-${q.id}`;
+
+    let inputHtml = "";
+    const options = q.options ? JSON.parse(q.options) : [];
+
+    switch (q.question_type) {
+      case "yes_no":
+        inputHtml = `<div class="lw-entry-radio-group">${["Yes", "No"].map(opt => `
+          <label class="lw-entry-radio ${isEditable ? "" : "disabled"}">
+            <input type="radio" name="${questionId}" value="${opt}" ${answer === opt ? "checked" : ""} ${isEditable ? "" : "disabled"}>
+            <span>${opt}</span>
+          </label>
+        `).join("")}</div>`;
+        break;
+      case "rag":
+        inputHtml = `<div class="lw-entry-rag-group">${[
+          { val: "Green", cls: "green" },
+          { val: "Amber", cls: "amber" },
+          { val: "Red", cls: "red" }
+        ].map(opt => `
+          <label class="lw-entry-rag ${opt.cls} ${isEditable ? "" : "disabled"}">
+            <input type="radio" name="${questionId}" value="${opt.val}" ${answer === opt.val ? "checked" : ""} ${isEditable ? "" : "disabled"}>
+            <span>${opt.val}</span>
+          </label>
+        `).join("")}</div>`;
+        break;
+      case "ggaw":
+        inputHtml = `<div class="lw-entry-ggaw-group">${[
+          { val: "Gold", cls: "gold" },
+          { val: "Green", cls: "green" },
+          { val: "Amber", cls: "amber" },
+          { val: "White", cls: "white" }
+        ].map(opt => `
+          <label class="lw-entry-ggaw ${opt.cls} ${isEditable ? "" : "disabled"}">
+            <input type="radio" name="${questionId}" value="${opt.val}" ${answer === opt.val ? "checked" : ""} ${isEditable ? "" : "disabled"}>
+            <span>${opt.val}</span>
+          </label>
+        `).join("")}</div>`;
+        break;
+      case "single_choice":
+        inputHtml = `<div class="lw-entry-radio-group">${options.map((opt: string) => `
+          <label class="lw-entry-radio ${isEditable ? "" : "disabled"}">
+            <input type="radio" name="${questionId}" value="${escapeHtml(opt)}" ${answer === opt ? "checked" : ""} ${isEditable ? "" : "disabled"}>
+            <span>${escapeHtml(opt)}</span>
+          </label>
+        `).join("")}</div>`;
+        break;
+      case "multiple_choice":
+        const selectedAnswers = answer ? answer.split(", ") : [];
+        inputHtml = `<div class="lw-entry-checkbox-group">${options.map((opt: string) => `
+          <label class="lw-entry-checkbox ${isEditable ? "" : "disabled"}">
+            <input type="checkbox" name="${questionId}" value="${escapeHtml(opt)}" ${selectedAnswers.includes(opt) ? "checked" : ""} ${isEditable ? "" : "disabled"}>
+            <span>${escapeHtml(opt)}</span>
+          </label>
+        `).join("")}</div>`;
+        break;
+      case "dropdown":
+        inputHtml = `<select name="${questionId}" class="lw-entry-select" ${isEditable ? "" : "disabled"}>
+          <option value="">Select...</option>
+          ${options.map((opt: string) => `<option value="${escapeHtml(opt)}" ${answer === opt ? "selected" : ""}>${escapeHtml(opt)}</option>`).join("")}
+        </select>`;
+        break;
+      case "textarea":
+        inputHtml = `<textarea name="${questionId}" class="lw-entry-textarea" placeholder="Enter your answer..." ${isEditable ? "" : "disabled"}>${escapeHtml(answer)}</textarea>`;
+        break;
+      case "date":
+        inputHtml = `<input type="date" name="${questionId}" class="lw-entry-input" value="${escapeHtml(answer)}" ${isEditable ? "" : "disabled"}>`;
+        break;
+      case "number":
+        inputHtml = `<input type="number" name="${questionId}" class="lw-entry-input" value="${escapeHtml(answer)}" ${isEditable ? "" : "disabled"}>`;
+        break;
+      case "rating":
+        inputHtml = `<div class="lw-entry-rating">${[0, 1, 2, 3, 4, 5].map(num => `
+          <label class="lw-entry-rating-star ${isEditable ? "" : "disabled"}">
+            <input type="radio" name="${questionId}" value="${num}" ${answer === String(num) ? "checked" : ""} ${isEditable ? "" : "disabled"}>
+            <span>${num}</span>
+          </label>
+        `).join("")}</div>`;
+        break;
+      default:
+        inputHtml = `<input type="text" name="${questionId}" class="lw-entry-input" value="${escapeHtml(answer)}" ${isEditable ? "" : "disabled"}>`;
+    }
+
+    return `
+      <div class="lw-entry-question">
+        <label class="lw-entry-question-label">
+          <span>${index + 1}. ${escapeHtml(q.question_text)}</span>
+          ${q.is_required ? '<span class="lw-entry-required">*</span>' : ""}
+        </label>
+        ${inputHtml}
+        ${q.has_text_entry ? `
+          <div style="margin-top:0.75rem;">
+            <label class="lw-entry-hint">${escapeHtml(q.text_entry_label || "Additional comments")}</label>
+            <textarea name="${questionId}-text" class="lw-entry-textarea" placeholder="Enter additional details..." ${isEditable ? "" : "disabled"}></textarea>
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }).join("");
+
+  // Comments HTML
+  const commentsHtml = comments.length > 0 ? comments.map((c: any) => `
+    <div class="lw-comment-item">
+      <div class="lw-comment-header">
+        <span class="lw-comment-author">${escapeHtml(c.author_email || "Unknown")}</span>
+        <span class="lw-comment-role">${c.author_role}</span>
+        <span class="lw-comment-date">${new Date(c.created_at).toLocaleString()}</span>
+      </div>
+      <div class="lw-comment-text">${escapeHtml(c.comment)}</div>
+    </div>
+  `).join("") : `<div class="lw-entry-empty">No comments yet.</div>`;
+
+  // Action buttons
+  const actionsHtml = [];
+  if (canEdit) {
+    actionsHtml.push(`<button type="button" class="primary-action" onclick="saveChanges()">Save Changes</button>`);
+  }
+  if (canComplete && entry.status !== "complete") {
+    actionsHtml.push(`<button type="button" class="secondary-action" onclick="markComplete()" style="background:#16a34a;color:#fff;">Mark Complete</button>`);
+  }
+
+  const body = `
+    ${renderSidebar(identity, "learning-walks")}
+    <main class="main">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;gap:1rem;">
+          <a href="/learning-walks" class="small-action" style="width:auto;padding:0.5rem 1rem;">← Back</a>
+          <h1>Learning Walk: ${escapeHtml(entry.template_title)}</h1>
+        </div>
+        <div style="display:flex;align-items:center;gap:1rem;">
+          ${statusBadge}
+        </div>
+      </div>
+
+      <div class="lw-entry-form" data-entry-id="${entry.id}">
+        <!-- Fixed Header Fields -->
+        <section class="lw-entry-section">
+          <h2 class="lw-entry-section-title">📋 Course Information</h2>
+          <div class="lw-entry-grid">
+            <div class="lw-entry-field">
+              <label class="lw-entry-label">Course ID</label>
+              <input type="text" class="lw-entry-input" value="${escapeHtml(entry.course_id)}" disabled>
+            </div>
+            <div class="lw-entry-field">
+              <label class="lw-entry-label">Course Name</label>
+              <input type="text" class="lw-entry-input" value="${escapeHtml(entry.course_name)}" disabled>
+            </div>
+            <div class="lw-entry-field">
+              <label class="lw-entry-label">Assessor</label>
+              <input type="text" class="lw-entry-input" value="${escapeHtml(entry.assessor_name)}" disabled>
+            </div>
+            <div class="lw-entry-field">
+              <label class="lw-entry-label">IQA</label>
+              <input type="text" class="lw-entry-input" value="${escapeHtml(entry.iqa_name)}" disabled>
+            </div>
+            <div class="lw-entry-field">
+              <label class="lw-entry-label">Planned Date</label>
+              <input type="text" class="lw-entry-input" value="${formatDate(entry.planned_date)}" disabled>
+            </div>
+            <div class="lw-entry-field">
+              <label class="lw-entry-label">Due Date</label>
+              <input type="text" class="lw-entry-input" value="${formatDate(entry.due_date)}" disabled>
+            </div>
+          </div>
+        </section>
+
+        <!-- Questions -->
+        <section class="lw-entry-section">
+          <h2 class="lw-entry-section-title">📝 Assessment Questions</h2>
+          ${questionsHtml || '<div class="lw-entry-empty">No questions in this template.</div>'}
+        </section>
+
+        <!-- Comments Section -->
+        <section class="lw-entry-section lw-entry-comments-section">
+          <h2 class="lw-entry-section-title">💬 Comments & Paper Trail</h2>
+          <div class="lw-comments-list">
+            ${commentsHtml}
+          </div>
+          ${canComment ? `
+            <div class="lw-comment-add" style="margin-top:1.5rem;">
+              <label class="lw-entry-label">Add a comment</label>
+              <textarea id="newComment" class="lw-entry-textarea" placeholder="Enter your comment..." rows="3"></textarea>
+              <button type="button" class="small-action" onclick="addComment()" style="margin-top:0.75rem;">Post Comment</button>
+            </div>
+          ` : ""}
+        </section>
+
+        <!-- Actions -->
+        ${actionsHtml.length > 0 ? `
+          <div class="lw-entry-actions">
+            ${actionsHtml.join("")}
+          </div>
+        ` : ""}
+      </div>
+    </main>
+
+    <script>
+      const entryId = "${entry.id}";
+      const canEdit = ${canEdit};
+
+      async function addComment() {
+        const textarea = document.getElementById('newComment');
+        const comment = textarea.value.trim();
+        if (!comment) return alert('Please enter a comment');
+
+        try {
+          const res = await fetch(\`/api/lw/entries/\${entryId}/comments\`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comment })
+          });
+          if (res.ok) {
+            location.reload();
+          } else {
+            alert('Failed to add comment');
+          }
+        } catch (err) {
+          alert('Error adding comment');
+        }
+      }
+
+      async function saveChanges() {
+        if (!canEdit) return alert('You do not have permission to edit this form');
+
+        const answers = [];
+        document.querySelectorAll('.lw-entry-question').forEach((q, idx) => {
+          const questionId = q.querySelector('input, select, textarea')?.name?.replace('question-', '');
+          if (!questionId) return;
+
+          const inputs = q.querySelectorAll('input[name^="question-"], select[name^="question-"], textarea[name^="question-"]');
+          let answer = '';
+
+          inputs.forEach(input => {
+            if (input.type === 'radio' && input.checked) {
+              answer = input.value;
+            } else if (input.type === 'checkbox' && input.checked) {
+              answer = answer ? answer + ', ' + input.value : input.value;
+            } else if (input.type === 'text' || input.type === 'number' || input.tagName === 'TEXTAREA' || input.tagName === 'SELECT') {
+              answer = input.value;
+            }
+          });
+
+          answers.push({ question_id: questionId, answer });
+        });
+
+        try {
+          const res = await fetch(\`/api/lw/entries/\${entryId}/update\`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ answers })
+          });
+          if (res.ok) {
+            alert('Changes saved successfully');
+            location.reload();
+          } else {
+            alert('Failed to save changes');
+          }
+        } catch (err) {
+          alert('Error saving changes');
+        }
+      }
+
+      async function markComplete() {
+        if (!confirm('Mark this learning walk as complete? This action cannot be undone.')) return;
+
+        try {
+          const res = await fetch(\`/api/lw/entries/\${entryId}/complete\`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          if (res.ok) {
+            alert('Learning walk marked as complete');
+            location.reload();
+          } else {
+            alert('Failed to mark as complete');
+          }
+        } catch (err) {
+          alert('Error marking as complete');
+        }
+      }
+    </script>
+  `;
+
+  return pageShell(`Learning Walk - ${entry.template_title}`, body);
+}
+
+// API: Add Comment to Learning Walk Entry
+async function addLWEntryComment(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  const user = identity.user!;
+
+  // Check authorization
+  const auth = await getLWEntryWithAuth(env, identity, entryId);
+  if (!auth || !auth.canComment) {
+    return json({ error: "Forbidden" }, 403);
+  }
+
+  try {
+    const body = await request.json() as { comment: string };
+    const comment = body.comment?.trim();
+
+    if (!comment) {
+      return json({ error: "Comment is required" }, 400);
+    }
+
+    await env.esol_marking_db.prepare(
+      `INSERT INTO lw_comments (id, entry_id, author_id, author_role, comment)
+       VALUES (?, ?, ?, ?, ?)`
+    ).bind(
+      crypto.randomUUID(),
+      entryId,
+      user.id,
+      user.role,
+      comment
+    ).run();
+
+    // Update status if assessor is commenting
+    if (user.role === "assessor") {
+      await env.esol_marking_db.prepare(
+        `UPDATE lw_entries SET status = 'assessor_responded', assessor_responded_at = ? WHERE id = ?`
+      ).bind(new Date().toISOString(), entryId).run();
+    }
+
+    return json({ success: true });
+  } catch (err) {
+    console.error("addLWEntryComment error:", err);
+    return json({ error: "Failed to add comment" }, 500);
+  }
+}
+
+// API: Update Learning Walk Entry Answers (IQA editing)
+async function updateLWEntry(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  const user = identity.user!;
+
+  // Check authorization
+  const auth = await getLWEntryWithAuth(env, identity, entryId);
+  if (!auth || !auth.canEdit) {
+    return json({ error: "Forbidden or form is locked" }, 403);
+  }
+
+  try {
+    const body = await request.json() as { answers: Array<{ question_id: string; answer: string }> };
+
+    // Update each answer
+    for (const ans of body.answers) {
+      // Check if answer exists
+      const existing = await env.esol_marking_db.prepare(
+        `SELECT id FROM lw_answers WHERE entry_id = ? AND question_id = ?`
+      ).bind(entryId, ans.question_id).first();
+
+      if (existing) {
+        // Update existing answer
+        await env.esol_marking_db.prepare(
+          `UPDATE lw_answers SET answer = ?, updated_by = ?, updated_at = ? WHERE entry_id = ? AND question_id = ?`
+        ).bind(ans.answer, user.id, new Date().toISOString(), entryId, ans.question_id).run();
+      } else {
+        // Insert new answer
+        await env.esol_marking_db.prepare(
+          `INSERT INTO lw_answers (id, entry_id, question_id, answer, updated_by, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(crypto.randomUUID(), entryId, ans.question_id, ans.answer, user.id, new Date().toISOString()).run();
+      }
+    }
+
+    // Update status to iqa_completed if not already
+    await env.esol_marking_db.prepare(
+      `UPDATE lw_entries SET status = 'iqa_completed', iqa_completed_at = ? WHERE id = ? AND status = 'pending'`
+    ).bind(new Date().toISOString(), entryId).run();
+
+    return json({ success: true });
+  } catch (err) {
+    console.error("updateLWEntry error:", err);
+    return json({ error: "Failed to update entry" }, 500);
+  }
+}
+
+// API: Mark Learning Walk Entry as Complete (Admin only)
+async function completeLWEntry(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  const user = identity.user!;
+
+  // Check authorization
+  const auth = await getLWEntryWithAuth(env, identity, entryId);
+  if (!auth || !auth.canComplete) {
+    return json({ error: "Forbidden" }, 403);
+  }
+
+  try {
+    await env.esol_marking_db.prepare(
+      `UPDATE lw_entries SET status = 'complete', completed_at = ? WHERE id = ?`
+    ).bind(new Date().toISOString(), entryId).run();
+
+    return json({ success: true });
+  } catch (err) {
+    console.error("completeLWEntry error:", err);
+    return json({ error: "Failed to complete entry" }, 500);
   }
 }
 
@@ -1616,7 +2659,78 @@ function pageShell(title: string, body: string) {
     .lwfb-primary-btn:hover{background:var(--primary-dark)}
     .lwfb-secondary-btn{background:#f1f5f9;color:var(--text);border:none;border-radius:8px;padding:0.75rem 1.5rem;font-weight:600;cursor:pointer;font-size:1rem;transition:all 0.2s}
     .lwfb-secondary-btn:hover{background:#e2e8f0}
-    @media (max-width:768px){.lwfb-header-grid{grid-template-columns:1fr}.lwfb-type-picker .picker-grid{grid-template-columns:repeat(2,1fr)}.lwfb-popup-overlay{padding:1rem}.lwfb-popup-container{max-height:calc(100vh - 2rem)}}
+    /* Template Selector Popup Styles */
+    .lw-selector-search-wrapper{margin-bottom:1.5rem}
+    .lw-selector-search{width:100%;padding:1rem 1.25rem;border:2px solid var(--border);border-radius:12px;font-size:1.125rem;transition:all 0.2s;background:#fff}
+    .lw-selector-search:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 4px rgba(220,38,38,0.1)}
+    .lw-selector-search::placeholder{color:#9ca3af}
+    .lw-selector-list{display:flex;flex-direction:column;gap:0.75rem;max-height:400px;overflow-y:auto;padding-right:0.5rem}
+    .lw-selector-template-card{display:flex;align-items:center;gap:1rem;padding:1.25rem;background:#fff;border:2px solid var(--border);border-radius:12px;cursor:pointer;transition:all 0.2s}
+    .lw-selector-template-card:hover{border-color:var(--primary);background:#fef2f2;transform:translateY(-2px);box-shadow:0 4px 12px rgba(220,38,38,0.15)}
+    .lw-selector-template-icon{font-size:2rem;width:3rem;height:3rem;display:grid;place-items:center;background:#f8fafc;border-radius:10px;flex-shrink:0}
+    .lw-selector-template-info{flex:1;display:flex;flex-direction:column;gap:0.25rem}
+    .lw-selector-template-info strong{font-size:1.125rem;color:var(--text)}
+    .lw-selector-template-info span{font-size:0.9375rem;color:var(--muted)}
+    .lw-selector-template-arrow{font-size:1.5rem;color:var(--muted);transition:all 0.2s}
+    .lw-selector-template-card:hover .lw-selector-template-arrow{color:var(--primary);transform:translateX(4px)}
+    .lw-selector-empty{color:var(--muted);font-style:italic;padding:2rem;text-align:center;background:#f8fafc;border-radius:12px;border:2px dashed var(--border)}
+    .lw-selector-no-results{color:var(--muted);padding:2rem;text-align:center;font-size:1rem}
+    /* Entry Form Styles */
+    .lw-entry-form{max-width:900px;margin:0 auto;padding:1.5rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08)}
+    .lw-entry-section{margin-bottom:2rem;padding-bottom:2rem;border-bottom:1px solid var(--border)}
+    .lw-entry-section:last-of-type{border-bottom:none}
+    .lw-entry-section-title{font-size:1.125rem;font-weight:600;color:var(--text);margin-bottom:1.25rem;display:flex;align-items:center;gap:0.5rem}
+    .lw-entry-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1.25rem}
+    .lw-entry-field{display:flex;flex-direction:column;gap:0.5rem}
+    .lw-entry-label{font-size:0.9375rem;font-weight:500;color:var(--text)}
+    .lw-entry-required{color:var(--primary)}
+    .lw-entry-input,.lw-entry-select,.lw-entry-textarea{width:100%;padding:0.875rem 1rem;border:2px solid var(--border);border-radius:8px;font-size:1rem;transition:all 0.2s;background:#fff}
+    .lw-entry-input:focus,.lw-entry-select:focus,.lw-entry-textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 4px rgba(220,38,38,0.1)}
+    .lw-entry-textarea{resize:vertical;min-height:100px}
+    .lw-entry-question{margin-bottom:1.5rem;padding:1.25rem;background:#f8fafc;border-radius:8px;border-left:4px solid var(--primary)}
+    .lw-entry-question-label{font-weight:600;color:var(--text);margin-bottom:0.75rem;display:block}
+    .lw-entry-radio-group,.lw-entry-checkbox-group{display:flex;flex-wrap:wrap;gap:1rem}
+    .lw-entry-radio,.lw-entry-checkbox{display:flex;align-items:center;gap:0.5rem;cursor:pointer;padding:0.5rem 1rem;background:#fff;border:2px solid var(--border);border-radius:6px;transition:all 0.2s}
+    .lw-entry-radio:hover,.lw-entry-checkbox:hover{border-color:var(--primary)}
+    .lw-entry-radio input,.lw-entry-checkbox input{cursor:pointer}
+    .lw-entry-rag-group,.lw-entry-ggaw-group{display:flex;flex-wrap:wrap;gap:0.75rem}
+    .lw-entry-rag,.lw-entry-ggaw{padding:0.625rem 1.25rem;border-radius:6px;font-weight:500;cursor:pointer;transition:all 0.2s;border:2px solid transparent}
+    .lw-entry-rag.green{background:#dcfce7;color:#166534;border-color:#166534}
+    .lw-entry-rag.amber{background:#fef3c7;color:#92400e;border-color:#92400e}
+    .lw-entry-rag.red{background:#fee2e2;color:#991b1b;border-color:#991b1b}
+    .lw-entry-ggaw.gold{background:#fef9c3;color:#854d0e;border-color:#854d0e}
+    .lw-entry-ggaw.green{background:#dcfce7;color:#166534;border-color:#166534}
+    .lw-entry-ggaw.amber{background:#fef3c7;color:#92400e;border-color:#92400e}
+    .lw-entry-ggaw.white{background:#f1f5f9;color:#475569;border-color:#475569}
+    .lw-entry-rag input,.lw-entry-ggaw input{display:none}
+    .lw-entry-rag:has(input:checked),.lw-entry-ggaw:has(input:checked){transform:scale(1.05);box-shadow:0 4px 12px rgba(0,0,0,0.15)}
+    .lw-entry-rating{display:flex;gap:0.5rem;flex-wrap:wrap}
+    .lw-entry-rating-star{padding:0.5rem 1rem;background:#f1f5f9;border:2px solid var(--border);border-radius:6px;cursor:pointer;transition:all 0.2s}
+    .lw-entry-rating-star:has(input:checked){background:var(--primary);color:#fff;border-color:var(--primary)}
+    .lw-entry-rating-star input{display:none}
+    .lw-entry-rank-group{display:flex;flex-direction:column;gap:0.75rem}
+    .lw-entry-rank-item{display:flex;align-items:center;gap:1rem;padding:0.75rem;background:#fff;border:1px solid var(--border);border-radius:6px}
+    .lw-entry-rank-label{flex:1;font-weight:500}
+    .lw-entry-rank-input{width:80px;padding:0.5rem;border:2px solid var(--border);border-radius:6px;text-align:center}
+    .lw-entry-comments-section{background:linear-gradient(135deg,#fef3c7 0%,#fff 100%);border-left:4px solid #d97706}
+    .lw-entry-hint{color:var(--muted);font-size:0.875rem;margin-bottom:0.75rem}
+    .lw-entry-empty{color:var(--muted);font-style:italic;padding:2rem;text-align:center;background:#f8fafc;border-radius:8px}
+    .lw-entry-actions{display:flex;gap:1rem;justify-content:flex-end;margin-top:2rem;padding-top:1.5rem;border-top:2px solid var(--border)}
+    .lw-entry-actions .secondary-action{background:var(--muted);color:#fff}
+    .lw-status-badge{display:inline-flex;align-items:center;padding:0.5rem 1rem;border-radius:999px;font-size:0.875rem;font-weight:500}
+    .lw-status-badge.pending{background:#fef3c7;color:#92400e}
+    .lw-status-badge.iqa_completed{background:#dcfce7;color:#166534}
+    .lw-status-badge.assessor_responded{background:#dbeafe;color:#1e40af}
+    .lw-status-badge.complete{background:#f3f4f6;color:#6b7280}
+    .lw-comments-list{display:flex;flex-direction:column;gap:1rem}
+    .lw-comment-item{background:#fff;border:1px solid var(--border);border-radius:8px;padding:1rem}
+    .lw-comment-header{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap}
+    .lw-comment-author{font-weight:600;color:var(--text)}
+    .lw-comment-role{font-size:0.75rem;padding:0.25rem 0.5rem;border-radius:4px;background:var(--primary);color:#fff;text-transform:uppercase}
+    .lw-comment-date{font-size:0.875rem;color:var(--muted);margin-left:auto}
+    .lw-comment-text{color:var(--text);line-height:1.5}
+    .lw-entry-question .disabled{opacity:0.6;cursor:not-allowed}
+    @media (max-width:768px){.lwfb-header-grid{grid-template-columns:1fr}.lwfb-type-picker .picker-grid{grid-template-columns:repeat(2,1fr)}.lwfb-popup-overlay{padding:1rem}.lwfb-popup-container{max-height:calc(100vh - 2rem)}.lw-entry-grid{grid-template-columns:1fr}}
   </style></head><body>${body}</body></html>`;
 }
 
