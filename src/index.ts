@@ -95,7 +95,11 @@ type QuestionType =
   | "ranking"
   | "likert"
   | "yes_no"
-  | "file_upload";
+  | "file_upload"
+  | "rag"
+  | "ggaw"
+  | "number"
+  | "rating";
 
 type QuestionOption = {
   id: string;
@@ -284,6 +288,19 @@ export default {
 
     // Learning Walks dashboard only
     if (url.pathname === "/learning-walks") return renderLWDashboard(request, env, identity);
+
+    // Learning Walk Template Builder
+    if (url.pathname === "/learning-walks/templates/build" || url.pathname.match(/^\/learning-walks\/templates\/[^/]+\/build$/)) {
+      return renderLWTemplateBuilder(request, env, identity);
+    }
+
+    // Learning Walk Template API
+    if (url.pathname === "/api/lw/templates" && request.method === "POST") {
+      return saveLWTemplate(request, env, identity);
+    }
+    if (url.pathname.match(/^\/api\/lw\/templates\/[^/]+$/) && request.method === "POST") {
+      return updateLWTemplate(request, env, identity, url.pathname.split("/")[4]);
+    }
 
     return htmlResponse(renderNotFoundPage(), 404);
   },
@@ -629,7 +646,7 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
         <section class="panel templates-section">
           <div class="section-header">
             <p class="eyebrow">Learning Walk Templates</p>
-            <a class="small-action" href="/learning-walks/templates/new">+ New template</a>
+            <a class="small-action" href="/learning-walks/templates/build">+ New template</a>
           </div>
           <div class="list-stack templates-list">
             ${templates.length ? templates.map(t => `
@@ -688,6 +705,562 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
   `);
 }
 
+function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWithQuestions | null, users: UserRecord[]): string {
+  const isEdit = !!template;
+  const templateId = template?.id ?? "";
+  const title = template?.title ?? "";
+  const description = template?.description ?? "";
+  let questions = template?.questions ?? [];
+
+  // Filter users by role for dropdowns
+  const assessors = users.filter(u => u.role === "assessor" || u.role === "admin" || u.role === "superuser");
+  const iqas = users.filter(u => u.role === "iqa" || u.role === "admin" || u.role === "superuser");
+
+  // For new templates, auto-populate with fixed header fields as questions
+  if (!isEdit && questions.length === 0) {
+    const assessorOptions = assessors.map(u => ({ id: u.id, label: u.email, value: u.id }));
+    const iqaOptions = iqas.map(u => ({ id: u.id, label: u.email, value: u.id }));
+
+    const fixedQuestions: LWTemplateQuestion[] = [
+      {
+        id: "fixed_course_id",
+        template_id: "",
+        question_text: "Course ID",
+        question_type: "text",
+        options: null,
+        has_text_entry: 0,
+        text_entry_label: null,
+        is_required: 1,
+        sort_order: 0
+      },
+      {
+        id: "fixed_course_name",
+        template_id: "",
+        question_text: "Course Name",
+        question_type: "text",
+        options: null,
+        has_text_entry: 0,
+        text_entry_label: null,
+        is_required: 1,
+        sort_order: 1
+      },
+      {
+        id: "fixed_assessor",
+        template_id: "",
+        question_text: "Teacher/Assessor",
+        question_type: "dropdown",
+        options: assessorOptions,
+        has_text_entry: 0,
+        text_entry_label: null,
+        is_required: 1,
+        sort_order: 2
+      },
+      {
+        id: "fixed_iqa",
+        template_id: "",
+        question_text: "IQA",
+        question_type: "dropdown",
+        options: iqaOptions,
+        has_text_entry: 0,
+        text_entry_label: null,
+        is_required: 1,
+        sort_order: 3
+      },
+      {
+        id: "fixed_planned_date",
+        template_id: "",
+        question_text: "Planned Date",
+        question_type: "date",
+        options: null,
+        has_text_entry: 0,
+        text_entry_label: null,
+        is_required: 1,
+        sort_order: 4
+      },
+      {
+        id: "fixed_due_date",
+        template_id: "",
+        question_text: "Due Date",
+        question_type: "date",
+        options: null,
+        has_text_entry: 0,
+        text_entry_label: null,
+        is_required: 0,
+        sort_order: 5
+      }
+    ];
+    questions = fixedQuestions;
+  }
+
+  const questionTypes = [
+    { value: "yes_no", label: "Yes/No", icon: "✓", desc: "Simple yes or no choice" },
+    { value: "rag", label: "Green/Amber/Red", icon: "●", desc: "RAG status indicator" },
+    { value: "ggaw", label: "Gold/Green/Amber/White", icon: "◆", desc: "Extended GGAW rating" },
+    { value: "single_choice", label: "MCQ (One Answer)", icon: "○", desc: "Multiple choice, single select" },
+    { value: "multiple_choice", label: "Choices (Multiple)", icon: "☑", desc: "Tick multiple options" },
+    { value: "dropdown", label: "Dropdown", icon: "▼", desc: "Select from dropdown" },
+    { value: "text", label: "Text", icon: "T", desc: "Short text answer" },
+    { value: "textarea", label: "Long Text", icon: "¶", desc: "Paragraph response" },
+    { value: "date", label: "Date", icon: "📅", desc: "Date picker" },
+    { value: "number", label: "Number", icon: "#", desc: "Numeric input" },
+    { value: "ranking", label: "Ranking", icon: "⇅", desc: "Order items by drag" },
+    { value: "rating", label: "Rating (0-5)", icon: "★", desc: "Star rating scale" },
+  ];
+
+  const questionTypeOptions = questionTypes.map(t =>
+    `<option value="${t.value}">${t.label}</option>`
+  ).join("");
+
+  const fixedIds = new Set(["fixed_course_id", "fixed_course_name", "fixed_assessor", "fixed_iqa", "fixed_planned_date", "fixed_due_date"]);
+
+  const renderQuestionCard = (q: LWTemplateQuestion, index: number) => {
+    const isFixed = fixedIds.has(q.id);
+    const cardClass = isFixed ? "lwfb-question-card lwfb-fixed-card" : "lwfb-question-card";
+    const deleteBtn = isFixed
+      ? `<span class="lwfb-fixed-badge">Standard Field</span>`
+      : `<button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>`;
+
+    return `
+    <div class="${cardClass}" data-question-id="${q.id}" data-sort-order="${q.sort_order}" data-is-fixed="${isFixed}">
+      <div class="lwfb-question-header">
+        <span class="lwfb-q-number">${index + 1}</span>
+        <select class="lwfb-q-type-select" onchange="updateQuestionType(this)" ${isFixed ? 'disabled' : ''}>
+          ${questionTypes.map(t => `<option value="${t.value}" ${q.question_type === t.value ? "selected" : ""}>${t.label}</option>`).join("")}
+        </select>
+        <label class="lwfb-required-label">
+          <input type="checkbox" class="lwfb-q-required" ${q.is_required ? "checked" : ""}>
+          Required
+        </label>
+        ${deleteBtn}
+      </div>
+      <div class="lwfb-question-body">
+        <input type="text" class="lwfb-q-text" value="${escapeHtml(q.question_text)}" placeholder="Enter your question" ${isFixed ? 'readonly' : ''}>
+        <div class="lwfb-options-section ${["single_choice", "multiple_choice", "dropdown", "ranking"].includes(q.question_type) ? "" : "hidden"}">
+          <label class="lwfb-options-label">Options (one per line):</label>
+          <textarea class="lwfb-q-options" rows="3" placeholder="Option 1&#10;Option 2&#10;Option 3" ${isFixed ? 'readonly' : ''}>${q.options ? q.options.map((o: QuestionOption) => escapeHtml(o.label)).join("\n") : ""}</textarea>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const questionsHtml = questions.length > 0
+    ? questions.map((q, i) => renderQuestionCard(q, i)).join("")
+    : `<div class="lwfb-empty-state" id="emptyQuestionsMsg">No questions yet. Click the + button below to add your first question.</div>`;
+
+  return pageShell(isEdit ? "Edit Template" : "New Template", `
+    <main class="lwfb-popup-overlay" id="templateBuilderPopup">
+      <div class="lwfb-popup-container">
+        <div class="lwfb-popup-header">
+          <div>
+            <p class="lwfb-eyebrow">Learning Walk Template Builder</p>
+            <h1 class="lwfb-title">${isEdit ? "Edit Template" : "Create New Template"}</h1>
+          </div>
+          <button type="button" class="lwfb-close-btn" onclick="closeTemplateBuilder()" title="Close">×</button>
+        </div>
+
+        <div class="lwfb-popup-content">
+          <!-- Template Title & Description -->
+          <div class="lwfb-section-card">
+            <input type="text" id="templateTitle" class="lwfb-title-input" value="${escapeHtml(title)}" placeholder="Untitled Template">
+            <textarea id="templateDescription" class="lwfb-desc-input" rows="2" placeholder="Template description (optional)">${escapeHtml(description)}</textarea>
+          </div>
+
+          <!-- Questions Section - includes 6 standard fields + custom questions -->
+          <div class="lwfb-section-card">
+            <h3 class="lwfb-section-title">Form Questions</h3>
+            <p class="lwfb-section-hint">The first 6 fields are standard for all Learning Walks. Add custom questions below using the + button.</p>
+            <div id="questionsContainer" class="lwfb-questions-container">
+              ${questionsHtml}
+            </div>
+            <div class="lwfb-add-wrapper">
+              <button type="button" class="lwfb-add-btn" onclick="showQuestionTypePicker()">
+                <span class="plus-icon">+</span>
+                <span>Add Question</span>
+              </button>
+            </div>
+
+            <!-- Question Type Picker (hidden by default) -->
+            <div id="questionTypePicker" class="lwfb-type-picker hidden">
+              <div class="picker-header">
+                <span>Select Question Type</span>
+                <button type="button" class="close-picker" onclick="hideQuestionTypePicker()">×</button>
+              </div>
+              <div class="picker-grid">
+                ${questionTypes.map(t => `
+                  <div class="type-option" onclick="addQuestion('${t.value}')">
+                    <span class="type-icon">${t.icon}</span>
+                    <span class="type-label">${t.label}</span>
+                    <span class="type-desc">${t.desc}</span>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          </div>
+
+          <!-- Comments Section -->
+          <div class="lwfb-section-card lwfb-comments-section">
+            <h3 class="lwfb-section-title">Comments & Paper Trail</h3>
+            <p class="lwfb-section-hint">Comments added here will be timestamped and tracked:</p>
+            <div id="templateComments" class="lwfb-comments-list">
+              <div class="lwfb-empty-comments">No comments yet. Comments will appear here when users add them during learning walk entries.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="lwfb-popup-footer">
+          <button type="button" class="lwfb-secondary-btn" onclick="closeTemplateBuilder()">Cancel</button>
+          <button type="button" class="lwfb-primary-btn" onclick="saveTemplate()">
+            ${isEdit ? "Save Changes" : "Create Template"}
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      let questionCounter = ${questions.length};
+      const templateId = "${templateId}";
+      const isEdit = ${JSON.stringify(isEdit)};
+
+      function closeTemplateBuilder() {
+        window.location.href = "/learning-walks";
+      }
+
+      function showQuestionTypePicker() {
+        document.getElementById('questionTypePicker').classList.remove('hidden');
+      }
+
+      function hideQuestionTypePicker() {
+        document.getElementById('questionTypePicker').classList.add('hidden');
+      }
+
+      function deleteQuestion(btn) {
+        if (!confirm('Delete this question?')) return;
+        const card = btn.closest('.lwfb-question-card');
+        card.remove();
+        renumberQuestions();
+        checkEmptyState();
+      }
+
+      function renumberQuestions() {
+        const cards = document.querySelectorAll('.lwfb-question-card');
+        cards.forEach((card, i) => {
+          card.querySelector('.lwfb-q-number').textContent = i + 1;
+        });
+      }
+
+      function checkEmptyState() {
+        const container = document.getElementById('questionsContainer');
+        const hasQuestions = container.querySelectorAll('.lwfb-question-card').length > 0;
+        if (!hasQuestions && !document.getElementById('emptyQuestionsMsg')) {
+          container.innerHTML = '<div class="lwfb-empty-state" id="emptyQuestionsMsg">No questions yet. Click the + button below to add your first question.</div>';
+        }
+      }
+
+      function updateQuestionType(select) {
+        const card = select.closest('.lwfb-question-card');
+        const optionsSection = card.querySelector('.lwfb-options-section');
+        const needsOptions = ['single_choice', 'multiple_choice', 'dropdown', 'ranking'].includes(select.value);
+        optionsSection.classList.toggle('hidden', !needsOptions);
+      }
+
+      function addQuestion(type) {
+        hideQuestionTypePicker();
+        const container = document.getElementById('questionsContainer');
+        const emptyMsg = document.getElementById('emptyQuestionsMsg');
+        if (emptyMsg) emptyMsg.remove();
+
+        questionCounter++;
+        const questionId = 'new_' + crypto.randomUUID();
+        const needsOptions = ['single_choice', 'multiple_choice', 'dropdown', 'ranking'].includes(type);
+
+        const typeLabels = {
+          yes_no: 'Yes/No',
+          rag: 'Green/Amber/Red',
+          ggaw: 'Gold/Green/Amber/White',
+          single_choice: 'MCQ (One Answer)',
+          multiple_choice: 'Choices (Multiple)',
+          dropdown: 'Dropdown',
+          text: 'Text',
+          textarea: 'Long Text',
+          date: 'Date',
+          number: 'Number',
+          ranking: 'Ranking',
+          rating: 'Rating (0-5)'
+        };
+
+        const typeOptions = [
+          { value: 'yes_no', label: 'Yes/No' },
+          { value: 'rag', label: 'Green/Amber/Red' },
+          { value: 'ggaw', label: 'Gold/Green/Amber/White' },
+          { value: 'single_choice', label: 'MCQ (One Answer)' },
+          { value: 'multiple_choice', label: 'Choices (Multiple)' },
+          { value: 'dropdown', label: 'Dropdown' },
+          { value: 'text', label: 'Text' },
+          { value: 'textarea', label: 'Long Text' },
+          { value: 'date', label: 'Date' },
+          { value: 'number', label: 'Number' },
+          { value: 'ranking', label: 'Ranking' },
+          { value: 'rating', label: 'Rating (0-5)' }
+        ].map(t => \`<option value="\${t.value}" \${t.value === type ? 'selected' : ''}>\${t.label}</option>\`).join('');
+
+        const card = document.createElement('div');
+        card.className = 'lwfb-question-card';
+        card.dataset.questionId = questionId;
+        card.dataset.sortOrder = questionCounter;
+        card.innerHTML = \`
+          <div class="lwfb-question-header">
+            <span class="lwfb-q-number">\${document.querySelectorAll('.lwfb-question-card').length + 1}</span>
+            <select class="lwfb-q-type-select" onchange="updateQuestionType(this)">
+              \${typeOptions}
+            </select>
+            <label class="lwfb-required-label">
+              <input type="checkbox" class="lwfb-q-required">
+              Required
+            </label>
+            <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>
+          </div>
+          <div class="lwfb-question-body">
+            <input type="text" class="lwfb-q-text" placeholder="Enter your question">
+            <div class="lwfb-options-section \${needsOptions ? '' : 'hidden'}">
+              <label class="lwfb-options-label">Options (one per line):</label>
+              <textarea class="lwfb-q-options" rows="3" placeholder="Option 1&#10;Option 2&#10;Option 3"></textarea>
+            </div>
+          </div>
+        \`;
+        container.appendChild(card);
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      async function saveTemplate() {
+        const title = document.getElementById('templateTitle').value.trim();
+        const description = document.getElementById('templateDescription').value.trim();
+
+        if (!title) {
+          alert('Please enter a template title');
+          return;
+        }
+
+        const questions = [];
+        const cards = document.querySelectorAll('.lwfb-question-card');
+
+        for (let i = 0; i < cards.length; i++) {
+          const card = cards[i];
+          const qId = card.dataset.questionId;
+          const qType = card.querySelector('.lwfb-q-type-select').value;
+          const qText = card.querySelector('.lwfb-q-text').value.trim();
+          const qRequired = card.querySelector('.lwfb-q-required').checked;
+
+          if (!qText) {
+            alert(\`Question \${i + 1} is missing text\`);
+            return;
+          }
+
+          let options = null;
+          if (['single_choice', 'multiple_choice', 'dropdown', 'ranking'].includes(qType)) {
+            const optsText = card.querySelector('.lwfb-q-options').value.trim();
+            if (optsText) {
+              options = optsText.split('\\n').map((line, idx) => ({
+                id: 'opt_' + idx,
+                label: line.trim(),
+                value: line.trim().toLowerCase().replace(/\\s+/g, '_')
+              })).filter(o => o.label);
+            }
+          }
+
+          const q = {
+            question_text: qText,
+            question_type: qType,
+            is_required: qRequired,
+            sort_order: i,
+            options: options
+          };
+
+          // Only pass ID if it's not a temp ID (new_ prefix) and not a fixed field
+          // Fixed fields get converted to regular questions on first save
+          if (qId && !qId.startsWith('new_') && !qId.startsWith('fixed_')) {
+            (q as any).id = qId;
+          }
+
+          questions.push(q);
+        }
+
+        const payload = { title, description, questions };
+        const url = isEdit ? \`/api/lw/templates/\${templateId}\` : '/api/lw/templates';
+
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to save');
+          }
+
+          window.location.href = '/learning-walks';
+        } catch (err) {
+          alert('Error saving template: ' + (err as Error).message);
+        }
+      }
+    </script>
+  `);
+}
+
+// ─── Learning Walk Template Builder ─────────────────────────────────────────
+
+async function renderLWTemplateBuilder(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!canCreateForms(identity.user!)) {
+    return htmlResponse(renderForbiddenPage(identity), 403);
+  }
+
+  const url = new URL(request.url);
+  const pathParts = url.pathname.split("/");
+  const templateId = pathParts.length > 4 ? pathParts[3] : null;
+
+  let template: LWTemplateWithQuestions | null = null;
+  if (templateId) {
+    template = await getLWTemplateWithQuestions(env, templateId);
+    if (!template) return htmlResponse(renderNotFoundPage(), 404);
+  }
+
+  // Get users for dropdowns (teachers and IQAs)
+  const users = await env.esol_marking_db.prepare(
+    "SELECT id, email, role FROM users WHERE role IN ('assessor', 'iqa', 'admin', 'superuser') ORDER BY email ASC"
+  ).all<UserRecord>();
+
+  return htmlResponse(renderLWTemplateBuilderPage(identity, template, users.results));
+}
+
+async function saveLWTemplate(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!canCreateForms(identity.user!)) {
+    return json({ error: "Forbidden" }, 403);
+  }
+
+  try {
+    const body = await request.json() as {
+      title: string;
+      description?: string;
+      questions: Array<{
+        id?: string;
+        question_text: string;
+        question_type: QuestionType;
+        options?: QuestionOption[];
+        is_required?: boolean;
+        sort_order: number;
+      }>;
+    };
+
+    const templateId = crypto.randomUUID();
+
+    // Insert template
+    await env.esol_marking_db.prepare(
+      "INSERT INTO lw_templates (id, title, description, created_by) VALUES (?, ?, ?, ?)"
+    ).bind(templateId, body.title, body.description ?? null, identity.user!.id).run();
+
+    // Insert questions
+    for (const q of body.questions) {
+      await env.esol_marking_db.prepare(
+        "INSERT INTO lw_template_questions (id, template_id, question_text, question_type, options, is_required, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      ).bind(
+        crypto.randomUUID(),
+        templateId,
+        q.question_text,
+        q.question_type,
+        q.options ? JSON.stringify(q.options) : null,
+        q.is_required ? 1 : 0,
+        q.sort_order
+      ).run();
+    }
+
+    return json({ success: true, templateId });
+  } catch (err) {
+    return json({ error: "Failed to save template", details: String(err) }, 500);
+  }
+}
+
+async function updateLWTemplate(request: Request, env: Env, identity: Identity, templateId: string): Promise<Response> {
+  if (!canCreateForms(identity.user!)) {
+    return json({ error: "Forbidden" }, 403);
+  }
+
+  try {
+    const body = await request.json() as {
+      title: string;
+      description?: string;
+      questions: Array<{
+        id?: string;
+        question_text: string;
+        question_type: QuestionType;
+        options?: QuestionOption[];
+        is_required?: boolean;
+        sort_order: number;
+      }>;
+    };
+
+    // Update template
+    await env.esol_marking_db.prepare(
+      "UPDATE lw_templates SET title = ?, description = ? WHERE id = ?"
+    ).bind(body.title, body.description ?? null, templateId).run();
+
+    // Get existing question IDs
+    const existingQs = await env.esol_marking_db.prepare(
+      "SELECT id FROM lw_template_questions WHERE template_id = ?"
+    ).bind(templateId).all<{ id: string }>();
+    const existingIds = new Set(existingQs.results.map(q => q.id));
+
+    // Track which questions are being updated
+    const updatedIds = new Set<string>();
+
+    // Insert or update questions
+    for (const q of body.questions) {
+      if (q.id && existingIds.has(q.id)) {
+        // Update existing
+        await env.esol_marking_db.prepare(
+          "UPDATE lw_template_questions SET question_text = ?, question_type = ?, options = ?, is_required = ?, sort_order = ? WHERE id = ?"
+        ).bind(
+          q.question_text,
+          q.question_type,
+          q.options ? JSON.stringify(q.options) : null,
+          q.is_required ? 1 : 0,
+          q.sort_order,
+          q.id
+        ).run();
+        updatedIds.add(q.id);
+      } else {
+        // Insert new
+        const newId = crypto.randomUUID();
+        await env.esol_marking_db.prepare(
+          "INSERT INTO lw_template_questions (id, template_id, question_text, question_type, options, is_required, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        ).bind(
+          newId,
+          templateId,
+          q.question_text,
+          q.question_type,
+          q.options ? JSON.stringify(q.options) : null,
+          q.is_required ? 1 : 0,
+          q.sort_order
+        ).run();
+        updatedIds.add(newId);
+      }
+    }
+
+    // Delete questions that are no longer in the list
+    for (const existingId of existingIds) {
+      if (!updatedIds.has(existingId)) {
+        await env.esol_marking_db.prepare(
+          "DELETE FROM lw_template_questions WHERE id = ?"
+        ).bind(existingId).run();
+      }
+    }
+
+    return json({ success: true, templateId });
+  } catch (err) {
+    return json({ error: "Failed to update template", details: String(err) }, 500);
+  }
+}
 
 function renderNotFoundPage() {
   return pageShell("Not found", `<main class="auth-shell"><section class="auth-card"><h1>Page not found</h1><a class="primary-action" href="/dashboard">Go to dashboard</a></section></main>`);
@@ -908,6 +1481,77 @@ function pageShell(title: string, body: string) {
     .lw-comment-date{font-size:0.8125rem;color:var(--muted);margin-left:auto}
     .lw-comment-body{margin:0;line-height:1.6;color:var(--text)}
     .lw-comment-form{display:flex;flex-direction:column;gap:0.75rem;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)}
+    /* Learning Walk Form Builder Popup */
+    .lwfb-popup-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(69,10,10,0.6);backdrop-filter:blur(4px);z-index:1000;display:flex;justify-content:center;align-items:center;padding:2rem}
+    .lwfb-popup-container{background:#fff;border-radius:16px;width:100%;max-width:900px;max-height:calc(100vh - 4rem);display:flex;flex-direction:column;box-shadow:0 25px 100px rgba(69,10,10,0.3)}
+    .lwfb-popup-header{display:flex;justify-content:space-between;align-items:center;padding:1.5rem 2rem;border-bottom:2px solid var(--border);background:linear-gradient(135deg,#fef2f2 0%,#fff 100%)}
+    .lwfb-eyebrow{margin:0 0 0.25rem;color:var(--primary);font-size:0.75rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase}
+    .lwfb-title{margin:0;font-size:1.75rem;color:var(--text)}
+    .lwfb-close-btn{background:none;border:none;font-size:1.75rem;color:var(--muted);cursor:pointer;padding:0.5rem;border-radius:8px;transition:all 0.2s}
+    .lwfb-close-btn:hover{background:#fee2e2;color:var(--primary)}
+    .lwfb-popup-content{flex:1;overflow-y:auto;padding:2rem;background:#f8fafc}
+    .lwfb-popup-footer{display:flex;justify-content:flex-end;gap:1rem;padding:1.5rem 2rem;border-top:2px solid var(--border);background:#fff}
+    .lwfb-section-card{background:#fff;border-radius:12px;padding:1.5rem 2rem;margin-bottom:1.5rem;box-shadow:0 4px 16px rgba(220,38,38,0.1)}
+    .lwfb-title-input{width:100%;border:none;border-bottom:3px solid transparent;font-size:2rem;font-weight:700;color:var(--text);padding:0.75rem 0;margin-bottom:0.75rem;background:transparent;font-family:inherit}
+    .lwfb-title-input:focus{outline:none;border-bottom-color:var(--primary)}
+    .lwfb-title-input::placeholder{color:#fca5a5;font-weight:400}
+    .lwfb-desc-input{width:100%;border:none;font-size:1.125rem;color:var(--muted);padding:0.75rem 0;resize:none;background:transparent;font-family:inherit}
+    .lwfb-desc-input:focus{outline:none}
+    .lwfb-desc-input::placeholder{color:#fca5a5}
+    .lwfb-section-title{font-size:1.25rem;font-weight:700;margin:0 0 0.75rem 0;color:var(--text)}
+    .lwfb-section-hint{font-size:0.9375rem;color:var(--muted);margin:0 0 1.25rem 0;line-height:1.5}
+    .lwfb-header-preview{border-left:4px solid var(--primary);background:linear-gradient(135deg,#fff9f9 0%,#fff 100%)}
+    .lwfb-header-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1.5rem}
+    .lwfb-field-preview label{display:block;font-size:0.9375rem;font-weight:600;color:var(--text);margin-bottom:0.5rem}
+    .lwfb-field-preview .req{color:#dc2626;margin-left:0.25rem}
+    .field-preview-box{background:#fef2f2;border:2px solid var(--border);border-radius:8px;padding:0.75rem 1rem;color:#991b1b;font-size:0.9375rem}
+    .field-preview-box select,.field-preview-box input{width:100%;background:transparent;border:none;color:inherit;font-size:inherit;cursor:not-allowed}
+    .lwfb-questions-container{margin-bottom:1rem}
+    .lwfb-question-card{background:#fff;border:2px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1rem;box-shadow:0 2px 8px rgba(220,38,38,0.08);transition:all 0.2s}
+    .lwfb-question-card:hover{border-color:#f87171;box-shadow:0 4px 12px rgba(220,38,38,0.15)}
+    .lwfb-fixed-card{border-left:4px solid #3b82f6;background:linear-gradient(135deg,#eff6ff 0%,#fff 100%)}
+    .lwfb-fixed-card .lwfb-q-number{background:linear-gradient(135deg,#3b82f6,#60a5fa)}
+    .lwfb-fixed-card .lwfb-q-text{background:#f8fafc}
+    .lwfb-fixed-badge{font-size:0.75rem;font-weight:600;padding:0.375rem 0.75rem;background:#dbeafe;color:#1e40af;border-radius:6px;margin-left:auto}
+    .lwfb-fixed-card .lwfb-q-type-select{background:#e0e7ff;border-color:#3b82f6;color:#1e40af}
+    .lwfb-fixed-card .lwfb-q-type-select:disabled{opacity:0.8;cursor:not-allowed}
+    .lwfb-question-header{display:flex;align-items:center;gap:1rem;margin-bottom:1rem;padding-bottom:0.75rem;border-bottom:1px solid var(--border)}
+    .lwfb-q-number{width:2rem;height:2rem;background:linear-gradient(135deg,var(--primary),#f87171);color:#fff;border-radius:50%;display:grid;place-items:center;font-size:0.9375rem;font-weight:700;flex-shrink:0}
+    .lwfb-q-type-select{background:#f8fafc;border:2px solid var(--border);border-radius:6px;padding:0.5rem 0.75rem;font-size:0.875rem;cursor:pointer}
+    .lwfb-q-type-select:focus{border-color:var(--primary);outline:none}
+    .lwfb-required-label{display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:var(--muted);cursor:pointer;margin-left:auto}
+    .lwfb-required-label input{width:auto}
+    .lwfb-delete-q{background:#fee2e2;border:none;border-radius:6px;color:#dc2626;font-size:1.25rem;width:2rem;height:2rem;display:grid;place-items:center;cursor:pointer;transition:all 0.2s}
+    .lwfb-delete-q:hover{background:#dc2626;color:#fff}
+    .lwfb-question-body{display:flex;flex-direction:column;gap:0.75rem}
+    .lwfb-q-text{font-size:1.125rem;padding:0.75rem 1rem;border:2px solid var(--border);border-radius:8px;width:100%;font-family:inherit}
+    .lwfb-q-text:focus{border-color:var(--primary);outline:none}
+    .lwfb-options-section{margin-top:0.5rem}
+    .lwfb-options-label{display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.5rem}
+    .lwfb-q-options{font-family:monospace;font-size:0.875rem;padding:0.75rem 1rem;border:2px solid var(--border);border-radius:8px;width:100%;resize:vertical}
+    .lwfb-q-options:focus{border-color:var(--primary);outline:none}
+    .lwfb-add-wrapper{display:flex;justify-content:center;padding:1rem 0}
+    .lwfb-add-btn{background:#fff;border:2px dashed var(--border);border-radius:8px;padding:1rem 2rem;cursor:pointer;display:flex;align-items:center;gap:0.75rem;color:var(--muted);font-weight:500;transition:all 0.2s;font-size:1rem}
+    .lwfb-add-btn:hover{border-color:var(--primary);color:var(--primary)}
+    .lwfb-add-btn .plus-icon{font-size:1.5rem;font-weight:300}
+    .lwfb-type-picker{background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.15);padding:1rem;margin-top:0.5rem;border:2px solid var(--border)}
+    .lwfb-type-picker .picker-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;padding-bottom:0.5rem;border-bottom:1px solid var(--border)}
+    .lwfb-type-picker .picker-header span{font-weight:600;color:var(--text)}
+    .lwfb-type-picker .picker-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem}
+    .lwfb-type-picker .type-option{background:#f8fafc;border:2px solid transparent;border-radius:8px;padding:1rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:0.5rem;transition:all 0.2s}
+    .lwfb-type-picker .type-option:hover{background:#fff;border-color:var(--primary);box-shadow:0 4px 12px rgba(220,38,38,0.15)}
+    .lwfb-type-picker .type-icon{font-size:1.5rem}
+    .lwfb-type-picker .type-label{font-size:0.875rem;font-weight:500;color:var(--text)}
+    .lwfb-type-picker .type-desc{font-size:0.75rem;color:var(--muted);text-align:center}
+    .lwfb-empty-state{color:var(--muted);font-style:italic;padding:2rem;text-align:center;background:#f8fafc;border-radius:8px;border:2px dashed var(--border)}
+    .lwfb-comments-section{background:linear-gradient(135deg,#f8fafc 0%,#fff 100%);border-left:4px solid #d97706}
+    .lwfb-comments-list{max-height:200px;overflow-y:auto}
+    .lwfb-empty-comments{color:var(--muted);font-style:italic;padding:1rem;text-align:center}
+    .lwfb-primary-btn{background:var(--primary);color:#fff;border:none;border-radius:8px;padding:0.75rem 1.5rem;font-weight:600;cursor:pointer;font-size:1rem;transition:all 0.2s}
+    .lwfb-primary-btn:hover{background:var(--primary-dark)}
+    .lwfb-secondary-btn{background:#f1f5f9;color:var(--text);border:none;border-radius:8px;padding:0.75rem 1.5rem;font-weight:600;cursor:pointer;font-size:1rem;transition:all 0.2s}
+    .lwfb-secondary-btn:hover{background:#e2e8f0}
+    @media (max-width:768px){.lwfb-header-grid{grid-template-columns:1fr}.lwfb-type-picker .picker-grid{grid-template-columns:repeat(2,1fr)}.lwfb-popup-overlay{padding:1rem}.lwfb-popup-container{max-height:calc(100vh - 2rem)}}
   </style></head><body>${body}</body></html>`;
 }
 
