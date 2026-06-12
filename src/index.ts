@@ -289,6 +289,11 @@ export default {
     // Learning Walks dashboard only
     if (url.pathname === "/learning-walks") return renderLWDashboard(request, env, identity);
 
+    // Redirect old /new route to /build
+    if (url.pathname === "/learning-walks/templates/new") {
+      return new Response(null, { status: 302, headers: { Location: "/learning-walks/templates/build" } });
+    }
+
     // Learning Walk Template Builder
     if (url.pathname === "/learning-walks/templates/build" || url.pathname.match(/^\/learning-walks\/templates\/[^/]+\/build$/)) {
       return renderLWTemplateBuilder(request, env, identity);
@@ -300,6 +305,9 @@ export default {
     }
     if (url.pathname.match(/^\/api\/lw\/templates\/[^/]+$/) && request.method === "POST") {
       return updateLWTemplate(request, env, identity, url.pathname.split("/")[4]);
+    }
+    if (url.pathname.match(/^\/api\/lw\/templates\/[^/]+\/delete$/) && request.method === "POST") {
+      return deleteLWTemplate(request, env, identity, url.pathname.split("/")[4]);
     }
 
     return htmlResponse(renderNotFoundPage(), 404);
@@ -1259,6 +1267,64 @@ async function updateLWTemplate(request: Request, env: Env, identity: Identity, 
     return json({ success: true, templateId });
   } catch (err) {
     return json({ error: "Failed to update template", details: String(err) }, 500);
+  }
+}
+
+async function deleteLWTemplate(request: Request, env: Env, identity: Identity, templateId: string): Promise<Response> {
+  if (!canCreateForms(identity.user!)) {
+    return json({ error: "Forbidden" }, 403);
+  }
+
+  try {
+    // Parse form data to check confirmation
+    const formData = await request.formData();
+    const confirmValue = formData.get("confirm")?.toString();
+
+    if (confirmValue !== "DELETE") {
+      return json({ error: "Confirmation required" }, 400);
+    }
+
+    // Delete in order: answers -> comments -> entries -> questions -> template
+    // First get all entries for this template
+    const entries = await env.esol_marking_db.prepare(
+      "SELECT id FROM lw_entries WHERE template_id = ?"
+    ).bind(templateId).all<{ id: string }>();
+
+    const entryIds = entries.results.map(e => e.id);
+
+    // Delete answers and comments for each entry
+    for (const entryId of entryIds) {
+      await env.esol_marking_db.prepare(
+        "DELETE FROM lw_answers WHERE entry_id = ?"
+      ).bind(entryId).run();
+
+      await env.esol_marking_db.prepare(
+        "DELETE FROM lw_comments WHERE entry_id = ?"
+      ).bind(entryId).run();
+    }
+
+    // Delete entries
+    await env.esol_marking_db.prepare(
+      "DELETE FROM lw_entries WHERE template_id = ?"
+    ).bind(templateId).run();
+
+    // Delete questions
+    await env.esol_marking_db.prepare(
+      "DELETE FROM lw_template_questions WHERE template_id = ?"
+    ).bind(templateId).run();
+
+    // Delete template
+    await env.esol_marking_db.prepare(
+      "DELETE FROM lw_templates WHERE id = ?"
+    ).bind(templateId).run();
+
+    // Return success - client can redirect
+    return new Response(null, {
+      status: 302,
+      headers: { Location: "/learning-walks" }
+    });
+  } catch (err) {
+    return json({ error: "Failed to delete template", details: String(err) }, 500);
   }
 }
 
