@@ -880,15 +880,14 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
             <div id="questionsContainer" class="lwfb-questions-container">
               ${questionsHtml}
             </div>
-            <div class="lwfb-add-wrapper">
+            <div class="lwfb-add-wrapper" style="position:relative;">
               <button type="button" class="lwfb-add-btn" onclick="showQuestionTypePicker()">
                 <span class="plus-icon">+</span>
                 <span>Add Question</span>
               </button>
-            </div>
 
-            <!-- Question Type Picker (hidden by default) -->
-            <div id="questionTypePicker" class="lwfb-type-picker hidden">
+              <!-- Question Type Picker (hidden by default) - positioned absolutely above button -->
+              <div id="questionTypePicker" class="lwfb-type-picker hidden" style="position:absolute;bottom:calc(100% + 0.5rem);left:50%;transform:translateX(-50%);z-index:100;min-width:400px;">
               <div class="picker-header">
                 <span>Select Question Type</span>
                 <button type="button" class="close-picker" onclick="hideQuestionTypePicker()">×</button>
