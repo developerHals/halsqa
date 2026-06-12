@@ -1086,7 +1086,7 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
           // Only pass ID if it's not a temp ID (new_ prefix) and not a fixed field
           // Fixed fields get converted to regular questions on first save
           if (qId && !qId.startsWith('new_') && !qId.startsWith('fixed_')) {
-            (q as any).id = qId;
+            q.id = qId;
           }
 
           questions.push(q);
@@ -1109,7 +1109,7 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
 
           window.location.href = '/learning-walks';
         } catch (err) {
-          alert('Error saving template: ' + (err as Error).message);
+          alert('Error saving template: ' + (err.message || String(err)));
         }
       }
     </script>
