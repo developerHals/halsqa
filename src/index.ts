@@ -335,6 +335,11 @@ export default {
       return completeLWEntry(request, env, identity, url.pathname.split("/")[4]);
     }
 
+    // Learning Walk Entry Delete API (superuser only)
+    if (url.pathname.match(/^\/api\/lw\/entries\/[^/]+\/delete$/) && request.method === "POST") {
+      return deleteLWEntry(request, env, identity, url.pathname.split("/")[4]);
+    }
+
     // Learning Walk Template API
     if (url.pathname === "/api/lw/templates" && request.method === "POST") {
       return saveLWTemplate(request, env, identity);
@@ -734,6 +739,13 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
           <div class="list-stack">
             ${entries.length ? entries.map(e => {
               const isOverdue = e.due_date && e.due_date < today && e.status !== "complete";
+              const deleteBtn = isSuperuser(user) ? `
+                <button type="button"
+                  class="lw-entry-delete-btn"
+                  title="Delete submission"
+                  onclick="confirmDeleteEntry('${e.id}', '${escapeHtml(e.template_title).replace(/'/g, "\\'")}')">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                </button>` : "";
               return `<article class="list-card${isOverdue ? " lw-overdue-card" : ""}">
                 <a href="/learning-walks/entries/${e.id}" style="display:block;flex:1">
                   <strong>${escapeHtml(e.template_title)}</strong>
@@ -741,19 +753,99 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
                   <span>Assessor: ${escapeHtml(e.assessor_name)} · IQA: ${escapeHtml(e.iqa_name)}</span>
                   <span>Planned: ${escapeHtml(e.planned_date)}${e.due_date ? ` · Due: ${escapeHtml(e.due_date)}` : ""}</span>
                 </a>
-                <div>${renderLWStatusBadge(e.status, e.due_date)}</div>
+                <div style="display:flex;align-items:center;gap:0.75rem">
+                  ${renderLWStatusBadge(e.status, e.due_date)}
+                  ${deleteBtn}
+                </div>
               </article>`;
             }).join("") : renderEmpty("No learning walks found")}
           </div>
         </section>
       </section>
     </main>
+
+    <!-- Delete Entry Modal -->
+    <div id="lw-delete-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:none;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:12px;padding:2rem;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+        <h2 style="margin:0 0 0.5rem;color:#0f172a;font-size:1.25rem">Delete Submission</h2>
+        <p style="color:#64748b;margin:0 0 1.25rem;font-size:0.9375rem">You are about to permanently delete: <strong id="lw-delete-title"></strong></p>
+        <p style="color:#64748b;margin:0 0 1rem;font-size:0.9375rem">This will remove all answers, comments and notifications for this submission. <strong>This cannot be undone.</strong></p>
+        <p style="color:#64748b;margin:0 0 0.75rem;font-size:0.9rem">Type <strong>DELETE</strong> to confirm:</p>
+        <input id="lw-delete-confirm-input" type="text" placeholder="Type DELETE here"
+          style="width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:0.75rem 1rem;font-size:1rem;margin-bottom:1rem">
+        <div style="display:flex;gap:0.75rem;justify-content:flex-end">
+          <button type="button" onclick="closeLWDeleteModal()"
+            style="background:#f1f5f9;color:#0f172a;border:none;border-radius:8px;padding:0.7rem 1.25rem;font-weight:600;cursor:pointer;font-size:0.9375rem">
+            Cancel
+          </button>
+          <button type="button" id="lw-delete-confirm-btn" onclick="submitLWDelete()"
+            style="background:#ff005a;color:#fff;border:none;border-radius:8px;padding:0.7rem 1.25rem;font-weight:600;cursor:pointer;font-size:0.9375rem">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script>
       function confirmDelete(form) {
         const t = prompt("Type DELETE to confirm:");
         if (t !== "DELETE") { alert("Cancelled."); return false; }
         return true;
       }
+
+      let _lwDeleteEntryId = null;
+
+      function confirmDeleteEntry(entryId, title) {
+        _lwDeleteEntryId = entryId;
+        document.getElementById("lw-delete-title").textContent = title;
+        document.getElementById("lw-delete-confirm-input").value = "";
+        const modal = document.getElementById("lw-delete-modal");
+        modal.style.display = "flex";
+        document.getElementById("lw-delete-confirm-input").focus();
+      }
+
+      function closeLWDeleteModal() {
+        document.getElementById("lw-delete-modal").style.display = "none";
+        _lwDeleteEntryId = null;
+      }
+
+      async function submitLWDelete() {
+        const input = document.getElementById("lw-delete-confirm-input").value.trim();
+        if (input !== "DELETE") {
+          document.getElementById("lw-delete-confirm-input").style.borderColor = "#ff005a";
+          document.getElementById("lw-delete-confirm-input").focus();
+          return;
+        }
+        const btn = document.getElementById("lw-delete-confirm-btn");
+        btn.disabled = true;
+        btn.textContent = "Deleting...";
+        try {
+          const res = await fetch("/api/lw/entries/" + _lwDeleteEntryId + "/delete", { method: "POST" });
+          const data = await res.json();
+          if (data.success) {
+            closeLWDeleteModal();
+            window.location.reload();
+          } else {
+            alert("Error: " + (data.error || "Failed to delete"));
+            btn.disabled = false;
+            btn.textContent = "Delete";
+          }
+        } catch (e) {
+          alert("Network error. Please try again.");
+          btn.disabled = false;
+          btn.textContent = "Delete";
+        }
+      }
+
+      document.getElementById("lw-delete-modal").addEventListener("click", function(e) {
+        if (e.target === this) closeLWDeleteModal();
+      });
+
+      document.getElementById("lw-delete-confirm-input").addEventListener("keydown", function(e) {
+        if (e.key === "Enter") submitLWDelete();
+        if (e.key === "Escape") closeLWDeleteModal();
+        this.style.borderColor = "#e5e7eb";
+      });
     </script>
   `);
 }
@@ -2377,6 +2469,41 @@ async function completeLWEntry(request: Request, env: Env, identity: Identity, e
   }
 }
 
+// API: Delete Learning Walk Entry (Superuser only)
+async function deleteLWEntry(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  const user = identity.user!;
+
+  if (user.role !== "superuser") {
+    return json({ error: "Forbidden: superuser only" }, 403);
+  }
+
+  // Verify entry exists
+  const entry = await env.esol_marking_db.prepare(
+    `SELECT id FROM lw_entries WHERE id = ?`
+  ).bind(entryId).first() as { id: string } | null;
+
+  if (!entry) {
+    return json({ error: "Entry not found" }, 404);
+  }
+
+  try {
+    // Delete in correct order: child tables first, then the entry itself
+    // lw_comments references lw_entries
+    await env.esol_marking_db.prepare(`DELETE FROM lw_comments WHERE entry_id = ?`).bind(entryId).run();
+    // lw_answers references lw_entries
+    await env.esol_marking_db.prepare(`DELETE FROM lw_answers WHERE entry_id = ?`).bind(entryId).run();
+    // lw_notifications references lw_entries
+    await env.esol_marking_db.prepare(`DELETE FROM lw_notifications WHERE entry_id = ?`).bind(entryId).run();
+    // Finally delete the entry itself
+    await env.esol_marking_db.prepare(`DELETE FROM lw_entries WHERE id = ?`).bind(entryId).run();
+
+    return json({ success: true });
+  } catch (err) {
+    console.error("deleteLWEntry error:", err);
+    return json({ error: "Failed to delete entry" }, 500);
+  }
+}
+
 function renderNotFoundPage() {
   return pageShell("Not found", `<main class="auth-shell"><section class="auth-card"><h1>Page not found</h1><a class="primary-action" href="/dashboard">Go to dashboard</a></section></main>`);
 }
@@ -2741,6 +2868,8 @@ function pageShell(title: string, body: string) {
     .lw-comment-date{font-size:0.875rem;color:var(--muted);margin-left:auto}
     .lw-comment-text{color:var(--text);line-height:1.5}
     .lw-entry-question .disabled{opacity:0.6;cursor:not-allowed}
+    .lw-entry-delete-btn{background:none;border:1px solid var(--border);border-radius:8px;padding:0.5rem;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s;flex-shrink:0}
+    .lw-entry-delete-btn:hover{background:#fff0f3;color:#ff005a;border-color:#ff005a}
     @media (max-width:768px){.lwfb-header-grid{grid-template-columns:1fr}.lwfb-type-picker .picker-grid{grid-template-columns:repeat(2,1fr)}.lwfb-popup-overlay{padding:1rem}.lwfb-popup-container{max-height:calc(100vh - 2rem)}.lw-entry-grid{grid-template-columns:1fr}}
   </style></head><body>${body}</body></html>`;
 }
