@@ -1925,26 +1925,28 @@ async function renderLWEntryView(request: Request, env: Env, identity: Identity,
   const { entry, canEdit, canComment, canComplete } = auth;
 
   // Fetch template questions
-  const questions = await env.esol_marking_db.prepare(
+  const questionsResult = await env.esol_marking_db.prepare(
     `SELECT * FROM lw_template_questions WHERE template_id = ? ORDER BY sort_order ASC`
   ).bind(entry.template_id).all();
+  const questions = questionsResult.results || [];
 
   // Fetch answers
-  const answers = await env.esol_marking_db.prepare(
+  const answersResult = await env.esol_marking_db.prepare(
     `SELECT * FROM lw_answers WHERE entry_id = ?`
   ).bind(entryId).all();
-  const answersMap = new Map(answers.results.map((a: any) => [a.question_id, a.answer]));
+  const answersMap = new Map((answersResult.results || []).map((a: any) => [a.question_id, a.answer]));
 
   // Fetch comments
-  const comments = await env.esol_marking_db.prepare(
+  const commentsResult = await env.esol_marking_db.prepare(
     `SELECT c.*, u.email as author_email
      FROM lw_comments c
      LEFT JOIN users u ON u.id = c.author_id
      WHERE c.entry_id = ?
      ORDER BY c.created_at DESC`
   ).bind(entryId).all();
+  const comments = commentsResult.results || [];
 
-  return htmlResponse(renderLWEntryViewPage(identity, entry, questions.results, answersMap, comments.results, canEdit, canComment, canComplete));
+  return htmlResponse(renderLWEntryViewPage(identity, entry, questions, answersMap, comments, canEdit, canComment, canComplete));
 }
 
 // Render the Entry View Page HTML
@@ -1967,7 +1969,7 @@ function renderLWEntryViewPage(
   };
   const statusBadge = `<span class="lw-status-badge ${entry.status}">${statusLabels[entry.status] || entry.status}</span>`;
 
-  const formatDate = (d: string) => d ? new Date(d).toLocaleDateString() : "-";
+  const formatDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString() : "-";
 
   // Render questions
   const questionsHtml = questions.map((q: any, index: number) => {
@@ -2095,78 +2097,82 @@ function renderLWEntryViewPage(
   }
 
   const body = `
-    ${renderSidebar(identity, "learning-walks")}
-    <main class="main">
-      <div class="page-header">
-        <div style="display:flex;align-items:center;gap:1rem;">
-          <a href="/learning-walks" class="small-action" style="width:auto;padding:0.5rem 1rem;">← Back</a>
-          <h1>Learning Walk: ${escapeHtml(entry.template_title)}</h1>
-        </div>
-        <div style="display:flex;align-items:center;gap:1rem;">
-          ${statusBadge}
-        </div>
-      </div>
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "learning-walks")}
+      <section class="content">
+        ${renderTopbar(identity, `Learning Walk - ${entry.template_title}`)}
 
-      <div class="lw-entry-form" data-entry-id="${entry.id}">
-        <!-- Fixed Header Fields -->
-        <section class="lw-entry-section">
-          <h2 class="lw-entry-section-title">📋 Course Information</h2>
-          <div class="lw-entry-grid">
-            <div class="lw-entry-field">
-              <label class="lw-entry-label">Course ID</label>
-              <input type="text" class="lw-entry-input" value="${escapeHtml(entry.course_id)}" disabled>
-            </div>
-            <div class="lw-entry-field">
-              <label class="lw-entry-label">Course Name</label>
-              <input type="text" class="lw-entry-input" value="${escapeHtml(entry.course_name)}" disabled>
-            </div>
-            <div class="lw-entry-field">
-              <label class="lw-entry-label">Assessor</label>
-              <input type="text" class="lw-entry-input" value="${escapeHtml(entry.assessor_name)}" disabled>
-            </div>
-            <div class="lw-entry-field">
-              <label class="lw-entry-label">IQA</label>
-              <input type="text" class="lw-entry-input" value="${escapeHtml(entry.iqa_name)}" disabled>
-            </div>
-            <div class="lw-entry-field">
-              <label class="lw-entry-label">Planned Date</label>
-              <input type="text" class="lw-entry-input" value="${formatDate(entry.planned_date)}" disabled>
-            </div>
-            <div class="lw-entry-field">
-              <label class="lw-entry-label">Due Date</label>
-              <input type="text" class="lw-entry-input" value="${formatDate(entry.due_date)}" disabled>
-            </div>
+        <div class="page-header" style="margin-bottom:1.5rem;">
+          <div style="display:flex;align-items:center;gap:1rem;">
+            <a href="/learning-walks" class="small-action" style="width:auto;padding:0.5rem 1rem;">← Back</a>
+            <h1>Learning Walk: ${escapeHtml(entry.template_title)}</h1>
           </div>
-        </section>
-
-        <!-- Questions -->
-        <section class="lw-entry-section">
-          <h2 class="lw-entry-section-title">📝 Assessment Questions</h2>
-          ${questionsHtml || '<div class="lw-entry-empty">No questions in this template.</div>'}
-        </section>
-
-        <!-- Comments Section -->
-        <section class="lw-entry-section lw-entry-comments-section">
-          <h2 class="lw-entry-section-title">💬 Comments & Paper Trail</h2>
-          <div class="lw-comments-list">
-            ${commentsHtml}
+          <div style="display:flex;align-items:center;gap:1rem;">
+            ${statusBadge}
           </div>
-          ${canComment ? `
-            <div class="lw-comment-add" style="margin-top:1.5rem;">
-              <label class="lw-entry-label">Add a comment</label>
-              <textarea id="newComment" class="lw-entry-textarea" placeholder="Enter your comment..." rows="3"></textarea>
-              <button type="button" class="small-action" onclick="addComment()" style="margin-top:0.75rem;">Post Comment</button>
+        </div>
+
+        <div class="lw-entry-form" data-entry-id="${entry.id}">
+          <!-- Fixed Header Fields -->
+          <section class="lw-entry-section">
+            <h2 class="lw-entry-section-title">📋 Course Information</h2>
+            <div class="lw-entry-grid">
+              <div class="lw-entry-field">
+                <label class="lw-entry-label">Course ID</label>
+                <input type="text" class="lw-entry-input" value="${escapeHtml(entry.course_id)}" disabled>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label">Course Name</label>
+                <input type="text" class="lw-entry-input" value="${escapeHtml(entry.course_name)}" disabled>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label">Assessor</label>
+                <input type="text" class="lw-entry-input" value="${escapeHtml(entry.assessor_name)}" disabled>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label">IQA</label>
+                <input type="text" class="lw-entry-input" value="${escapeHtml(entry.iqa_name)}" disabled>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label">Planned Date</label>
+                <input type="text" class="lw-entry-input" value="${formatDate(entry.planned_date)}" disabled>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label">Due Date</label>
+                <input type="text" class="lw-entry-input" value="${formatDate(entry.due_date)}" disabled>
+              </div>
+            </div>
+          </section>
+
+          <!-- Questions -->
+          <section class="lw-entry-section">
+            <h2 class="lw-entry-section-title">📝 Assessment Questions</h2>
+            ${questionsHtml || '<div class="lw-entry-empty">No questions in this template.</div>'}
+          </section>
+
+          <!-- Comments Section -->
+          <section class="lw-entry-section lw-entry-comments-section">
+            <h2 class="lw-entry-section-title">💬 Comments & Paper Trail</h2>
+            <div class="lw-comments-list">
+              ${commentsHtml}
+            </div>
+            ${canComment ? `
+              <div class="lw-comment-add" style="margin-top:1.5rem;">
+                <label class="lw-entry-label">Add a comment</label>
+                <textarea id="newComment" class="lw-entry-textarea" placeholder="Enter your comment..." rows="3"></textarea>
+                <button type="button" class="small-action" onclick="addComment()" style="margin-top:0.75rem;">Post Comment</button>
+              </div>
+            ` : ""}
+          </section>
+
+          <!-- Actions -->
+          ${actionsHtml.length > 0 ? `
+            <div class="lw-entry-actions">
+              ${actionsHtml.join("")}
             </div>
           ` : ""}
-        </section>
-
-        <!-- Actions -->
-        ${actionsHtml.length > 0 ? `
-          <div class="lw-entry-actions">
-            ${actionsHtml.join("")}
-          </div>
-        ` : ""}
-      </div>
+        </div>
+      </section>
     </main>
 
     <script>
@@ -2752,4 +2758,4 @@ function renderTopbar(identity: Identity, title: string) {
   return `<header class="topbar"><div><p class="eyebrow">Dashboard</p><h1>${escapeHtml(title)}</h1></div><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></header>`;
 }
 
-function escapeHtml(value: string) { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
+function escapeHtml(value: string | null | undefined) { if (value == null) return ""; return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }

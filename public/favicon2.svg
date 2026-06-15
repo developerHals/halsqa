@@ -1,0 +1,29 @@
+<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 173" width="550" height="541">
+	<defs>
+		<image  width="176" height="173" id="img1" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALAAAACtCAMAAAAnIQUpAAAAAXNSR0IB2cksfwAAAZVQTFRF/wBZ/wBa/xpr/+Tu/////5a7/yBv/9/q/5G4/yZz/9nm/4y1/yt2/9Pj/4ex/zF6/87f/4Ku/zd+/8jb/32r/z2B/8LY/3en/7zU/3Kk/7fQ/22h/7HN/2id/6vJ/2Oa/6XF/16X/5/B/1mU/5q+/1OQ/5S6/06M/462/0mJ/4iy/0SG/z+D/zqA/zR8/3Gj/y94/2yg/yp1/2ac/yVy/2CY/x9u/1uV/xtr/1WR/xVo/0+N/xBk/x5t/w1i/+/1/+70//7+/1SQ/xFl/zZ9/9rn/yZy/whf/yJw/zN7/zl//4mz/2uf//X5/93p/4Ct/3am/2Wb/1GO/2+i/8fb/7DM/6rI/53A/5m9/4u0/3io/3Ok/1+X//H2/8ze/9vo/+rx//n7/0aH/wZe/xNm/yNx//j6/3+s/5K4/+jw/x1t//b5/4ax//r8/4Ov//z9/36s/wBb/3uq/wFb/wJb/3Wm/wNc/wRc/3Ci/wVe/26h/wde/wlg/2GZ/wph/wti/yRx/wxi/1aS/0yL/yh0/0eI/yx2pOdP4QAABuhJREFUeJztXWtsVEUUnkuKDxTkEUoaKIhYocY0TUVCayCSIik+QoyaqH9I+scYQvARIooNpT7jO4ag0cQ/mhj1jzEYXxGIaMAQQwyiKNVUKWoICtYXSpt17227O3Nm5szMuXt7Z5v5NnR378yZ+ea7H2dm7957N2ICogJ4MDWiwgRdkRnRIOzFstckmNbvxDNnDdHYFlHzLzk0JiyMTS5Xh51z+tz/yH2e/bfcj1WvSRFN4fP+Ov8fUmCMSX+QQ6WxlJQ2mGzKwAV/kvucfAptHBWYqvC0k9N/p7EtYuqv5NB4MKiFdZh5YuZv5D5nHB97D08ZmHWCFBhj5i/kUDgWg3N5k9UdJ/c56yek0NQ7UeFCNJsuU10/SzyhtKCJD9HDEavHZMIx+0ek0Ghv6gw7r58YyFh9H7LjTcG4h5E9NB+TCce875FCaQAiIbOHNbsoWtBHpFscay+y340eNqwltA00YDLhWPAtUpjaw9Aio88Lex1pltFwuGIeZtZxrBGTCcfCrxwqw+HoFDbuman0JdeiQ8OtjzoQTaeQn87DRolnnHLlWULjlw6VhcEgChunyFr6kuvSg8bW9Z4WCZvTbwlNh8iEL/vCobLsYfVwjB5uPkjhmqDpgP0aQOFhuU5BUU9Ci4tMIpo/d6gseVgsLuusdBSXhxcfIBNu2W/yMNcPDCYvfpa4yCRi8WcutYFlVWnNJj9GS/dT+bIlewtsWEVzP1YetkKbk0wCln7qUFnOw7J9bLLksq/pE0fbnorlYREp9jqKK6Noj7Zw+S6wAXoYabg1I8Iolu8U3yvWEtrirBRGISkMACwh+CcXhQfFt/AjUkxYa/FcFDYdxYUKJ9tGXJKLwkPyvMChuM03D7sq7JeHI+ljvjRx8NWrQmH+TT4KqyzMbQseTguYhwtgNRc8nBbBw1kD5mE44Y2LtcQovFlLCGkheDglzHk4eDgdzB7Wx/qqsDg35+1hkbBsVP8UVv2X0qc1AfkrPOphbhOm8KIjGRAyQZyah5+EtNa+U5vW2nfD1lZUnJ902ERQ+Orhpw+5TWWFVyVj27Uq/ru3LSl6H7bW8U4lSHK49j24xejhqxib/K5t+x074r/wuK7DaQsQ10mEr+llDftGXrceHXkxd/TkjLpvohqX9sdAYRMcCe/Q5WziI3PC1aewa/sGyB42YdwrTPMq971b6Tn5FxQGwPMwIR8HhQFCHg55GKAKFabnXSH/hjysQfCwLx62XmNkrfAYfAg1wY2wBwiEs0YgnDUC4awRCGeNQDhrBMJZIxDOGoFw1giEs4Yb4TXUXt4iBiqaqsDxYTNuyo0w8bjEjfkpTDv+EBS2RfURtrKEfJA1WMIWcVrjD0knLVgkt6CwLUJac8fYfGUQFLYF7mH9l1xBYVsED7tjLPJwZRW+efj68fhPfHuA5o8YW3m4+KLxO8Yufg0Szlzh1dNiJicZm97H2PxXFIQ1rxOsfRVs6Ki17VjEgDVh6eTWziOMXdLPWH3x37Eh/HTc1XNepvFLAeOdCPmrveDJ5Xmc8Dwk+R+sBn07pdyssLylNKI8FB5UbRRErz6F9fkzF4UFA5edXCZcfQrr4Y2HxUss9cGeKuy3h8dbHhaPNwQPW0B1ZY8A79YS/BtuRVGCbwrDK3ukS2x9y8Pw6jT5GlvPFJY8DBT338PCe+afh4WJI1J5WLjtXv552MLDYObjXvvg4QJQXLaEzx6OEYEPIHyZfx5WpDW+Qv4KK+aJqvJwsq3qPAynC67Mv7WE0sNlj7RcoW13X2v0Ep1V7fXaohdFMsobdervOYJhEv1HNTprnteWSWTktQSM0H/GEx63vEkmfPt2y1tSmz0sFqG9prgldSfmJuN6WE8L/Q45WveCC0cBd2zTtw1XZwYPa3eOjPXbXXmWsO45h8pGDyuqlr9347CGflnSst3EW6EmWU2cTfhiXOIN28iE2fpn6bEuHhZGfpfLfgXY8LT1CWSi3kzKw/YmvvUNItsi7nyKHmvjYWXS2/gMvdO7n7D2MGCbwsO3vU4nfM/j9FinPMwPfdOT9E43PpbKwzxHew/fl0KltSm+/xMtIRQpzn/g4H5xZBn3PgJ0E5/RRwTnQm4saKdzfqYTbv+AHgumZr4I9/Dl9DvtFwnTb7SD3NEOD5x7jNwn2/QwPRbzMJoTux6ld3r/g9Z5GDKge/jCo2gxis099FgkD2/phnX50ab4LQPW1Z2Dhy/6gdwna/2EHuvyWwaCLD0pduuEMya36mPJP76w4mNiYBErpfui2cPJEnzpDW/TO31gq8nDehnz+HkLNvE0PZac1nq20jvt7jJlW1vCBvDNprkDYhP992joae2hLfROezbTPfw/2jgnqgTBDH4AAAAASUVORK5CYII="/>
+		<image  width="34" height="16" id="img2" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACIAAAAQAgMAAAAOm0X3AAAAAXNSR0IB2cksfwAAAAxQTFRF/wBa/wBZ/1WR////Q7G7+QAAADtJREFUeJxjZGBgYHFgYNr5kVGQgeH/Bwamvx8ZgWKsAQyMKz8yijow/N4AEyNRHZD6c4BMdQxgABQDAARpLRFVmUuJAAAAAElFTkSuQmCC"/>
+		<image  width="34" height="16" id="img3" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACIAAAAQAgMAAAAOm0X3AAAAAXNSR0IB2cksfwAAAAxQTFRF/wBa/wBZ/1WR////Q7G7+QAAADtJREFUeJxjZGBgYHFgYNr5kVGQgeH/Bwamvx8ZgWKsAQyMKz8yijow/N4AEyNRHZD6c4BMdQxgABQDAARpLRFVmUuJAAAAAElFTkSuQmCC"/>
+		<image  width="34" height="7" id="img4" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACIAAAAHAgMAAAAQSHfUAAAAAXNSR0IB2cksfwAAAAxQTFRF/wBa/wBZ/1WR////Q7G7+QAAADBJREFUeJxjZGBgYA1gYFz5kVHUgeH3Bgamvx8ZgWIsDgxMOz8yCjIw/P8AE8OtDgCH+hOY6bSWUgAAAABJRU5ErkJggg=="/>
+	</defs>
+	<style>
+		.s0 { fill: #ff005a } 
+		.s1 { fill: #ffffff } 
+		.s2 { fill: #0000ff } 
+		.s3 { fill: #ff0000 } 
+	</style>
+	<use id="Background" href="#img1" x="0" y="0"/>
+	<use id="Layer 1" href="#img2" x="0" y="35"/>
+	<use id="Layer 3" href="#img3" x="0" y="35"/>
+	<path id="Shape 1" fill-rule="evenodd" class="s0" d="m28 38v130h-32v-130z"/>
+	<path id="Shape 2" class="s0" d="m308 144v36h-307v-36zm0 0v36h-307v-36z"/>
+	<path id="Shape 3" fill-rule="evenodd" class="s0" d="m111 167v67h-51v-67z"/>
+	<path id="Shape 4" fill-rule="evenodd" class="s0" d="m197-6v34h-173v-34z"/>
+	<path id="Shape 5" fill-rule="evenodd" class="s0" d="m191 39v103h-47v-103z"/>
+	<path id="Shape 6" fill-rule="evenodd" class="s0" d="m205 13v198h-61v-198z"/>
+	<path id="Shape 7" fill-rule="evenodd" class="s0" d="m-2 215v4h-6v-4z"/>
+	<path id="Shape 8" fill-rule="evenodd" class="s1" d="m-23 176v59h-25v-59z"/>
+	<path id="Shape 9" fill-rule="evenodd" class="s1" d="m144 29v115h-7v-115z"/>
+	<path id="Shape 10" fill-rule="evenodd" class="s2" d="m127 55v21h-83v-21z"/>
+	<path id="Shape 11" fill-rule="evenodd" class="s3" d="m102 95v22h-58v-22z"/>
+	<use id="Layer 2" href="#img4" x="0" y="37"/>
+</svg>
