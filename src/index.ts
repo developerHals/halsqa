@@ -15,6 +15,7 @@ interface Env {
   MICROSOFT_CLIENT_SECRET?: string;
   MICROSOFT_TENANT_ID?: string;
   SESSION_SECRET?: string;
+  ASSETS?: { fetch(request: Request): Promise<Response> };
 }
 
 type Role = "superuser" | "admin" | "assessor" | "iqa" | "eqa";
@@ -265,7 +266,7 @@ export default {
     const url = new URL(request.url);
 
     // Serve static files from public folder
-    if (url.pathname === "/favicon.png" || url.pathname.startsWith("/public/")) {
+    if (url.pathname === "/favicon.png" || url.pathname === "/favicon.ico" || url.pathname === "/favicon.svg" || url.pathname.startsWith("/public/")) {
       return serveStaticFile(url.pathname, env);
     }
 
@@ -2100,17 +2101,17 @@ function renderLWEntryViewPage(
     <main class="dashboard-shell">
       ${renderSidebar(identity, "learning-walks")}
       <section class="content">
-        ${renderTopbar(identity, `Learning Walk - ${entry.template_title}`)}
-
-        <div class="page-header" style="margin-bottom:1.5rem;">
+        <header class="topbar">
           <div style="display:flex;align-items:center;gap:1rem;">
             <a href="/learning-walks" class="small-action" style="width:auto;padding:0.5rem 1rem;">← Back</a>
-            <h1>Learning Walk: ${escapeHtml(entry.template_title)}</h1>
+            <div><p class="eyebrow">Learning Walks</p><h1>${escapeHtml(entry.template_title)}</h1></div>
           </div>
           <div style="display:flex;align-items:center;gap:1rem;">
             ${statusBadge}
+            <div class="profile-pill">${escapeHtml(identity.email)}</div>
+            <a class="logout-link" href="/logout">Sign out</a>
           </div>
-        </div>
+        </header>
 
         <div class="lw-entry-form" data-entry-id="${entry.id}">
           <!-- Fixed Header Fields -->
@@ -2459,11 +2460,15 @@ function safeMicrosoftError(value: string): string { try { const parsed = JSON.p
 function htmlResponse(body: string, status = 200) { return new Response(body, { status, headers: htmlHeaders }); }
 
 async function serveStaticFile(pathname: string, env: Env): Promise<Response> {
-  // For now, return a simple response for favicon.png
-  // In production, you'd use R2 or KV to store static assets
+  // Try to serve from Cloudflare Assets binding first
+  if (env.ASSETS) {
+    try {
+      const assetResponse = await (env.ASSETS as any).fetch(new Request("http://localhost" + pathname));
+      if (assetResponse.status !== 404) return assetResponse;
+    } catch {}
+  }
+  // Fallback: serve favicon.png as a transparent 1x1 PNG placeholder
   if (pathname === "/favicon.png") {
-    // Return a simple 1x1 transparent PNG as placeholder
-    // In production, serve actual favicon from R2 or KV
     const transparentPng = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 8, 215, 99, 250, 207, 192, 240, 0, 0, 0, 3, 0, 1, 0, 5, 254, 211, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]);
     return new Response(transparentPng, { status: 200, headers: { "content-type": "image/png" } });
   }
@@ -2682,7 +2687,7 @@ function pageShell(title: string, body: string) {
     .lw-selector-empty{color:var(--muted);font-style:italic;padding:2rem;text-align:center;background:#f8fafc;border-radius:12px;border:2px dashed var(--border)}
     .lw-selector-no-results{color:var(--muted);padding:2rem;text-align:center;font-size:1rem}
     /* Entry Form Styles */
-    .lw-entry-form{max-width:900px;margin:0 auto;padding:1.5rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08)}
+    .lw-entry-form{width:100%;padding:1.5rem 0;background:transparent;border-radius:0;box-shadow:none}
     .lw-entry-section{margin-bottom:2rem;padding-bottom:2rem;border-bottom:1px solid var(--border)}
     .lw-entry-section:last-of-type{border-bottom:none}
     .lw-entry-section-title{font-size:1.125rem;font-weight:600;color:var(--text);margin-bottom:1.25rem;display:flex;align-items:center;gap:0.5rem}
