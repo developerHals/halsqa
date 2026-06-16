@@ -18,7 +18,7 @@ interface Env {
   ASSETS?: { fetch(request: Request): Promise<Response> };
 }
 
-type Role = "superuser" | "admin" | "assessor" | "iqa" | "eqa";
+type Role = "superuser" | "admin" | "assessor" | "iqa" | "eqa" | "assessor_iqa";
 type Stage = "assess" | "iqa" | "eqa";
 type EntryStatus = "assessment" | "iqa" | "eqa" | "complete";
 
@@ -260,7 +260,7 @@ const htmlHeaders = { "content-type": "text/html; charset=utf-8" };
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 const oauthStateCookie = "esolqa_oauth_state";
 const sessionCookie = "esolqa_session";
-const roles: Role[] = ["superuser", "admin", "assessor", "iqa", "eqa"];
+const roles: Role[] = ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa"];
 const stages: Stage[] = ["assess", "iqa", "eqa"];
 
 export default {
@@ -505,7 +505,7 @@ function renderUsers(identity: Identity, users: UserRecord[]) {
           <p class="eyebrow">Create user</p>
           <form method="POST" action="/api/users" class="form-grid">
             <label>Email<input name="email" type="email" required placeholder="staff@example.org"></label>
-            <label>Role<select name="role">${roles.map((role) => `<option value="${role}">${role}</option>`).join("")}</select></label>
+            <label>Role<select name="role">${roles.map((role) => `<option value="${role}">${role === "assessor_iqa" ? "Assessor / IQA" : role}</option>`).join("")}</select></label>
             <label>Stage<select name="stage"><option value="">Auto</option>${stages.map((stage) => `<option value="${stage}">${stage}</option>`).join("")}</select></label>
             <button type="submit">Create user</button>
           </form>
@@ -555,7 +555,7 @@ function renderEntryCard(e: EntryRecord) {
 function renderUserRow(user: UserRecord, currentUserId: string) {
   return `<div class="user-row">
     <span>${escapeHtml(user.email)}</span>
-    <span class="role-badge">${user.role}</span>
+    <span class="role-badge">${user.role === "assessor_iqa" ? "Assessor / IQA" : user.role}</span>
     ${user.id !== currentUserId ? `<form method="POST" action="/api/users/${user.id}" style="display:inline"><input type="hidden" name="confirm" value="DELETE"><button type="submit" class="delete-btn" onclick="return confirm('Delete this user?')">Delete</button></form>` : "<span>(You)</span>"}
   </div>`;
 }
@@ -586,6 +586,7 @@ async function getLWTemplateWithQuestions(env: Env, templateId: string): Promise
 async function getLWEntries(env: Env, user: UserRecord, search: string): Promise<LWEntryRecord[]> {
   const like = `%${search}%`;
   const isPrivileged = user.role === "admin" || user.role === "superuser";
+  const canSeeOwn = user.role === "iqa" || user.role === "assessor" || user.role === "assessor_iqa";
   const query = `SELECT e.id, e.template_id, t.title AS template_title,
     e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
     e.status, e.allocated_iqa_id, e.allocated_assessor_id,
@@ -598,7 +599,7 @@ async function getLWEntries(env: Env, user: UserRecord, search: string): Promise
     WHERE (? = 1 OR e.allocated_iqa_id = ? OR e.allocated_assessor_id = ?)
     AND (? = '' OR e.course_name LIKE ? OR e.assessor_name LIKE ? OR e.iqa_name LIKE ? OR t.title LIKE ?)
     ORDER BY e.created_at DESC`;
-  const r = await env.esol_marking_db.prepare(query).bind(isPrivileged ? 1 : 0, user.id, user.id, search, like, like, like, like).all<LWEntryRecord>();
+  const r = await env.esol_marking_db.prepare(query).bind(isPrivileged ? 1 : (canSeeOwn ? 0 : 1), user.id, user.id, search, like, like, like, like).all<LWEntryRecord>();
   return r.results;
 }
 
@@ -934,8 +935,8 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
   let questions = template?.questions ?? [];
 
   // Filter users by role for dropdowns
-  const assessors = users.filter(u => u.role === "assessor" || u.role === "admin" || u.role === "superuser");
-  const iqas = users.filter(u => u.role === "iqa" || u.role === "admin" || u.role === "superuser");
+  const assessors = users.filter(u => u.role === "assessor" || u.role === "assessor_iqa" || u.role === "admin" || u.role === "superuser");
+  const iqas = users.filter(u => u.role === "iqa" || u.role === "assessor_iqa" || u.role === "admin" || u.role === "superuser");
 
   // For new templates, auto-populate with fixed header fields as questions
   if (!isEdit && questions.length === 0) {
@@ -1446,8 +1447,8 @@ function renderLWEntryTemplateSelectorPage(identity: Identity, templates: LWTemp
 
 function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuestions, users: UserRecord[]): string {
   const user = identity.user!;
-  const assessors = users.filter(u => u.role === "assessor" || u.role === "admin" || u.role === "superuser");
-  const iqas = users.filter(u => u.role === "iqa" || u.role === "admin" || u.role === "superuser");
+  const assessors = users.filter(u => u.role === "assessor" || u.role === "assessor_iqa" || u.role === "admin" || u.role === "superuser");
+  const iqas = users.filter(u => u.role === "iqa" || u.role === "assessor_iqa" || u.role === "admin" || u.role === "superuser");
 
   // Render fixed header fields
   const fixedFieldsHtml = `
@@ -2018,7 +2019,7 @@ async function renderLWEntryForm(request: Request, env: Env, identity: Identity)
 
   // Check permission (IQA, Admin, Superuser can create entries)
   const user = identity.user!;
-  const canCreateEntry = user.role === "iqa" || user.role === "admin" || user.role === "superuser";
+  const canCreateEntry = user.role === "iqa" || user.role === "assessor_iqa" || user.role === "admin" || user.role === "superuser";
   if (!canCreateEntry) {
     return htmlResponse(renderForbiddenPage(identity), 403);
   }
@@ -2031,7 +2032,7 @@ async function renderLWEntryForm(request: Request, env: Env, identity: Identity)
 
   // Get users for dropdowns (assessors and IQAs)
   const users = await env.esol_marking_db.prepare(
-    "SELECT id, email, role FROM users WHERE role IN ('assessor', 'iqa', 'admin', 'superuser') ORDER BY email ASC"
+    "SELECT id, email, role FROM users WHERE role IN ('assessor', 'iqa', 'assessor_iqa', 'admin', 'superuser') ORDER BY email ASC"
   ).all<UserRecord>();
 
   return htmlResponse(renderLWEntryFormPage(identity, template, users.results));
@@ -2039,7 +2040,7 @@ async function renderLWEntryForm(request: Request, env: Env, identity: Identity)
 
 async function saveLWEntry(request: Request, env: Env, identity: Identity): Promise<Response> {
   const user = identity.user!;
-  const canCreateEntry = user.role === "iqa" || user.role === "admin" || user.role === "superuser";
+  const canCreateEntry = user.role === "iqa" || user.role === "assessor_iqa" || user.role === "admin" || user.role === "superuser";
   if (!canCreateEntry) {
     return json({ error: "Forbidden" }, 403);
   }
@@ -3279,12 +3280,12 @@ function pageShell(title: string, body: string) {
 function renderSidebar(identity: Identity, active: string) {
   const user = identity.user!;
   return `<aside class="sidebar">
-    <div class="sidebar-brand"><div class="brand-mark"><img src="/favicon.svg" width="36" height="36" style="object-fit:contain;display:block"></div><div><strong>ESOLQA</strong><span>${escapeHtml(user.role)}</span></div></div>
+    <div class="sidebar-brand"><div class="brand-mark"><img src="/favicon.svg" width="36" height="36" style="object-fit:contain;display:block"></div><div><strong>ESOLQA</strong><span>${escapeHtml(user.role === "assessor_iqa" ? "Assessor / IQA" : user.role)}</span></div></div>
     <nav class="sidebar-nav">
       ${navLink("/dashboard", "Assessment Forms", active === "assessment")}
       ${navLink("/dashboard?section=iqa", "IQA Forms", active === "iqa")}
       ${navLink("/dashboard?section=eqa", "EQA Forms", active === "eqa")}
-      ${navLink("/learning-walks", "Learning Walks", active === "learning-walks")}
+      ${(user.role !== "assessor" && user.role !== "eqa") ? navLink("/learning-walks", "Learning Walks", active === "learning-walks") : ""}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
   </aside>`;
