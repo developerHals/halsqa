@@ -342,6 +342,11 @@ export default {
       return deleteLWEntry(request, env, identity, url.pathname.split("/")[4]);
     }
 
+    // Learning Walk Entry Download API
+    if (url.pathname.match(/^\/api\/lw\/entries\/[^/]+\/download$/) && request.method === "GET") {
+      return downloadLWEntry(request, env, identity, url.pathname.split("/")[4]);
+    }
+
     // Learning Walk Template API
     if (url.pathname === "/api/lw/templates" && request.method === "POST") {
       return saveLWTemplate(request, env, identity);
@@ -755,8 +760,14 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
                   <span>Assessor: ${escapeHtml(e.assessor_name)} · IQA: ${escapeHtml(e.iqa_name)}</span>
                   <span>Planned: ${escapeHtml(e.planned_date)}${e.due_date ? ` · Due: ${escapeHtml(e.due_date)}` : ""}</span>
                 </a>
-                <div style="display:flex;align-items:center;gap:0.75rem">
+                <div style="display:flex;align-items:center;gap:0.5rem">
                   ${renderLWStatusBadge(e.status, e.due_date)}
+                  <button type="button"
+                    class="lw-entry-download-btn"
+                    title="Download / Print"
+                    onclick="openDownloadModal('${e.id}', '${escapeHtml(e.template_title).replace(/'/g, "\\'")}')">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  </button>
                   ${deleteBtn}
                 </div>
               </article>`;
@@ -848,7 +859,71 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
         if (e.key === "Escape") closeLWDeleteModal();
         this.style.borderColor = "#e5e7eb";
       });
+
+      // ── Download modal ──────────────────────────────────────
+      let _dlEntryId = null;
+
+      function openDownloadModal(entryId, title) {
+        _dlEntryId = entryId;
+        document.getElementById("lw-dl-title").textContent = title;
+        document.getElementById("lw-download-modal").style.display = "flex";
+      }
+
+      function closeDownloadModal() {
+        document.getElementById("lw-download-modal").style.display = "none";
+        _dlEntryId = null;
+      }
+
+      function downloadAs(format) {
+        if (!_dlEntryId) return;
+        if (format === "pdf" || format === "html") {
+          // Open print page in new tab; user prints to PDF from there
+          const win = window.open("/api/lw/entries/" + _dlEntryId + "/download?format=" + format, "_blank");
+          if (format === "pdf" && win) {
+            win.addEventListener("load", function() {
+              setTimeout(function() { win.print(); }, 400);
+            });
+          }
+        } else {
+          // CSV: trigger direct download
+          const a = document.createElement("a");
+          a.href = "/api/lw/entries/" + _dlEntryId + "/download?format=csv";
+          a.download = "learning-walk-" + _dlEntryId + ".csv";
+          a.click();
+        }
+        closeDownloadModal();
+      }
+
+      document.getElementById("lw-download-modal").addEventListener("click", function(e) {
+        if (e.target === this) closeDownloadModal();
+      });
     </script>
+
+    <!-- Download Modal -->
+    <div id="lw-download-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center">
+      <div class="lw-dl-modal-box">
+        <h2 class="lw-dl-modal-title">Download / Print</h2>
+        <p class="lw-dl-modal-sub">Select a format for: <strong id="lw-dl-title"></strong></p>
+        <div class="lw-dl-options">
+          <button type="button" class="lw-dl-option" onclick="downloadAs('csv')">
+            <span class="lw-dl-icon">📊</span>
+            <strong>CSV</strong>
+            <span class="lw-dl-desc">Flat data file, opens in Excel or Google Sheets</span>
+          </button>
+          <button type="button" class="lw-dl-option" onclick="downloadAs('html')">
+            <span class="lw-dl-icon">🌐</span>
+            <strong>HTML</strong>
+            <span class="lw-dl-desc">Formatted page, save or open in browser</span>
+          </button>
+          <button type="button" class="lw-dl-option" onclick="downloadAs('pdf')">
+            <span class="lw-dl-icon">🖨️</span>
+            <strong>PDF</strong>
+            <span class="lw-dl-desc">Opens print dialog — save as PDF with page breaks</span>
+          </button>
+        </div>
+        <button type="button" class="lw-dl-cancel" onclick="closeDownloadModal()">Cancel</button>
+      </div>
+    </div>
   `);
 }
 
@@ -2617,6 +2692,197 @@ async function deleteLWEntry(request: Request, env: Env, identity: Identity, ent
   }
 }
 
+async function downloadLWEntry(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  const auth = await getLWEntryWithAuth(env, identity, entryId);
+  if (!auth) return new Response("Not found or access denied", { status: 404 });
+
+  const { entry } = auth;
+  const url = new URL(request.url);
+  const format = url.searchParams.get("format") || "csv";
+
+  // Fetch questions + answers
+  const questionsResult = await env.esol_marking_db.prepare(
+    `SELECT * FROM lw_template_questions WHERE template_id = ? ORDER BY sort_order ASC`
+  ).bind(entry.template_id).all();
+  const questions = questionsResult.results as any[];
+
+  const answersResult = await env.esol_marking_db.prepare(
+    `SELECT question_id, answer FROM lw_answers WHERE entry_id = ?`
+  ).bind(entryId).all();
+  const answersMap = new Map((answersResult.results as any[]).map((a: any) => [a.question_id, a.answer]));
+
+  // Fetch comments
+  const commentsResult = await env.esol_marking_db.prepare(
+    `SELECT c.comment, c.author_role, c.created_at, u.email as author_email
+     FROM lw_comments c LEFT JOIN users u ON u.id = c.author_id
+     WHERE c.entry_id = ? ORDER BY c.created_at ASC`
+  ).bind(entryId).all();
+  const comments = commentsResult.results as any[];
+
+  const statusLabels: Record<string, string> = {
+    pending: "Pending", iqa_completed: "IQA Completed",
+    assessor_responded: "Assessor Responded", complete: "Complete"
+  };
+
+  if (format === "csv") {
+    const rows: string[] = [
+      ["Field", "Value"],
+      ["Template", entry.template_title],
+      ["Status", statusLabels[entry.status] || entry.status],
+      ["Course ID", entry.course_id],
+      ["Course Name", entry.course_name],
+      ["Assessor", entry.assessor_name],
+      ["IQA", entry.iqa_name],
+      ["Planned Date", entry.planned_date],
+      ["Due Date", entry.due_date || ""],
+      ["Created At", entry.created_at],
+      ["", ""],
+      ["--- Questions & Answers ---", ""],
+    ].map(r => r.map((v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","));
+
+    for (const q of questions) {
+      if (q.question_type === "section") {
+        rows.push(`"[SECTION] ${String(q.question_text).replace(/"/g, '""')}",""`);
+        continue;
+      }
+      const answer = answersMap.get(q.id) || "";
+      rows.push(`"${String(q.question_text).replace(/"/g, '""')}","${String(answer).replace(/"/g, '""')}"`);
+    }
+
+    if (comments.length > 0) {
+      rows.push(`"",""`);
+      rows.push(`"--- Comments ---",""`);
+      for (const c of comments) {
+        const ts = new Date(c.created_at).toLocaleString("en-GB");
+        rows.push(`"[${c.author_role}] ${c.author_email} (${ts})","${String(c.comment).replace(/"/g, '""')}"`);
+      }
+    }
+
+    const slug = entry.template_title.replace(/[^a-z0-9]/gi, "-").toLowerCase();
+    return new Response(rows.join("\r\n"), {
+      headers: {
+        "Content-Type": "text/csv;charset=utf-8",
+        "Content-Disposition": `attachment; filename="learning-walk-${slug}.csv"`
+      }
+    });
+  }
+
+  // HTML / PDF — generate a styled, print-ready page
+  const isPdf = format === "pdf";
+
+  const metaRows = [
+    ["Template", entry.template_title],
+    ["Status", statusLabels[entry.status] || entry.status],
+    ["Course", `${entry.course_name} (${entry.course_id})`],
+    ["Assessor", entry.assessor_name],
+    ["IQA", entry.iqa_name],
+    ["Planned Date", entry.planned_date],
+    ...(entry.due_date ? [["Due Date", entry.due_date]] : []),
+  ];
+
+  const qaHtml = questions.map((q: any) => {
+    if (q.question_type === "section") {
+      return `<div class="print-section-divider">
+        <h3 class="print-section-heading">${escapeHtml(q.question_text)}</h3>
+        ${q.text_entry_label ? `<p class="print-section-desc">${escapeHtml(q.text_entry_label)}</p>` : ""}
+      </div>`;
+    }
+    const answer = answersMap.get(q.id) || "";
+    let displayAnswerHtml: string;
+    if (!answer) {
+      displayAnswerHtml = '<span class="print-no-answer">No answer provided</span>';
+    } else if (q.question_type === "time") {
+      const parts = answer.split(":");
+      displayAnswerHtml = escapeHtml(`${parts[0] || ""}:${parts[1] || ""} ${parts[2] || ""}`);
+    } else {
+      displayAnswerHtml = escapeHtml(String(answer));
+    }
+    return `<div class="print-qa">
+      <p class="print-question">${escapeHtml(q.question_text)}${q.is_required ? ' <span class="print-req">*</span>' : ""}</p>
+      <p class="print-answer">${displayAnswerHtml}</p>
+    </div>`;
+  }).join("");
+
+  const commentsHtml = comments.length > 0 ? `
+    <div class="print-section-block print-comments">
+      <h2 class="print-block-title">Comments & Paper Trail</h2>
+      ${comments.map((c: any) => `
+        <div class="print-comment">
+          <span class="print-comment-meta">[${escapeHtml(c.author_role)}] ${escapeHtml(c.author_email || "Unknown")} &mdash; ${new Date(c.created_at).toLocaleString("en-GB")}</span>
+          <p class="print-comment-body">${escapeHtml(c.comment)}</p>
+        </div>
+      `).join("")}
+    </div>` : "";
+
+  const printHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Learning Walk — ${escapeHtml(entry.template_title)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#1a1a1a;background:#fff;padding:1.5cm 2cm}
+  h1{font-size:18pt;font-weight:700;margin-bottom:0.25rem;color:#cc0040}
+  .print-org{font-size:9pt;color:#666;margin-bottom:1.25rem;text-transform:uppercase;letter-spacing:.05em}
+  .print-meta-table{width:100%;border-collapse:collapse;margin-bottom:1.5rem;font-size:10pt}
+  .print-meta-table td{padding:0.35rem 0.6rem;border:1px solid #ddd}
+  .print-meta-table td:first-child{font-weight:700;background:#f5f5f5;width:28%;white-space:nowrap}
+  .print-section-block{margin-bottom:1.5rem}
+  .print-block-title{font-size:13pt;font-weight:700;margin-bottom:0.75rem;padding-bottom:0.35rem;border-bottom:2px solid #cc0040;color:#cc0040}
+  .print-section-divider{margin:1.25rem 0 0.75rem;padding-bottom:0.4rem;border-bottom:1.5px solid #bbb}
+  .print-section-heading{font-size:12pt;font-weight:700;color:#1a1a1a}
+  .print-section-desc{font-size:10pt;color:#555;margin-top:0.2rem}
+  .print-qa{margin-bottom:0.9rem;padding:0.6rem 0.75rem;border:1px solid #e8e8e8;border-left:3px solid #cc0040;border-radius:3px;page-break-inside:avoid}
+  .print-question{font-size:10.5pt;font-weight:600;margin-bottom:0.3rem}
+  .print-req{color:#cc0040}
+  .print-answer{font-size:10.5pt;color:#1a1a1a;background:#fafafa;padding:0.4rem 0.5rem;border-radius:2px;min-height:1.5rem}
+  .print-no-answer{color:#999;font-style:italic}
+  .print-comments{margin-top:1.5rem}
+  .print-comment{margin-bottom:0.75rem;padding:0.6rem 0.75rem;border-left:3px solid #888;background:#f9f9f9;page-break-inside:avoid}
+  .print-comment-meta{font-size:9pt;color:#555;display:block;margin-bottom:0.3rem}
+  .print-comment-body{font-size:10pt;line-height:1.5}
+  .print-footer{margin-top:2rem;padding-top:0.75rem;border-top:1px solid #ccc;font-size:8.5pt;color:#888}
+  @media print{
+    body{padding:1cm 1.5cm}
+    .no-print{display:none}
+    .print-qa{page-break-inside:avoid}
+    .print-comment{page-break-inside:avoid}
+    .print-section-divider{page-break-after:avoid}
+    .print-block-title{page-break-after:avoid}
+    h1{color:#cc0040!important}
+    .print-block-title{color:#cc0040!important}
+  }
+</style>
+</head>
+<body>
+  ${isPdf ? `<button class="no-print" onclick="window.print()" style="margin-bottom:1rem;padding:0.5rem 1.25rem;background:#cc0040;color:#fff;border:none;border-radius:6px;font-size:11pt;cursor:pointer">🖨️ Print / Save as PDF</button>` : ""}
+  <h1>Learning Walk Report</h1>
+  <p class="print-org">ESOLQA &mdash; Printed ${new Date().toLocaleString("en-GB")}</p>
+
+  <div class="print-section-block">
+    <h2 class="print-block-title">Submission Details</h2>
+    <table class="print-meta-table">
+      ${metaRows.map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(String(v ?? ""))}</td></tr>`).join("")}
+    </table>
+  </div>
+
+  <div class="print-section-block">
+    <h2 class="print-block-title">Questions &amp; Answers</h2>
+    ${qaHtml}
+  </div>
+
+  ${commentsHtml}
+
+  <div class="print-footer">Generated by ESOLQA &bull; ${escapeHtml(entry.template_title)} &bull; ID: ${escapeHtml(entryId)}</div>
+</body>
+</html>`;
+
+  return new Response(printHtml, {
+    headers: { "Content-Type": "text/html;charset=utf-8" }
+  });
+}
+
 function renderNotFoundPage() {
   return pageShell("Not found", `<main class="auth-shell"><section class="auth-card"><h1>Page not found</h1><a class="primary-action" href="/dashboard">Go to dashboard</a></section></main>`);
 }
@@ -2991,7 +3257,20 @@ function pageShell(title: string, body: string) {
     .lw-entry-question .disabled{opacity:0.6;cursor:not-allowed}
     .lw-entry-delete-btn{background:none;border:1px solid var(--border);border-radius:8px;padding:0.5rem;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s;flex-shrink:0}
     .lw-entry-delete-btn:hover{background:#fff0f3;color:#ff005a;border-color:#ff005a}
-    @media (max-width:768px){.lwfb-header-grid{grid-template-columns:1fr}.lwfb-type-picker .picker-grid{grid-template-columns:repeat(2,1fr)}.lwfb-popup-overlay{padding:1rem}.lwfb-popup-container{max-height:calc(100vh - 2rem)}.lw-entry-grid{grid-template-columns:1fr}}
+    .lw-entry-download-btn{background:none;border:1px solid var(--border);border-radius:8px;padding:0.5rem;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s;flex-shrink:0}
+    .lw-entry-download-btn:hover{background:#f0f9ff;color:#0369a1;border-color:#0369a1}
+    .lw-dl-modal-box{background:#fff;border-radius:14px;padding:2rem;max-width:480px;width:92%;box-shadow:0 12px 48px rgba(0,0,0,0.22)}
+    .lw-dl-modal-title{font-size:1.25rem;font-weight:700;color:#0f172a;margin-bottom:0.4rem}
+    .lw-dl-modal-sub{font-size:0.9375rem;color:#64748b;margin-bottom:1.25rem}
+    .lw-dl-options{display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem;margin-bottom:1.25rem}
+    .lw-dl-option{background:#f8fafc;border:1.5px solid var(--border);border-radius:10px;padding:1.1rem 0.75rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:0.4rem;transition:all .15s;text-align:center}
+    .lw-dl-option:hover{border-color:var(--primary);background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+    .lw-dl-option strong{font-size:0.9375rem;color:#0f172a}
+    .lw-dl-icon{font-size:1.5rem}
+    .lw-dl-desc{font-size:0.75rem;color:#64748b;line-height:1.3}
+    .lw-dl-cancel{background:#f1f5f9;color:#0f172a;border:none;border-radius:8px;padding:0.65rem 1.25rem;font-weight:600;cursor:pointer;font-size:0.9375rem;width:100%}
+    .lw-dl-cancel:hover{background:#e2e8f0}
+    @media (max-width:768px){.lwfb-header-grid{grid-template-columns:1fr}.lwfb-type-picker .picker-grid{grid-template-columns:repeat(2,1fr)}.lwfb-popup-overlay{padding:1rem}.lwfb-popup-container{max-height:calc(100vh - 2rem)}.lw-entry-grid{grid-template-columns:1fr}.lw-dl-options{grid-template-columns:1fr}}
   </style></head><body>${body}</body></html>`;
 }
 
