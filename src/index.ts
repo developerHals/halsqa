@@ -1833,9 +1833,10 @@ async function saveLWTemplate(request: Request, env: Env, identity: Identity): P
     }
 
     return json({ success: true, templateId });
-  } catch (err) {
+  } catch (err: any) {
     console.error("saveLWTemplate error:", err);
-    return json({ error: "Failed to save template" }, 500);
+    const errorMessage = err?.message || String(err);
+    return json({ error: "Failed to save template: " + errorMessage }, 500);
   }
 }
 
@@ -1933,9 +1934,10 @@ async function updateLWTemplate(request: Request, env: Env, identity: Identity, 
     }
 
     return json({ success: true, templateId });
-  } catch (err) {
+  } catch (err: any) {
     console.error("updateLWTemplate error:", err);
-    return json({ error: "Failed to update template" }, 500);
+    const errorMessage = err?.message || String(err);
+    return json({ error: "Failed to update template: " + errorMessage }, 500);
   }
 }
 
