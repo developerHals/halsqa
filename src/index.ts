@@ -1293,7 +1293,8 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
         }
 
         const questions = [];
-        const cards = document.querySelectorAll('.lwfb-question-card');
+        // Filter out hidden cards (e.g., filtered by search or type picker)
+        const cards = Array.from(document.querySelectorAll('.lwfb-question-card')).filter(c => c.offsetParent !== null);
 
         for (let i = 0; i < cards.length; i++) {
           const card = cards[i];
@@ -1303,7 +1304,11 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
           const qRequired = qType === 'section' ? false : card.querySelector('.lwfb-q-required').checked;
 
           if (!qText) {
-            alert(\`Question \${i + 1} is missing \${qType === 'section' ? 'a heading' : 'text'}\`);
+            const qNum = card.querySelector('.lwfb-q-number')?.textContent || (i + 1);
+            const input = card.querySelector('.lwfb-q-text');
+            input?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            input?.focus();
+            alert(\`Question \${qNum} is missing \${qType === 'section' ? 'a heading' : 'text'}\`);
             return;
           }
 
