@@ -586,7 +586,6 @@ async function getLWTemplateWithQuestions(env: Env, templateId: string): Promise
 async function getLWEntries(env: Env, user: UserRecord, search: string): Promise<LWEntryRecord[]> {
   const like = `%${search}%`;
   const isPrivileged = user.role === "admin" || user.role === "superuser";
-  const canSeeOwn = user.role === "iqa" || user.role === "assessor" || user.role === "assessor_iqa";
   const query = `SELECT e.id, e.template_id, t.title AS template_title,
     e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
     e.status, e.allocated_iqa_id, e.allocated_assessor_id,
@@ -599,7 +598,7 @@ async function getLWEntries(env: Env, user: UserRecord, search: string): Promise
     WHERE (? = 1 OR e.allocated_iqa_id = ? OR e.allocated_assessor_id = ?)
     AND (? = '' OR e.course_name LIKE ? OR e.assessor_name LIKE ? OR e.iqa_name LIKE ? OR t.title LIKE ?)
     ORDER BY e.created_at DESC`;
-  const r = await env.esol_marking_db.prepare(query).bind(isPrivileged ? 1 : (canSeeOwn ? 0 : 1), user.id, user.id, search, like, like, like, like).all<LWEntryRecord>();
+  const r = await env.esol_marking_db.prepare(query).bind(isPrivileged ? 1 : 0, user.id, user.id, search, like, like, like, like).all<LWEntryRecord>();
   return r.results;
 }
 
