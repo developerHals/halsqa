@@ -876,19 +876,18 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
 
       function downloadAs(format) {
         if (!_dlEntryId) return;
-        if (format === "pdf" || format === "html") {
-          // Open print page in new tab; user prints to PDF from there
-          const win = window.open("/api/lw/entries/" + _dlEntryId + "/download?format=" + format, "_blank");
-          if (format === "pdf" && win) {
+        if (format === "pdf") {
+          // Open print page in new tab; user triggers print-to-PDF from there
+          const win = window.open("/api/lw/entries/" + _dlEntryId + "/download?format=pdf", "_blank");
+          if (win) {
             win.addEventListener("load", function() {
               setTimeout(function() { win.print(); }, 400);
             });
           }
         } else {
-          // CSV: trigger direct download
+          // CSV and HTML: trigger direct file download
           const a = document.createElement("a");
-          a.href = "/api/lw/entries/" + _dlEntryId + "/download?format=csv";
-          a.download = "learning-walk-" + _dlEntryId + ".csv";
+          a.href = "/api/lw/entries/" + _dlEntryId + "/download?format=" + format;
           a.click();
         }
         closeDownloadModal();
@@ -2878,9 +2877,12 @@ async function downloadLWEntry(request: Request, env: Env, identity: Identity, e
 </body>
 </html>`;
 
-  return new Response(printHtml, {
-    headers: { "Content-Type": "text/html;charset=utf-8" }
-  });
+  const slug = entry.template_title.replace(/[^a-z0-9]/gi, "-").toLowerCase();
+  const headers: Record<string, string> = { "Content-Type": "text/html;charset=utf-8" };
+  if (!isPdf) {
+    headers["Content-Disposition"] = `attachment; filename="learning-walk-${slug}.html"`;
+  }
+  return new Response(printHtml, { headers });
 }
 
 function renderNotFoundPage() {
