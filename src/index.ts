@@ -100,7 +100,9 @@ type QuestionType =
   | "rag"
   | "ggaw"
   | "number"
-  | "rating";
+  | "rating"
+  | "section"
+  | "time";
 
 type QuestionOption = {
   id: string;
@@ -950,6 +952,8 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
     { value: "number", label: "Number", icon: "#", desc: "Numeric input" },
     { value: "ranking", label: "Ranking", icon: "⇅", desc: "Order items by drag" },
     { value: "rating", label: "Rating (0-5)", icon: "★", desc: "Star rating scale" },
+    { value: "time", label: "Time", icon: "🕐", desc: "Hour / Minute / AM·PM" },
+    { value: "section", label: "Section Header", icon: "▬", desc: "Heading & description divider" },
   ];
 
   const questionTypeOptions = questionTypes.map(t =>
@@ -960,10 +964,16 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
 
   const renderQuestionCard = (q: LWTemplateQuestion, index: number) => {
     const isFixed = fixedIds.has(q.id);
+    const isSection = q.question_type === "section";
     const cardClass = isFixed ? "lwfb-question-card lwfb-fixed-card" : "lwfb-question-card";
-    const deleteBtn = isFixed
+    const actionBtns = isFixed
       ? `<span class="lwfb-fixed-badge">Standard Field</span>`
-      : `<button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>`;
+      : `<div class="lwfb-reorder-btns">
+           <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">▲</button>
+           <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'down')" title="Move down">▼</button>
+         </div>
+         <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>`;
+    const needsOptions = ["single_choice", "multiple_choice", "dropdown", "ranking"].includes(q.question_type);
 
     return `
     <div class="${cardClass}" data-question-id="${q.id}" data-sort-order="${q.sort_order}" data-is-fixed="${isFixed}">
@@ -972,17 +982,23 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
         <select class="lwfb-q-type-select" onchange="updateQuestionType(this)" ${isFixed ? 'disabled' : ''}>
           ${questionTypes.map(t => `<option value="${t.value}" ${q.question_type === t.value ? "selected" : ""}>${t.label}</option>`).join("")}
         </select>
-        <label class="lwfb-required-label">
+        <label class="lwfb-required-label" style="${isSection ? 'display:none' : ''}">
           <input type="checkbox" class="lwfb-q-required" ${q.is_required ? "checked" : ""}>
           Required
         </label>
-        ${deleteBtn}
+        ${actionBtns}
       </div>
       <div class="lwfb-question-body">
-        <input type="text" class="lwfb-q-text" value="${escapeHtml(q.question_text)}" placeholder="Enter your question" ${isFixed ? 'readonly' : ''}>
-        <div class="lwfb-options-section ${["single_choice", "multiple_choice", "dropdown", "ranking"].includes(q.question_type) ? "" : "hidden"}">
-          <label class="lwfb-options-label">Options (one per line):</label>
-          <textarea class="lwfb-q-options" rows="3" placeholder="Option 1&#10;Option 2&#10;Option 3" ${isFixed ? 'readonly' : ''}>${q.options ? q.options.map((o: QuestionOption) => escapeHtml(o.label)).join("\n") : ""}</textarea>
+        <div class="lwfb-section-body ${isSection ? '' : 'hidden'}">
+          <input type="text" class="lwfb-q-text" value="${escapeHtml(q.question_text)}" placeholder="Section heading" style="font-weight:600;font-size:1.05rem">
+          <input type="text" class="lwfb-q-section-desc" value="${escapeHtml(q.text_entry_label || '')}" placeholder="Section description (optional)" style="margin-top:0.5rem;color:#64748b">
+        </div>
+        <div class="lwfb-normal-body ${isSection ? 'hidden' : ''}">
+          <input type="text" class="lwfb-q-text" value="${escapeHtml(q.question_text)}" placeholder="Enter your question" ${isFixed ? 'readonly' : ''}>
+          <div class="lwfb-options-section ${needsOptions ? "" : "hidden"}">
+            <label class="lwfb-options-label">Options (one per line):</label>
+            <textarea class="lwfb-q-options" rows="3" placeholder="Option 1&#10;Option 2&#10;Option 3" ${isFixed ? 'readonly' : ''}>${q.options ? q.options.map((o: QuestionOption) => escapeHtml(o.label)).join("\n") : ""}</textarea>
+          </div>
         </div>
       </div>
     </div>`;
@@ -1023,8 +1039,10 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
                 <span>Add Question</span>
               </button>
 
-              <!-- Question Type Picker (hidden by default) - positioned absolutely above button -->
-              <div id="questionTypePicker" class="lwfb-type-picker hidden" style="position:absolute;bottom:calc(100% + 0.5rem);left:50%;transform:translateX(-50%);z-index:100;min-width:400px;">
+            </div>
+
+            <!-- Question Type Picker (full-width inline panel) -->
+            <div id="questionTypePicker" class="lwfb-type-picker hidden">
               <div class="picker-header">
                 <span>Select Question Type</span>
                 <button type="button" class="close-picker" onclick="hideQuestionTypePicker()">×</button>
@@ -1039,7 +1057,6 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
                 `).join("")}
               </div>
             </div>
-          </div>
 
           <!-- Comments Section -->
           <div class="lwfb-section-card lwfb-comments-section">
@@ -1103,9 +1120,30 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
 
       function updateQuestionType(select) {
         const card = select.closest('.lwfb-question-card');
+        const type = select.value;
         const optionsSection = card.querySelector('.lwfb-options-section');
-        const needsOptions = ['single_choice', 'multiple_choice', 'dropdown', 'ranking'].includes(select.value);
+        const sectionBody = card.querySelector('.lwfb-section-body');
+        const normalBody = card.querySelector('.lwfb-normal-body');
+        const reqLabel = card.querySelector('.lwfb-required-label');
+        const needsOptions = ['single_choice', 'multiple_choice', 'dropdown', 'ranking'].includes(type);
+        const isSection = type === 'section';
         optionsSection.classList.toggle('hidden', !needsOptions);
+        if (sectionBody) sectionBody.classList.toggle('hidden', !isSection);
+        if (normalBody) normalBody.classList.toggle('hidden', isSection);
+        if (reqLabel) reqLabel.style.display = isSection ? 'none' : '';
+      }
+
+      function moveQuestion(btn, direction) {
+        const card = btn.closest('.lwfb-question-card');
+        const container = card.parentNode;
+        const cards = Array.from(container.querySelectorAll('.lwfb-question-card'));
+        const idx = cards.indexOf(card);
+        if (direction === 'up' && idx > 0) {
+          container.insertBefore(card, cards[idx - 1]);
+        } else if (direction === 'down' && idx < cards.length - 1) {
+          cards[idx + 1].insertAdjacentElement('afterend', card);
+        }
+        renumberQuestions();
       }
 
       function addQuestion(type) {
@@ -1117,21 +1155,7 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
         questionCounter++;
         const questionId = 'new_' + crypto.randomUUID();
         const needsOptions = ['single_choice', 'multiple_choice', 'dropdown', 'ranking'].includes(type);
-
-        const typeLabels = {
-          yes_no: 'Yes/No',
-          rag: 'Green/Amber/Red',
-          ggaw: 'Gold/Green/Amber/White',
-          single_choice: 'MCQ (One Answer)',
-          multiple_choice: 'Choices (Multiple)',
-          dropdown: 'Dropdown',
-          text: 'Text',
-          textarea: 'Long Text',
-          date: 'Date',
-          number: 'Number',
-          ranking: 'Ranking',
-          rating: 'Rating (0-5)'
-        };
+        const isSection = type === 'section';
 
         const typeOptions = [
           { value: 'yes_no', label: 'Yes/No' },
@@ -1145,7 +1169,9 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
           { value: 'date', label: 'Date' },
           { value: 'number', label: 'Number' },
           { value: 'ranking', label: 'Ranking' },
-          { value: 'rating', label: 'Rating (0-5)' }
+          { value: 'rating', label: 'Rating (0-5)' },
+          { value: 'time', label: 'Time' },
+          { value: 'section', label: 'Section Header' }
         ].map(t => \`<option value="\${t.value}" \${t.value === type ? 'selected' : ''}>\${t.label}</option>\`).join('');
 
         const card = document.createElement('div');
@@ -1155,20 +1181,27 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
         card.innerHTML = \`
           <div class="lwfb-question-header">
             <span class="lwfb-q-number">\${document.querySelectorAll('.lwfb-question-card').length + 1}</span>
-            <select class="lwfb-q-type-select" onchange="updateQuestionType(this)">
-              \${typeOptions}
-            </select>
-            <label class="lwfb-required-label">
-              <input type="checkbox" class="lwfb-q-required">
-              Required
+            <select class="lwfb-q-type-select" onchange="updateQuestionType(this)">\${typeOptions}</select>
+            <label class="lwfb-required-label" style="\${isSection ? 'display:none' : ''}">
+              <input type="checkbox" class="lwfb-q-required"> Required
             </label>
+            <div class="lwfb-reorder-btns">
+              <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">▲</button>
+              <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'down')" title="Move down">▼</button>
+            </div>
             <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>
           </div>
           <div class="lwfb-question-body">
-            <input type="text" class="lwfb-q-text" placeholder="Enter your question">
-            <div class="lwfb-options-section \${needsOptions ? '' : 'hidden'}">
-              <label class="lwfb-options-label">Options (one per line):</label>
-              <textarea class="lwfb-q-options" rows="3" placeholder="Option 1&#10;Option 2&#10;Option 3"></textarea>
+            <div class="lwfb-section-body \${isSection ? '' : 'hidden'}">
+              <input type="text" class="lwfb-q-text" placeholder="Section heading" style="font-weight:600;font-size:1.05rem">
+              <input type="text" class="lwfb-q-section-desc" placeholder="Section description (optional)" style="margin-top:0.5rem;color:#64748b">
+            </div>
+            <div class="lwfb-normal-body \${isSection ? 'hidden' : ''}">
+              <input type="text" class="lwfb-q-text" placeholder="Enter your question">
+              <div class="lwfb-options-section \${needsOptions ? '' : 'hidden'}">
+                <label class="lwfb-options-label">Options (one per line):</label>
+                <textarea class="lwfb-q-options" rows="3" placeholder="Option 1&#10;Option 2&#10;Option 3"></textarea>
+              </div>
             </div>
           </div>
         \`;
@@ -1193,10 +1226,10 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
           const qId = card.dataset.questionId;
           const qType = card.querySelector('.lwfb-q-type-select').value;
           const qText = card.querySelector('.lwfb-q-text').value.trim();
-          const qRequired = card.querySelector('.lwfb-q-required').checked;
+          const qRequired = qType === 'section' ? false : card.querySelector('.lwfb-q-required').checked;
 
           if (!qText) {
-            alert(\`Question \${i + 1} is missing text\`);
+            alert(\`Question \${i + 1} is missing \${qType === 'section' ? 'a heading' : 'text'}\`);
             return;
           }
 
@@ -1212,12 +1245,17 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
             }
           }
 
+          // For section type, store description in text_entry_label
+          const sectionDescEl = card.querySelector('.lwfb-q-section-desc');
+          const textEntryLabel = sectionDescEl ? sectionDescEl.value.trim() : null;
+
           const q = {
             question_text: qText,
             question_type: qType,
             is_required: qRequired,
             sort_order: i,
-            options: options
+            options: options,
+            text_entry_label: textEntryLabel || null
           };
 
           // Only pass ID if it's not a temp ID (new_ prefix) and not a fixed field
@@ -1464,6 +1502,34 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
         `).join('') || '';
         inputHtml = `<div class="lw-entry-rank-group">${rankOptions}</div>`;
         break;
+      case 'time':
+        inputHtml = `
+          <div class="lw-entry-time-group">
+            <select name="${answerId}_h" class="lw-entry-time-select" ${requiredAttr}>
+              <option value="">HH</option>
+              ${[1,2,3,4,5,6,7,8,9,10,11,12].map(h => `<option value="${h}">${h}</option>`).join('')}
+            </select>
+            <select name="${answerId}_m" class="lw-entry-time-select" ${requiredAttr}>
+              <option value="">MM</option>
+              <option value="00">00</option>
+              <option value="15">15</option>
+              <option value="30">30</option>
+              <option value="45">45</option>
+            </select>
+            <select name="${answerId}_ap" class="lw-entry-time-select" ${requiredAttr}>
+              <option value="">AM/PM</option>
+              <option value="AM">AM</option>
+              <option value="PM">PM</option>
+            </select>
+          </div>`;
+        break;
+      case 'section':
+        return `
+          <div class="lw-entry-section-divider">
+            <h3 class="lw-entry-section-heading">${escapeHtml(q.question_text)}</h3>
+            ${q.text_entry_label ? `<p class="lw-entry-section-subdesc">${escapeHtml(q.text_entry_label)}</p>` : ''}
+          </div>
+        `;
       default:
         inputHtml = `<input type="text" name="${answerId}" class="lw-entry-input" placeholder="Enter answer...">`;
     }
@@ -1545,7 +1611,9 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
           const questionType = qEl.dataset.questionType;
           let answer = '';
 
-          if (questionType === 'yes_no' || questionType === 'rag' || questionType === 'ggaw' || questionType === 'rating') {
+          if (questionType === 'section') {
+            return; // section headers have no answer
+          } else if (questionType === 'yes_no' || questionType === 'rag' || questionType === 'ggaw' || questionType === 'rating') {
             const selected = qEl.querySelector('input[type="radio"]:checked');
             answer = selected ? selected.value : '';
           } else if (questionType === 'multiple_choice') {
@@ -1561,6 +1629,14 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
               }
             });
             answer = JSON.stringify(ranks);
+          } else if (questionType === 'time') {
+            const hEl = document.querySelector(\`[name="\${questionId}_h"]\`);
+            const mEl = document.querySelector(\`[name="\${questionId}_m"]\`);
+            const apEl = document.querySelector(\`[name="\${questionId}_ap"]\`);
+            const h = hEl ? hEl.value : '';
+            const m = mEl ? mEl.value : '';
+            const ap = apEl ? apEl.value : '';
+            answer = (h && m && ap) ? \`\${h}:\${m}:\${ap}\` : '';
           } else {
             const input = qEl.querySelector('input, select, textarea');
             answer = input ? input.value : '';
@@ -1662,7 +1738,7 @@ async function saveLWTemplate(request: Request, env: Env, identity: Identity): P
     // Insert questions
     for (const q of body.questions) {
       await env.esol_marking_db.prepare(
-        "INSERT INTO lw_template_questions (id, template_id, question_text, question_type, options, is_required, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO lw_template_questions (id, template_id, question_text, question_type, options, is_required, sort_order, text_entry_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         crypto.randomUUID(),
         templateId,
@@ -1670,7 +1746,8 @@ async function saveLWTemplate(request: Request, env: Env, identity: Identity): P
         q.question_type,
         q.options ? JSON.stringify(q.options) : null,
         q.is_required ? 1 : 0,
-        q.sort_order
+        q.sort_order,
+        (q as any).text_entry_label ?? null
       ).run();
     }
 
@@ -1712,6 +1789,7 @@ async function updateLWTemplate(request: Request, env: Env, identity: Identity, 
         options?: QuestionOption[];
         is_required?: boolean;
         sort_order: number;
+        text_entry_label?: string | null;
       }>;
     };
 
@@ -1734,13 +1812,14 @@ async function updateLWTemplate(request: Request, env: Env, identity: Identity, 
       if (q.id && existingIds.has(q.id)) {
         // Update existing
         await env.esol_marking_db.prepare(
-          "UPDATE lw_template_questions SET question_text = ?, question_type = ?, options = ?, is_required = ?, sort_order = ? WHERE id = ?"
+          "UPDATE lw_template_questions SET question_text = ?, question_type = ?, options = ?, is_required = ?, sort_order = ?, text_entry_label = ? WHERE id = ?"
         ).bind(
           q.question_text,
           q.question_type,
           q.options ? JSON.stringify(q.options) : null,
           q.is_required ? 1 : 0,
           q.sort_order,
+          q.text_entry_label ?? null,
           q.id
         ).run();
         updatedIds.add(q.id);
@@ -1748,7 +1827,7 @@ async function updateLWTemplate(request: Request, env: Env, identity: Identity, 
         // Insert new
         const newId = crypto.randomUUID();
         await env.esol_marking_db.prepare(
-          "INSERT INTO lw_template_questions (id, template_id, question_text, question_type, options, is_required, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)"
+          "INSERT INTO lw_template_questions (id, template_id, question_text, question_type, options, is_required, sort_order, text_entry_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         ).bind(
           newId,
           templateId,
@@ -1756,7 +1835,8 @@ async function updateLWTemplate(request: Request, env: Env, identity: Identity, 
           q.question_type,
           q.options ? JSON.stringify(q.options) : null,
           q.is_required ? 1 : 0,
-          q.sort_order
+          q.sort_order,
+          q.text_entry_label ?? null
         ).run();
         updatedIds.add(newId);
       }
@@ -2147,23 +2227,47 @@ function renderLWEntryViewPage(
           </label>
         `).join("")}</div>`;
         break;
+      case "time": {
+        const parts = answer ? answer.split(":") : [];
+        const tHour = parts[0] || "";
+        const tMin = parts[1] || "";
+        const tAP = parts[2] || "";
+        inputHtml = `
+          <div class="lw-entry-time-group">
+            <select name="${questionId}_h" class="lw-entry-time-select" ${isEditable ? "" : "disabled"}>
+              <option value="">HH</option>
+              ${[1,2,3,4,5,6,7,8,9,10,11,12].map(h => `<option value="${h}" ${tHour === String(h) ? "selected" : ""}>${h}</option>`).join("")}
+            </select>
+            <select name="${questionId}_m" class="lw-entry-time-select" ${isEditable ? "" : "disabled"}>
+              <option value="">MM</option>
+              ${["00","15","30","45"].map(m => `<option value="${m}" ${tMin === m ? "selected" : ""}>${m}</option>`).join("")}
+            </select>
+            <select name="${questionId}_ap" class="lw-entry-time-select" ${isEditable ? "" : "disabled"}>
+              <option value="">AM/PM</option>
+              <option value="AM" ${tAP === "AM" ? "selected" : ""}>AM</option>
+              <option value="PM" ${tAP === "PM" ? "selected" : ""}>PM</option>
+            </select>
+          </div>`;
+        break;
+      }
+      case "section":
+        return `
+          <div class="lw-entry-section-divider">
+            <h3 class="lw-entry-section-heading">${escapeHtml(q.question_text)}</h3>
+            ${q.text_entry_label ? `<p class="lw-entry-section-subdesc">${escapeHtml(q.text_entry_label)}</p>` : ""}
+          </div>
+        `;
       default:
         inputHtml = `<input type="text" name="${questionId}" class="lw-entry-input" value="${escapeHtml(answer)}" ${isEditable ? "" : "disabled"}>`;
     }
 
     return `
-      <div class="lw-entry-question">
+      <div class="lw-entry-question" data-question-id="${q.id}" data-question-type="${q.question_type}">
         <label class="lw-entry-question-label">
           <span>${index + 1}. ${escapeHtml(q.question_text)}</span>
           ${q.is_required ? '<span class="lw-entry-required">*</span>' : ""}
         </label>
         ${inputHtml}
-        ${q.has_text_entry ? `
-          <div style="margin-top:0.75rem;">
-            <label class="lw-entry-hint">${escapeHtml(q.text_entry_label || "Additional comments")}</label>
-            <textarea name="${questionId}-text" class="lw-entry-textarea" placeholder="Enter additional details..." ${isEditable ? "" : "disabled"}></textarea>
-          </div>
-        ` : ""}
       </div>
     `;
   }).join("");
@@ -2297,22 +2401,31 @@ function renderLWEntryViewPage(
         if (!canEdit) return alert('You do not have permission to edit this form');
 
         const answers = [];
-        document.querySelectorAll('.lw-entry-question').forEach((q, idx) => {
-          const questionId = q.querySelector('input, select, textarea')?.name?.replace('question-', '');
-          if (!questionId) return;
+        document.querySelectorAll('.lw-entry-question[data-question-type]').forEach((q, idx) => {
+          const qType = q.dataset.questionType;
+          const qId = q.dataset.questionId;
+          if (!qId || qType === 'section') return;
 
-          const inputs = q.querySelectorAll('input[name^="question-"], select[name^="question-"], textarea[name^="question-"]');
+          const questionId = qId;
           let answer = '';
 
-          inputs.forEach(input => {
-            if (input.type === 'radio' && input.checked) {
-              answer = input.value;
-            } else if (input.type === 'checkbox' && input.checked) {
-              answer = answer ? answer + ', ' + input.value : input.value;
-            } else if (input.type === 'text' || input.type === 'number' || input.tagName === 'TEXTAREA' || input.tagName === 'SELECT') {
-              answer = input.value;
-            }
-          });
+          if (qType === 'time') {
+            const h = document.querySelector(\`[name="question-\${questionId}_h"]\`)?.value || '';
+            const m = document.querySelector(\`[name="question-\${questionId}_m"]\`)?.value || '';
+            const ap = document.querySelector(\`[name="question-\${questionId}_ap"]\`)?.value || '';
+            answer = (h && m && ap) ? \`\${h}:\${m}:\${ap}\` : '';
+          } else {
+            const inputs = q.querySelectorAll('input[name^="question-"], select[name^="question-"], textarea[name^="question-"]');
+            inputs.forEach(input => {
+              if (input.type === 'radio' && input.checked) {
+                answer = input.value;
+              } else if (input.type === 'checkbox' && input.checked) {
+                answer = answer ? answer + ', ' + input.value : input.value;
+              } else if (input.type !== 'radio' && input.type !== 'checkbox') {
+                answer = input.value;
+              }
+            });
+          }
 
           answers.push({ question_id: questionId, answer });
         });
@@ -2729,7 +2842,7 @@ function pageShell(title: string, body: string) {
     .lw-comment-form{display:flex;flex-direction:column;gap:0.75rem;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)}
     /* Learning Walk Form Builder Popup */
     .lwfb-popup-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(69,10,10,0.6);backdrop-filter:blur(4px);z-index:1000;display:flex;justify-content:center;align-items:center;padding:2rem}
-    .lwfb-popup-container{background:#fff;border-radius:16px;width:100%;max-width:900px;max-height:calc(100vh - 4rem);display:flex;flex-direction:column;box-shadow:0 25px 100px rgba(69,10,10,0.3)}
+    .lwfb-popup-container{background:#fff;border-radius:16px;width:100%;max-width:1200px;max-height:calc(100vh - 4rem);display:flex;flex-direction:column;box-shadow:0 16px 64px rgba(0,0,0,0.18)}
     .lwfb-popup-header{display:flex;justify-content:space-between;align-items:center;padding:1.5rem 2rem;border-bottom:2px solid var(--border);background:linear-gradient(135deg,#fef2f2 0%,#fff 100%)}
     .lwfb-eyebrow{margin:0 0 0.25rem;color:var(--primary);font-size:0.75rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase}
     .lwfb-title{margin:0;font-size:1.75rem;color:var(--text)}
@@ -2753,8 +2866,8 @@ function pageShell(title: string, body: string) {
     .field-preview-box{background:#fef2f2;border:2px solid var(--border);border-radius:8px;padding:0.75rem 1rem;color:#991b1b;font-size:0.9375rem}
     .field-preview-box select,.field-preview-box input{width:100%;background:transparent;border:none;color:inherit;font-size:inherit;cursor:not-allowed}
     .lwfb-questions-container{margin-bottom:1rem}
-    .lwfb-question-card{background:#fff;border:2px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1rem;box-shadow:0 2px 8px rgba(220,38,38,0.08);transition:all 0.2s}
-    .lwfb-question-card:hover{border-color:#f87171;box-shadow:0 4px 12px rgba(220,38,38,0.15)}
+    .lwfb-question-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1rem;box-shadow:0 1px 4px rgba(0,0,0,.04);transition:all 0.2s}
+    .lwfb-question-card:hover{border-color:var(--primary);box-shadow:0 4px 12px rgba(255,0,90,.1)}
     .lwfb-fixed-card{border-left:4px solid #3b82f6;background:linear-gradient(135deg,#eff6ff 0%,#fff 100%)}
     .lwfb-fixed-card .lwfb-q-number{background:linear-gradient(135deg,#3b82f6,#60a5fa)}
     .lwfb-fixed-card .lwfb-q-text{background:#f8fafc}
@@ -2766,6 +2879,9 @@ function pageShell(title: string, body: string) {
     .lwfb-q-type-select{background:#f8fafc;border:2px solid var(--border);border-radius:6px;padding:0.5rem 0.75rem;font-size:0.875rem;cursor:pointer}
     .lwfb-q-type-select:focus{border-color:var(--primary);outline:none}
     .lwfb-required-label{display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:var(--muted);cursor:pointer;margin-left:auto}
+    .lwfb-reorder-btns{display:flex;gap:0.25rem}
+    .lwfb-reorder-btn{background:#f1f5f9;border:1px solid var(--border);border-radius:5px;color:var(--muted);font-size:0.75rem;width:1.75rem;height:1.75rem;display:grid;place-items:center;cursor:pointer;transition:all 0.15s;padding:0}
+    .lwfb-reorder-btn:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
     .lwfb-required-label input{width:auto}
     .lwfb-delete-q{background:#fee2e2;border:none;border-radius:6px;color:#dc2626;font-size:1.25rem;width:2rem;height:2rem;display:grid;place-items:center;cursor:pointer;transition:all 0.2s}
     .lwfb-delete-q:hover{background:#dc2626;color:#fff}
@@ -2776,20 +2892,25 @@ function pageShell(title: string, body: string) {
     .lwfb-options-label{display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.5rem}
     .lwfb-q-options{font-family:monospace;font-size:0.875rem;padding:0.75rem 1rem;border:2px solid var(--border);border-radius:8px;width:100%;resize:vertical}
     .lwfb-q-options:focus{border-color:var(--primary);outline:none}
-    .lwfb-add-wrapper{display:flex;justify-content:center;padding:1rem 0}
+    .lwfb-add-wrapper{display:flex;justify-content:center;padding:1rem 0;margin-bottom:0}
     .lwfb-add-btn{background:#fff;border:2px dashed var(--border);border-radius:8px;padding:1rem 2rem;cursor:pointer;display:flex;align-items:center;gap:0.75rem;color:var(--muted);font-weight:500;transition:all 0.2s;font-size:1rem}
     .lwfb-add-btn:hover{border-color:var(--primary);color:var(--primary)}
     .lwfb-add-btn .plus-icon{font-size:1.5rem;font-weight:300}
-    .lwfb-type-picker{background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.15);padding:1rem;margin-top:0.5rem;border:2px solid var(--border)}
+    .lwfb-type-picker{background:#f8fafc;border-radius:12px;border:1px solid var(--border);padding:1.25rem;margin-top:0.75rem}
     .lwfb-type-picker .picker-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;padding-bottom:0.5rem;border-bottom:1px solid var(--border)}
     .lwfb-type-picker .picker-header span{font-weight:600;color:var(--text)}
-    .lwfb-type-picker .picker-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem}
-    .lwfb-type-picker .type-option{background:#f8fafc;border:2px solid transparent;border-radius:8px;padding:1rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:0.5rem;transition:all 0.2s}
-    .lwfb-type-picker .type-option:hover{background:#fff;border-color:var(--primary);box-shadow:0 4px 12px rgba(220,38,38,0.15)}
-    .lwfb-type-picker .type-icon{font-size:1.5rem}
-    .lwfb-type-picker .type-label{font-size:0.875rem;font-weight:500;color:var(--text)}
-    .lwfb-type-picker .type-desc{font-size:0.75rem;color:var(--muted);text-align:center}
-    .lwfb-empty-state{color:var(--muted);font-style:italic;padding:2rem;text-align:center;background:#f8fafc;border-radius:8px;border:2px dashed var(--border)}
+    .lwfb-type-picker .picker-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:0.75rem}
+    .lwfb-type-picker .type-option{background:#fff;border:1px solid var(--border);border-radius:8px;padding:0.875rem 0.5rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:0.4rem;transition:all 0.15s}
+    .lwfb-type-picker .type-option:hover{border-color:var(--primary);box-shadow:0 2px 8px rgba(255,0,90,.12);background:#fff}
+    .lwfb-type-picker .type-icon{font-size:1.375rem}
+    .lwfb-type-picker .type-label{font-size:0.8125rem;font-weight:600;color:var(--text);text-align:center}
+    .lwfb-type-picker .type-desc{font-size:0.6875rem;color:var(--muted);text-align:center;line-height:1.3}
+    .lwfb-empty-state{color:var(--muted);font-style:italic;padding:2rem;text-align:center;background:#f8fafc;border-radius:8px;border:1px dashed var(--border)}
+    .lw-entry-section-divider{padding:1.25rem 0 0.5rem;margin-bottom:0.5rem;border-bottom:2px solid var(--border)}
+    .lw-entry-section-heading{font-size:1.125rem;font-weight:700;color:var(--text);margin:0 0 0.35rem}
+    .lw-entry-section-subdesc{font-size:0.9375rem;color:var(--muted);margin:0}
+    .lw-entry-time-group{display:flex;gap:0.75rem;align-items:center}
+    .lw-entry-time-select{width:auto;flex:1;border:1px solid var(--border);border-radius:8px;padding:0.75rem;font-size:1rem}
     .lwfb-comments-section{background:linear-gradient(135deg,#f8fafc 0%,#fff 100%);border-left:4px solid #d97706}
     .lwfb-comments-list{max-height:200px;overflow-y:auto}
     .lwfb-empty-comments{color:var(--muted);font-style:italic;padding:1rem;text-align:center}
