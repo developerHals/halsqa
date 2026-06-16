@@ -1300,15 +1300,17 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
           const card = cards[i];
           const qId = card.dataset.questionId;
           const qType = card.querySelector('.lwfb-q-type-select').value;
-          const qText = card.querySelector('.lwfb-q-text').value.trim();
+          // Select only the visible text input (not the hidden one in section-body)
+          const textInput = card.querySelector('.lwfb-normal-body:not(.hidden) .lwfb-q-text') || card.querySelector('.lwfb-section-body:not(.hidden) .lwfb-q-text') || card.querySelector('.lwfb-q-text');
+          const qText = textInput?.value?.trim() || '';
           const qRequired = qType === 'section' ? false : card.querySelector('.lwfb-q-required').checked;
 
           if (!qText) {
             const qNum = card.querySelector('.lwfb-q-number')?.textContent || (i + 1);
             const input = card.querySelector('.lwfb-q-text');
-            input?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            card.scrollIntoView({ behavior: 'auto', block: 'center' });
             input?.focus();
-            alert(\`Question \${qNum} is missing \${qType === 'section' ? 'a heading' : 'text'}\`);
+            setTimeout(() => alert(\`Question \${qNum} is missing \${qType === 'section' ? 'a heading' : 'text'}. Please scroll up to find it.\`), 100);
             return;
           }
 
