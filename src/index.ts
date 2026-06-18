@@ -256,10 +256,85 @@ type LWNotification = {
   created_at: string;
 };
 
+type IQAFTemplateRecord = {
+  id: string;
+  title: string;
+  description: string | null;
+  is_active: number;
+  created_by: string | null;
+  created_at: string;
+};
+
+type IQAFTemplateQuestion = {
+  id: string;
+  template_id: string;
+  question_text: string;
+  question_type: QuestionType | "rag";
+  options: QuestionOption[] | null;
+  has_text_entry: number;
+  text_entry_label: string | null;
+  is_required: number;
+  sort_order: number;
+};
+
+type IQAFTemplateWithQuestions = IQAFTemplateRecord & {
+  questions: IQAFTemplateQuestion[];
+};
+
+type IQAFEntryStatus = "pending" | "assessor_submitted" | "iqa_reviewed" | "eqa_signed" | "complete";
+
+type IQAFEntryRecord = {
+  id: string;
+  template_id: string;
+  template_title: string;
+  course_id: string;
+  course_name: string;
+  assessor_name: string;
+  iqa_name: string;
+  planned_date: string;
+  due_date: string | null;
+  status: IQAFEntryStatus;
+  allocated_assessor_id: string | null;
+  allocated_iqa_id: string | null;
+  allocated_eqa_id: string | null;
+  assessor_email: string | null;
+  iqa_email: string | null;
+  eqa_email: string | null;
+  created_by: string | null;
+  created_at: string;
+  assessor_submitted_at: string | null;
+  iqa_reviewed_at: string | null;
+  eqa_signed_at: string | null;
+};
+
+type IQAFComment = {
+  id: string;
+  entry_id: string;
+  author_id: string | null;
+  author_role: "assessor" | "iqa" | "eqa" | "admin" | "superuser";
+  comment: string;
+  created_at: string;
+  author_email: string | null;
+};
+
+type IQAFAnswer = {
+  question_id: string;
+  answer: string | null;
+};
+
+type IQAFNotification = {
+  id: string;
+  user_id: string;
+  entry_id: string | null;
+  message: string;
+  is_read: number;
+  created_at: string;
+};
+
 const htmlHeaders = { "content-type": "text/html; charset=utf-8" };
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
-const oauthStateCookie = "esolqa_oauth_state";
-const sessionCookie = "esolqa_session";
+const oauthStateCookie = "hlquality_oauth_state";
+const sessionCookie = "hlquality_session";
 const roles: Role[] = ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa"];
 const stages: Stage[] = ["assess", "iqa", "eqa"];
 
@@ -282,12 +357,30 @@ export default {
     if (!identity) return wantsJson(request) ? json({ error: "Not authenticated" }, 401) : Response.redirect(`${url.origin}/login`, 302);
     if (!identity.user) return htmlResponse(renderAccessPendingPage(identity), 403);
 
-    if (url.pathname === "/dashboard") return renderDashboard(request, env, identity);
-    if (url.pathname === "/users") return renderUsersPage(env, identity);
+    if (url.pathname === "/dashboard") return Response.redirect(`${url.origin}/learning-walks`, 302);
+    if (url.pathname === "/users") return renderUsersPage(request, env, identity);
 
     if (url.pathname === "/api/me") return json(identity);
     if (url.pathname === "/api/users" && request.method === "POST") return createUser(request, env, identity);
-    if (url.pathname.startsWith("/api/users/") && request.method === "POST") return deleteUser(request, env, identity, url.pathname.split("/")[3]);
+    if (url.pathname === "/api/users/import" && request.method === "POST") return importUsers(request, env, identity);
+    if (url.pathname === "/api/users/update" && request.method === "POST") return updateUser(request, env, identity);
+    if (url.pathname.match(/^\/api\/users\/[^/]+\/delete$/) && request.method === "POST") return deleteUser(request, env, identity, url.pathname.split("/")[3]);
+
+    // IQA Forms
+    if (url.pathname === "/iqa-forms") return renderIQAFDashboard(request, env, identity);
+    if (url.pathname === "/iqa-forms/templates/build" || url.pathname.match(/^\/iqa-forms\/templates\/[^/]+\/build$/)) return renderIQAFTemplateBuilder(request, env, identity);
+    if (url.pathname === "/iqa-forms/entries/new") return renderIQAFEntryTemplateSelector(request, env, identity);
+    if (url.pathname === "/iqa-forms/entries/create") return renderIQAFEntryForm(request, env, identity);
+    if (url.pathname.match(/^\/iqa-forms\/entries\/[^/]+$/)) return renderIQAFEntryView(request, env, identity, url.pathname.split("/")[3]);
+    if (url.pathname === "/api/iqaf/entries" && request.method === "POST") return saveIQAFEntry(request, env, identity);
+    if (url.pathname.match(/^\/api\/iqaf\/entries\/[^/]+\/comments$/) && request.method === "POST") return addIQAFEntryComment(request, env, identity, url.pathname.split("/")[4]);
+    if (url.pathname.match(/^\/api\/iqaf\/entries\/[^/]+\/update$/) && request.method === "POST") return updateIQAFEntry(request, env, identity, url.pathname.split("/")[4]);
+    if (url.pathname.match(/^\/api\/iqaf\/entries\/[^/]+\/complete$/) && request.method === "POST") return completeIQAFEntry(request, env, identity, url.pathname.split("/")[4]);
+    if (url.pathname.match(/^\/api\/iqaf\/entries\/[^/]+\/delete$/) && request.method === "POST") return deleteIQAFEntry(request, env, identity, url.pathname.split("/")[4]);
+    if (url.pathname.match(/^\/api\/iqaf\/entries\/[^/]+\/download$/) && request.method === "GET") return downloadIQAFEntry(request, env, identity, url.pathname.split("/")[4]);
+    if (url.pathname === "/api/iqaf/templates" && request.method === "POST") return saveIQAFTemplate(request, env, identity);
+    if (url.pathname.match(/^\/api\/iqaf\/templates\/[^/]+$/) && request.method === "POST") return updateIQAFTemplate(request, env, identity, url.pathname.split("/")[4]);
+    if (url.pathname.match(/^\/api\/iqaf\/templates\/[^/]+\/delete$/) && request.method === "POST") return deleteIQAFTemplate(request, env, identity, url.pathname.split("/")[4]);
 
     // Learning Walks dashboard only
     if (url.pathname === "/learning-walks") return renderLWDashboard(request, env, identity);
@@ -362,45 +455,22 @@ export default {
   },
 };
 
-async function renderDashboard(request: Request, env: Env, identity: Identity): Promise<Response> {
-  const url = new URL(request.url);
-  const section = url.searchParams.get("section") ?? "assessment";
-  const search = url.searchParams.get("q") ?? "";
-  const entries = await listEntries(env, identity.user!, section, search);
-  const templates = await listTemplates(env, search);
-
-  return htmlResponse(renderDashboardPage(identity, section, search, templates, entries));
-}
-
-async function renderUsersPage(env: Env, identity: Identity): Promise<Response> {
+async function renderUsersPage(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!isSuperuser(identity.user!)) return htmlResponse(renderForbiddenPage(identity), 403);
   const users = await env.esol_marking_db.prepare("SELECT id, email, role, stage, created_at FROM users ORDER BY created_at DESC, email ASC").all<UserRecord>();
 
-  return htmlResponse(renderUsers(identity, users.results));
-}
+  // Parse import result from query params
+  const url = new URL(request.url);
+  const importStatus = url.searchParams.get("import");
+  const importResult = importStatus
+    ? {
+        status: importStatus,
+        summary: url.searchParams.get("summary") ?? "",
+        details: url.searchParams.get("details") ?? undefined
+      }
+    : undefined;
 
-async function listTemplates(env: Env, search: string): Promise<TemplateRecord[]> {
-  const like = `%${search}%`;
-  const result = await env.esol_marking_db.prepare("SELECT id, title, description, structure, is_active, created_at FROM form_templates WHERE is_active = 1 AND (? = '' OR title LIKE ? OR description LIKE ?) ORDER BY created_at DESC").bind(search, like, like).all<TemplateRecord>();
-  return result.results;
-}
-
-async function listEntries(env: Env, user: UserRecord, section: string, search: string): Promise<EntryRecord[]> {
-  const status = section === "iqa" ? "iqa" : section === "eqa" ? "eqa" : section === "submissions" ? "complete" : "assessment";
-  const like = `%${search}%`;
-  const query = `SELECT fe.id, fe.template_id, ft.title AS template_title, fe.status, fe.course_code, fe.qualification, fe.teacher, fe.created_at,
-    assessor.email AS assessor_email, iqa.email AS iqa_email, eqa.email AS eqa_email
-    FROM form_entries fe
-    JOIN form_templates ft ON ft.id = fe.template_id
-    LEFT JOIN users assessor ON assessor.id = fe.assessor_id
-    LEFT JOIN users iqa ON iqa.id = fe.iqa_id
-    LEFT JOIN users eqa ON eqa.id = fe.eqa_id
-    WHERE fe.status = ?
-    AND (? IN ('superuser','admin') OR fe.assessor_id = ? OR fe.iqa_id = ? OR fe.eqa_id = ?)
-    AND (? = '' OR fe.course_code LIKE ? OR fe.qualification LIKE ? OR fe.teacher LIKE ? OR ft.title LIKE ?)
-    ORDER BY fe.created_at DESC`;
-  const result = await env.esol_marking_db.prepare(query).bind(status, user.role, user.id, user.id, user.id, search, like, like, like, like).all<EntryRecord>();
-  return result.results;
+  return htmlResponse(renderUsers(identity, users.results, importResult));
 }
 
 
@@ -426,6 +496,35 @@ async function createUser(request: Request, env: Env, identity: Identity): Promi
   return Response.redirect(new URL("/users", request.url).toString(), 303);
 }
 
+async function updateUser(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!isSuperuser(identity.user!)) return json({ error: "Forbidden" }, 403);
+
+  const body = await request.formData();
+  const id = String(body.get("id") ?? "");
+  const role = String(body.get("role") ?? "");
+  const stage = String(body.get("stage") ?? "");
+
+  if (!id || !roles.includes(role as Role)) {
+    return Response.redirect(new URL("/users?update=error&message=Invalid+user+or+role", request.url).toString(), 303);
+  }
+
+  // Prevent self-modification
+  if (id === identity.user!.id) {
+    return Response.redirect(new URL("/users?update=error&message=Cannot+modify+own+account", request.url).toString(), 303);
+  }
+
+  const userStage = stage && stages.includes(stage as Stage) ? stage : roleToStage(role as Role);
+
+  try {
+    await env.esol_marking_db.prepare(
+      "UPDATE users SET role = ?, stage = ? WHERE id = ?"
+    ).bind(role, userStage, id).run();
+    return Response.redirect(new URL("/users?update=success", request.url).toString(), 303);
+  } catch (err: any) {
+    return Response.redirect(new URL(`/users?update=error&message=${encodeURIComponent(err?.message || "Update failed")}`, request.url).toString(), 303);
+  }
+}
+
 async function deleteUser(request: Request, env: Env, identity: Identity, id?: string): Promise<Response> {
   if (!isSuperuser(identity.user!)) return json({ error: "Forbidden" }, 403);
   if (!id || id === identity.user!.id) return Response.redirect(new URL("/users", request.url).toString(), 303);
@@ -435,72 +534,155 @@ async function deleteUser(request: Request, env: Env, identity: Identity, id?: s
   return Response.redirect(new URL("/users", request.url).toString(), 303);
 }
 
-function renderDashboardPage(identity: Identity, section: string, search: string, templates: TemplateRecord[], entries: EntryRecord[]) {
-  const canCreate = canCreateForms(identity.user!);
-  const isAdmin = identity.user!.role === "admin" || identity.user!.role === "superuser";
-  const contentTitle = section === "iqa" ? "IQA submissions" : section === "eqa" ? "EQA submissions" : section === "submissions" ? "Submissions" : "Assessment submissions";
+async function importUsers(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!isSuperuser(identity.user!)) return json({ error: "Forbidden" }, 403);
 
-  return pageShell("Dashboard", `
-    <main class="dashboard-shell">
-      ${renderSidebar(identity, section)}
-      <section class="content">
-        ${renderTopbar(identity, contentTitle)}
-        
-        <!-- Templates Section - All users see all templates -->
-        <section class="panel templates-section">
-          <div class="section-header">
-            <p class="eyebrow">Available checklist forms</p>
-            <form method="GET" action="/dashboard" class="search-form-inline">
-              <input type="hidden" name="section" value="${escapeHtml(section)}">
-              <input name="q" value="${escapeHtml(search)}" placeholder="Search forms by name...">
-              <button type="submit">Search</button>
-            </form>
-          </div>
-          <div class="list-stack templates-list">${templates.length ? templates.map(t => renderTemplateCard(t, identity.user || undefined)).join("") : renderEmpty("No checklist templates found")}</div>
-        </section>
-        
-        <!-- Submissions Section - Role based visibility -->
-        <section class="panel submissions-section">
-          <div class="section-header">
-            <p class="eyebrow">${escapeHtml(contentTitle)}</p>
-            <form method="GET" action="/dashboard" class="search-form-inline">
-              <input type="hidden" name="section" value="${escapeHtml(section)}">
-              <input name="q" value="${escapeHtml(search)}" placeholder="Search submissions...">
-              <button type="submit">Search</button>
-            </form>
-          </div>
-          <div class="list-stack">${entries.length ? entries.map(renderEntryCard).join("") : renderEmpty("No submissions found")}</div>
-        </section>
-        
-        <!-- Action Buttons -->
-        <section class="toolbar panel">
-          <div class="actions-row">
-            ${canCreate ? `<a class="small-action" href="/forms/new">+ Create form</a>` : ""}
-            ${canAssess(identity.user!) ? `<a class="small-action" href="/entries/new">+ New assessment entry</a>` : ""}
-          </div>
-        </section>
-      </section>
-    </main>
-    
-    <script>
-      function confirmDelete(form) {
-        const confirmText = prompt('To delete this template, type DELETE:');
-        if (confirmText !== 'DELETE') {
-          alert('Template not deleted. You must type DELETE to confirm.');
-          return false;
-        }
-        return true;
+  const formData = await request.formData();
+  const csvFile = formData.get("csvFile");
+  const skipExisting = String(formData.get("skipExisting") ?? "true") === "true";
+
+  if (!csvFile || !(csvFile instanceof File)) {
+    return Response.redirect(new URL("/users?import=error&message=No+CSV+file+provided", request.url).toString(), 303);
+  }
+
+  const csvText = await csvFile.text();
+  const lines = csvText.split(/\r?\n/).filter(l => l.trim());
+
+  if (lines.length === 0) {
+    return Response.redirect(new URL("/users?import=error&message=Empty+CSV+file", request.url).toString(), 303);
+  }
+
+  // Parse header
+  const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+  const emailIdx = headers.indexOf("email");
+  const roleIdx = headers.indexOf("role");
+  const stageIdx = headers.indexOf("stage");
+
+  if (emailIdx === -1 || roleIdx === -1) {
+    return Response.redirect(new URL("/users?import=error&message=CSV+must+have+'email'+and+'role'+columns", request.url).toString(), 303);
+  }
+
+  const results = {
+    created: 0,
+    skipped: 0,
+    errors: [] as { row: number; message: string }[]
+  };
+
+  // Get existing emails for duplicate checking
+  const existingUsers = await env.esol_marking_db.prepare("SELECT lower(email) as email FROM users").all<{ email: string }>();
+  const existingEmails = new Set(existingUsers.results.map(u => u.email));
+
+  for (let i = 1; i < lines.length; i++) {
+    const rowNum = i + 1;
+    const values = parseCSVLine(lines[i]);
+
+    const email = values[emailIdx]?.trim().toLowerCase() ?? "";
+    const role = values[roleIdx]?.trim().toLowerCase() ?? "";
+    const stage = stageIdx >= 0 ? values[stageIdx]?.trim().toLowerCase() ?? "" : "";
+
+    if (!email) {
+      results.errors.push({ row: rowNum, message: "Missing email" });
+      continue;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      results.errors.push({ row: rowNum, message: `Invalid email format: ${email}` });
+      continue;
+    }
+
+    // Check for duplicates
+    if (existingEmails.has(email)) {
+      if (skipExisting) {
+        results.skipped++;
+        continue;
       }
-    </script>
-  `);
+      // If not skipping, we'll try to update (not implemented - skip for now)
+      results.skipped++;
+      continue;
+    }
+
+    // Validate role
+    if (!roles.includes(role as Role)) {
+      results.errors.push({ row: rowNum, message: `Invalid role '${role}'. Must be one of: ${roles.join(", ")}` });
+      continue;
+    }
+
+    // Determine stage
+    let userStage: Stage | null = null;
+    if (stage && stages.includes(stage as Stage)) {
+      userStage = stage as Stage;
+    } else {
+      userStage = roleToStage(role as Role);
+    }
+
+    try {
+      await env.esol_marking_db.prepare(
+        "INSERT INTO users (id, email, role, stage) VALUES (?, ?, ?, ?)"
+      ).bind(crypto.randomUUID(), email, role, userStage).run();
+      results.created++;
+      existingEmails.add(email);
+    } catch (err: any) {
+      results.errors.push({ row: rowNum, message: `Database error: ${err?.message || String(err)}` });
+    }
+  }
+
+  const summary = `Created:${results.created},Skipped:${results.skipped},Errors:${results.errors.length}`;
+  const errorDetails = results.errors.length > 0
+    ? "&details=" + encodeURIComponent(results.errors.slice(0, 5).map(e => `Row ${e.row}: ${e.message}`).join("; ") + (results.errors.length > 5 ? `... and ${results.errors.length - 5} more` : ""))
+    : "";
+
+  return Response.redirect(
+    new URL(`/users?import=success&summary=${encodeURIComponent(summary)}${errorDetails}`, request.url).toString(),
+    303
+  );
 }
 
-function renderUsers(identity: Identity, users: UserRecord[]) {
+// Simple CSV parser handling quoted fields
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function renderUsers(identity: Identity, users: UserRecord[], importResult?: { status: string; summary: string; details?: string }) {
+  const importSection = importResult?.status === "success"
+    ? `<div class="alert alert-success">
+        <strong>Import Complete:</strong> ${importResult.summary}
+        ${importResult.details ? `<br><small style="color: #dc2626;">${escapeHtml(importResult.details)}</small>` : ""}
+       </div>`
+    : importResult?.status === "error"
+    ? `<div class="alert alert-error"><strong>Import Failed:</strong> ${escapeHtml(importResult.summary)}</div>`
+    : "";
+
   return pageShell("Users", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "users")}
       <section class="content">
         ${renderTopbar(identity, "Users")}
+        ${importSection}
         <section class="panel">
           <p class="eyebrow">Create user</p>
           <form method="POST" action="/api/users" class="form-grid">
@@ -511,11 +693,87 @@ function renderUsers(identity: Identity, users: UserRecord[]) {
           </form>
         </section>
         <section class="panel">
+          <p class="eyebrow">Import from CSV</p>
+          <form method="POST" action="/api/users/import" enctype="multipart/form-data" class="form-grid import-form">
+            <label class="file-input-label">
+              <span>CSV File</span>
+              <input type="file" name="csvFile" accept=".csv" required>
+              <small>Required columns: <code>email</code>, <code>role</code>. Optional: <code>stage</code></small>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="skipExisting" value="true" checked>
+              Skip existing users
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="btn-secondary">Import Users</button>
+              <a href="#" onclick="downloadTemplate()" class="btn-link">Download template CSV</a>
+            </div>
+          </form>
+          <script>
+            function downloadTemplate() {
+              const csv = "email,role,stage\\nstaff1@example.org,assessor,assess\\nstaff2@example.org,iqa,iqa\\nstaff3@example.org,admin,\\n";
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'users_template.csv';
+              a.click();
+              URL.revokeObjectURL(url);
+            }
+          </script>
+        </section>
+        <section class="panel">
           <p class="eyebrow">All users</p>
           <div class="user-table">${users.map((user) => renderUserRow(user, identity.user!.id)).join("")}</div>
         </section>
       </section>
     </main>
+
+    <!-- Edit User Modal -->
+    <div id="editUserModal" class="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center">
+      <div class="modal-box" style="background:#fff;border-radius:12px;padding:2rem;max-width:480px;width:92%;box-shadow:0 12px 48px rgba(0,0,0,0.22)">
+        <h2 style="margin-top:0">Edit User</h2>
+        <p id="editUserEmail" style="color:var(--muted);margin-bottom:1.5rem"></p>
+        <form id="editUserForm" method="POST" action="/api/users/update">
+          <input type="hidden" id="editUserId" name="id">
+          <div style="margin-bottom:1rem">
+            <label style="display:block;font-size:0.875rem;font-weight:600;margin-bottom:0.5rem">Role</label>
+            <select id="editUserRole" name="role" style="width:100%">
+              ${roles.map(r => `<option value="${r}">${r === "assessor_iqa" ? "Assessor / IQA" : r}</option>`).join("")}
+            </select>
+          </div>
+          <div style="margin-bottom:1.5rem">
+            <label style="display:block;font-size:0.875rem;font-weight:600;margin-bottom:0.5rem">Stage</label>
+            <select id="editUserStage" name="stage" style="width:100%">
+              <option value="">Auto (from role)</option>
+              ${stages.map(s => `<option value="${s}">${s}</option>`).join("")}
+            </select>
+          </div>
+          <div style="display:flex;gap:0.75rem;justify-content:flex-end">
+            <button type="button" class="secondary-btn" onclick="closeEditModal()">Cancel</button>
+            <button type="submit" class="primary-btn">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      function editUser(id, email, role, stage) {
+        document.getElementById('editUserId').value = id;
+        document.getElementById('editUserEmail').textContent = email;
+        document.getElementById('editUserRole').value = role;
+        document.getElementById('editUserStage').value = stage || '';
+        document.getElementById('editUserModal').style.display = 'flex';
+      }
+
+      function closeEditModal() {
+        document.getElementById('editUserModal').style.display = 'none';
+      }
+
+      document.getElementById('editUserModal').addEventListener('click', function(e) {
+        if (e.target === this) closeEditModal();
+      });
+    </script>
   `);
 }
 
@@ -533,30 +791,22 @@ function navLink(href: string, label: string, active: boolean) {
   return `<a class="${active ? "nav-active" : ""}" href="${href}">${escapeHtml(label)}</a>`;
 }
 
-function renderTemplateCard(t: TemplateRecord, user?: UserRecord) {
-  return `<article class="list-card template-card">
-    <div class="card-content">
-      <strong>${escapeHtml(t.title)}</strong>
-      <span>${escapeHtml(t.description || "No description")}</span>
-    </div>
-  </article>`;
-}
-
-function renderEntryCard(e: EntryRecord) {
-  return `<article class="list-card entry-card">
-    <div class="card-content">
-      <strong>${escapeHtml(e.template_title)}</strong>
-      <span>${escapeHtml(e.teacher || "Unknown")} · ${escapeHtml(e.course_code || "No course")}</span>
-    </div>
-    <span class="status-badge ${e.status}">${e.status}</span>
-  </article>`;
-}
-
 function renderUserRow(user: UserRecord, currentUserId: string) {
+  const isCurrentUser = user.id === currentUserId;
+  const roleDisplay = user.role === "assessor_iqa" ? "Assessor / IQA" : user.role;
+  const stageDisplay = user.stage ? ` (${user.stage})` : "";
+  
   return `<div class="user-row">
-    <span>${escapeHtml(user.email)}</span>
-    <span class="role-badge">${user.role === "assessor_iqa" ? "Assessor / IQA" : user.role}</span>
-    ${user.id !== currentUserId ? `<form method="POST" action="/api/users/${user.id}" style="display:inline"><input type="hidden" name="confirm" value="DELETE"><button type="submit" class="delete-btn" onclick="return confirm('Delete this user?')">Delete</button></form>` : "<span>(You)</span>"}
+    <div class="user-info">
+      <span class="user-email">${escapeHtml(user.email)}</span>
+      <span class="role-badge">${roleDisplay}${stageDisplay}</span>
+    </div>
+    <div class="user-actions">
+      ${!isCurrentUser ? `
+        <button type="button" class="edit-btn" onclick="editUser('${user.id}', '${escapeHtml(user.email)}', '${user.role}', '${user.stage || ""}')">Edit</button>
+        <form method="POST" action="/api/users/${user.id}/delete" style="display:inline"><input type="hidden" name="confirm" value="DELETE"><button type="submit" class="delete-btn" onclick="return confirm('Delete this user?')">Delete</button></form>
+      ` : '<span class="current-user-badge">(You)</span>'}
+    </div>
   </div>`;
 }
 
@@ -2894,13 +3144,569 @@ async function downloadLWEntry(request: Request, env: Env, identity: Identity, e
   return new Response(printHtml, { headers });
 }
 
+// ─── IQA Forms: data helpers ──────────────────────────────────────────────────
+
+async function getIQAFTemplates(env: Env): Promise<IQAFTemplateRecord[]> {
+  const r = await env.esol_marking_db.prepare("SELECT id, title, description, is_active, created_by, created_at FROM iqaf_templates WHERE is_active = 1 ORDER BY created_at DESC").all<IQAFTemplateRecord>();
+  return r.results;
+}
+
+async function getIQAFTemplateWithQuestions(env: Env, templateId: string): Promise<IQAFTemplateWithQuestions | null> {
+  const tmpl = await env.esol_marking_db.prepare("SELECT id, title, description, is_active, created_by, created_at FROM iqaf_templates WHERE id = ? LIMIT 1").bind(templateId).first<IQAFTemplateRecord>();
+  if (!tmpl) return null;
+  const qs = await env.esol_marking_db.prepare("SELECT id, template_id, question_text, question_type, options, has_text_entry, text_entry_label, is_required, sort_order FROM iqaf_template_questions WHERE template_id = ? ORDER BY sort_order ASC").bind(templateId).all<IQAFTemplateQuestion & { options: string | null }>();
+  const questions: IQAFTemplateQuestion[] = qs.results.map(q => ({ ...q, options: q.options ? JSON.parse(q.options) as QuestionOption[] : null }));
+  return { ...tmpl, questions };
+}
+
+async function getIQAFEntries(env: Env, user: UserRecord, search: string): Promise<IQAFEntryRecord[]> {
+  const like = `%${search}%`;
+  const isPrivileged = user.role === "admin" || user.role === "superuser";
+  const r = await env.esol_marking_db.prepare(`SELECT e.id, e.template_id, t.title AS template_title,
+    e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
+    e.status, e.allocated_assessor_id, e.allocated_iqa_id, e.allocated_eqa_id,
+    assr.email AS assessor_email, iqa.email AS iqa_email, eqa.email AS eqa_email,
+    e.created_by, e.created_at, e.assessor_submitted_at, e.iqa_reviewed_at, e.eqa_signed_at
+    FROM iqaf_entries e
+    JOIN iqaf_templates t ON t.id = e.template_id
+    LEFT JOIN users assr ON assr.id = e.allocated_assessor_id
+    LEFT JOIN users iqa ON iqa.id = e.allocated_iqa_id
+    LEFT JOIN users eqa ON eqa.id = e.allocated_eqa_id
+    WHERE (? = 1 OR e.allocated_assessor_id = ? OR e.allocated_iqa_id = ? OR e.allocated_eqa_id = ?)
+    AND (? = '' OR e.course_name LIKE ? OR e.assessor_name LIKE ? OR e.iqa_name LIKE ? OR t.title LIKE ?)
+    ORDER BY e.created_at DESC`).bind(isPrivileged ? 1 : 0, user.id, user.id, user.id, search, like, like, like, like).all<IQAFEntryRecord>();
+  return r.results;
+}
+
+async function getIQAFEntry(env: Env, user: UserRecord, id: string): Promise<IQAFEntryRecord | null> {
+  const isPrivileged = user.role === "admin" || user.role === "superuser";
+  return env.esol_marking_db.prepare(`SELECT e.id, e.template_id, t.title AS template_title,
+    e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
+    e.status, e.allocated_assessor_id, e.allocated_iqa_id, e.allocated_eqa_id,
+    assr.email AS assessor_email, iqa.email AS iqa_email, eqa.email AS eqa_email,
+    e.created_by, e.created_at, e.assessor_submitted_at, e.iqa_reviewed_at, e.eqa_signed_at
+    FROM iqaf_entries e
+    JOIN iqaf_templates t ON t.id = e.template_id
+    LEFT JOIN users assr ON assr.id = e.allocated_assessor_id
+    LEFT JOIN users iqa ON iqa.id = e.allocated_iqa_id
+    LEFT JOIN users eqa ON eqa.id = e.allocated_eqa_id
+    WHERE e.id = ? AND (? = 1 OR e.allocated_assessor_id = ? OR e.allocated_iqa_id = ? OR e.allocated_eqa_id = ?)
+    LIMIT 1`).bind(id, isPrivileged ? 1 : 0, user.id, user.id, user.id).first<IQAFEntryRecord>();
+}
+
+async function getIQAFAnswers(env: Env, entryId: string): Promise<IQAFAnswer[]> {
+  return (await env.esol_marking_db.prepare("SELECT question_id, answer FROM iqaf_answers WHERE entry_id = ?").bind(entryId).all<IQAFAnswer>()).results;
+}
+
+async function getIQAFComments(env: Env, entryId: string): Promise<IQAFComment[]> {
+  return (await env.esol_marking_db.prepare("SELECT c.id, c.entry_id, c.author_id, c.author_role, c.comment, c.created_at, u.email AS author_email FROM iqaf_comments c LEFT JOIN users u ON u.id = c.author_id WHERE c.entry_id = ? ORDER BY c.created_at ASC").bind(entryId).all<IQAFComment>()).results;
+}
+
+async function getIQAFNotifications(env: Env, userId: string): Promise<IQAFNotification[]> {
+  return (await env.esol_marking_db.prepare("SELECT id, user_id, entry_id, message, is_read, created_at FROM iqaf_notifications WHERE user_id = ? AND is_read = 0 ORDER BY created_at DESC").bind(userId).all<IQAFNotification>()).results;
+}
+
+async function createIQAFNotification(env: Env, userId: string, entryId: string, message: string) {
+  await env.esol_marking_db.prepare("INSERT INTO iqaf_notifications (id, user_id, entry_id, message) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), userId, entryId, message).run();
+}
+
+// ─── IQA Forms: page handlers ─────────────────────────────────────────────────
+
+async function renderIQAFDashboard(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const url = new URL(request.url);
+  const search = url.searchParams.get("q") ?? "";
+  const user = identity.user!;
+  const [entries, templates, notifications] = await Promise.all([
+    getIQAFEntries(env, user, search),
+    getIQAFTemplates(env),
+    getIQAFNotifications(env, user.id),
+  ]);
+  return htmlResponse(renderIQAFDashboardPage(identity, entries, templates, notifications, search));
+}
+
+async function renderIQAFEntryTemplateSelector(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return new Response(null, { status: 302, headers: { Location: "/iqa-forms" } });
+  const templates = await getIQAFTemplates(env);
+  return htmlResponse(renderIQAFEntryTemplateSelectorPage(identity, templates));
+}
+
+async function renderIQAFTemplateBuilder(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return htmlResponse(renderForbiddenPage(identity), 403);
+  const url = new URL(request.url);
+  const segments = url.pathname.split("/");
+  const templateId = segments[3] !== "build" ? segments[3] : null;
+  const [template, usersResult] = await Promise.all([
+    templateId ? getIQAFTemplateWithQuestions(env, templateId) : Promise.resolve(null),
+    env.esol_marking_db.prepare("SELECT id, email, role, stage FROM users ORDER BY email ASC").all<UserRecord>(),
+  ]);
+  return htmlResponse(renderIQAFTemplateBuilderPage(identity, template, usersResult.results));
+}
+
+async function renderIQAFEntryForm(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return new Response(null, { status: 302, headers: { Location: "/iqa-forms" } });
+  const url = new URL(request.url);
+  const templateId = url.searchParams.get("templateId") ?? "";
+  const [template, usersResult] = await Promise.all([
+    getIQAFTemplateWithQuestions(env, templateId),
+    env.esol_marking_db.prepare("SELECT id, email, role, stage FROM users ORDER BY email ASC").all<UserRecord>(),
+  ]);
+  if (!template) return htmlResponse(renderNotFoundPage(), 404);
+  return htmlResponse(renderIQAFEntryFormPage(identity, template, usersResult.results));
+}
+
+async function renderIQAFEntryView(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  const user = identity.user!;
+  const entry = await getIQAFEntry(env, user, entryId);
+  if (!entry) return htmlResponse(renderNotFoundPage(), 404);
+  const [template, answers, comments, usersResult] = await Promise.all([
+    getIQAFTemplateWithQuestions(env, entry.template_id),
+    getIQAFAnswers(env, entryId),
+    getIQAFComments(env, entryId),
+    env.esol_marking_db.prepare("SELECT id, email, role, stage FROM users ORDER BY email ASC").all<UserRecord>(),
+  ]);
+  if (!template) return htmlResponse(renderNotFoundPage(), 404);
+  const isPrivileged = user.role === "admin" || user.role === "superuser";
+  const canEdit = isPrivileged || entry.allocated_assessor_id === user.id || entry.allocated_iqa_id === user.id || entry.allocated_eqa_id === user.id;
+  return htmlResponse(renderIQAFEntryViewPage(identity, entry, template, answers, comments, usersResult.results, canEdit, isPrivileged));
+}
+
+// ─── IQA Forms: API handlers ──────────────────────────────────────────────────
+
+async function saveIQAFEntry(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return json({ error: "Forbidden" }, 403);
+  try {
+    const body = await request.json() as { template_id: string; course_id: string; course_name: string; assessor_id: string; iqa_id: string; eqa_id?: string; planned_date: string; due_date?: string; answers: Record<string, string> };
+    const { template_id, course_id, course_name, assessor_id, iqa_id, eqa_id, planned_date, due_date, answers } = body;
+    if (!template_id || !course_id || !course_name || !assessor_id || !iqa_id || !planned_date) return json({ error: "Missing required fields" }, 400);
+    const [assessorUser, iqaUser] = await Promise.all([
+      env.esol_marking_db.prepare("SELECT id, email FROM users WHERE id = ?").bind(assessor_id).first<{ id: string; email: string }>(),
+      env.esol_marking_db.prepare("SELECT id, email FROM users WHERE id = ?").bind(iqa_id).first<{ id: string; email: string }>(),
+    ]);
+    if (!assessorUser || !iqaUser) return json({ error: "Invalid assessor or IQA" }, 400);
+    const entryId = crypto.randomUUID();
+    await env.esol_marking_db.prepare("INSERT INTO iqaf_entries (id, template_id, course_id, course_name, assessor_name, iqa_name, planned_date, due_date, allocated_assessor_id, allocated_iqa_id, allocated_eqa_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(entryId, template_id, course_id, course_name, assessorUser.email, iqaUser.email, planned_date, due_date || null, assessor_id, iqa_id, eqa_id || null, identity.user!.id).run();
+    if (answers && typeof answers === "object") {
+      for (const [qId, ans] of Object.entries(answers)) {
+        if (ans !== null && ans !== undefined && String(ans).trim() !== "") {
+          await env.esol_marking_db.prepare("INSERT INTO iqaf_answers (id, entry_id, question_id, answer, answered_by, answered_by_role) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(entry_id, question_id) DO UPDATE SET answer = excluded.answer").bind(crypto.randomUUID(), entryId, qId, String(ans), identity.user!.id, identity.user!.role).run();
+        }
+      }
+    }
+    await createIQAFNotification(env, assessor_id, entryId, `New IQA Form allocated: ${course_name}`);
+    await createIQAFNotification(env, iqa_id, entryId, `You are the IQA for a new form: ${course_name}`);
+    return json({ success: true, id: entryId });
+  } catch (err: any) { return json({ error: "Failed to save: " + (err?.message || String(err)) }, 500); }
+}
+
+async function updateIQAFEntry(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  const user = identity.user!;
+  const entry = await getIQAFEntry(env, user, entryId);
+  if (!entry) return json({ error: "Not found" }, 404);
+  const isPrivileged = user.role === "admin" || user.role === "superuser";
+  if (!isPrivileged && entry.allocated_assessor_id !== user.id && entry.allocated_iqa_id !== user.id && entry.allocated_eqa_id !== user.id) return json({ error: "Forbidden" }, 403);
+  try {
+    const body = await request.json() as { answers?: Record<string, string>; status?: IQAFEntryStatus };
+    if (body.answers) {
+      for (const [qId, ans] of Object.entries(body.answers)) {
+        await env.esol_marking_db.prepare("INSERT INTO iqaf_answers (id, entry_id, question_id, answer, answered_by, answered_by_role) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(entry_id, question_id) DO UPDATE SET answer = excluded.answer, answered_by = excluded.answered_by, answered_by_role = excluded.answered_by_role, updated_at = CURRENT_TIMESTAMP").bind(crypto.randomUUID(), entryId, qId, String(ans ?? ""), user.id, user.role).run();
+      }
+    }
+    const validStatuses: IQAFEntryStatus[] = ["pending", "assessor_submitted", "iqa_reviewed", "eqa_signed", "complete"];
+    if (body.status && validStatuses.includes(body.status)) {
+      let tsCol = "";
+      if (body.status === "assessor_submitted") tsCol = ", assessor_submitted_at = CURRENT_TIMESTAMP";
+      else if (body.status === "iqa_reviewed") tsCol = ", iqa_reviewed_at = CURRENT_TIMESTAMP";
+      else if (body.status === "eqa_signed") tsCol = ", eqa_signed_at = CURRENT_TIMESTAMP";
+      await env.esol_marking_db.prepare(`UPDATE iqaf_entries SET status = ?${tsCol} WHERE id = ?`).bind(body.status, entryId).run();
+      if (entry.allocated_iqa_id && body.status === "assessor_submitted") await createIQAFNotification(env, entry.allocated_iqa_id, entryId, `${entry.course_name}: assessor has submitted responses`);
+      if (entry.allocated_assessor_id && body.status === "iqa_reviewed") await createIQAFNotification(env, entry.allocated_assessor_id, entryId, `${entry.course_name}: IQA has reviewed your form`);
+    }
+    return json({ success: true });
+  } catch (err: any) { return json({ error: "Failed to update: " + (err?.message || String(err)) }, 500); }
+}
+
+async function addIQAFEntryComment(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  const user = identity.user!;
+  const entry = await getIQAFEntry(env, user, entryId);
+  if (!entry) return json({ error: "Not found" }, 404);
+  try {
+    const body = await request.json() as { comment: string };
+    if (!body.comment?.trim()) return json({ error: "Comment is required" }, 400);
+    await env.esol_marking_db.prepare("INSERT INTO iqaf_comments (id, entry_id, author_id, author_role, comment) VALUES (?, ?, ?, ?, ?)").bind(crypto.randomUUID(), entryId, user.id, user.role, body.comment.trim()).run();
+    return json({ success: true });
+  } catch (err: any) { return json({ error: "Failed: " + (err?.message || String(err)) }, 500); }
+}
+
+async function completeIQAFEntry(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return json({ error: "Forbidden" }, 403);
+  await env.esol_marking_db.prepare("UPDATE iqaf_entries SET status = 'complete', completed_at = CURRENT_TIMESTAMP WHERE id = ?").bind(entryId).run();
+  return json({ success: true });
+}
+
+async function deleteIQAFEntry(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  if (!isSuperuser(identity.user!)) return json({ error: "Forbidden" }, 403);
+  await env.esol_marking_db.prepare("DELETE FROM iqaf_entries WHERE id = ?").bind(entryId).run();
+  return json({ success: true });
+}
+
+async function saveIQAFTemplate(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return json({ error: "Forbidden" }, 403);
+  try {
+    const body = await request.json() as { title: string; description?: string; questions: IQAFTemplateQuestion[] };
+    if (!body.title?.trim()) return json({ error: "Title is required" }, 400);
+    const templateId = crypto.randomUUID();
+    await env.esol_marking_db.prepare("INSERT INTO iqaf_templates (id, title, description, created_by) VALUES (?, ?, ?, ?)").bind(templateId, body.title.trim(), body.description?.trim() || null, identity.user!.id).run();
+    for (let i = 0; i < body.questions.length; i++) {
+      const q = body.questions[i];
+      await env.esol_marking_db.prepare("INSERT INTO iqaf_template_questions (id, template_id, question_text, question_type, options, has_text_entry, text_entry_label, is_required, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), templateId, q.question_text, q.question_type, q.options ? JSON.stringify(q.options) : null, 0, q.text_entry_label || null, q.is_required ? 1 : 0, i).run();
+    }
+    return json({ success: true, id: templateId });
+  } catch (err: any) { return json({ error: "Failed: " + (err?.message || String(err)) }, 500); }
+}
+
+async function updateIQAFTemplate(request: Request, env: Env, identity: Identity, templateId: string): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return json({ error: "Forbidden" }, 403);
+  try {
+    const body = await request.json() as { title: string; description?: string; questions: IQAFTemplateQuestion[] };
+    if (!body.title?.trim()) return json({ error: "Title is required" }, 400);
+    await env.esol_marking_db.prepare("UPDATE iqaf_templates SET title = ?, description = ? WHERE id = ?").bind(body.title.trim(), body.description?.trim() || null, templateId).run();
+    await env.esol_marking_db.prepare("DELETE FROM iqaf_template_questions WHERE template_id = ?").bind(templateId).run();
+    for (let i = 0; i < body.questions.length; i++) {
+      const q = body.questions[i];
+      const qId = q.id && !q.id.startsWith("new_") && !q.id.startsWith("fixed_") ? q.id : crypto.randomUUID();
+      await env.esol_marking_db.prepare("INSERT INTO iqaf_template_questions (id, template_id, question_text, question_type, options, has_text_entry, text_entry_label, is_required, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(qId, templateId, q.question_text, q.question_type, q.options ? JSON.stringify(q.options) : null, 0, q.text_entry_label || null, q.is_required ? 1 : 0, i).run();
+    }
+    return json({ success: true });
+  } catch (err: any) { return json({ error: "Failed: " + (err?.message || String(err)) }, 500); }
+}
+
+async function deleteIQAFTemplate(request: Request, env: Env, identity: Identity, templateId: string): Promise<Response> {
+  if (!canCreateForms(identity.user!)) return json({ error: "Forbidden" }, 403);
+  try {
+    const body = await request.formData();
+    if (String(body.get("confirm")) !== "DELETE") return json({ error: "Not confirmed" }, 400);
+    await env.esol_marking_db.prepare("UPDATE iqaf_templates SET is_active = 0 WHERE id = ?").bind(templateId).run();
+    return json({ success: true });
+  } catch (err: any) { return json({ error: "Failed: " + (err?.message || String(err)) }, 500); }
+}
+
+async function downloadIQAFEntry(request: Request, env: Env, identity: Identity, entryId: string): Promise<Response> {
+  const user = identity.user!;
+  const entry = await getIQAFEntry(env, user, entryId);
+  if (!entry) return new Response("Not found", { status: 404 });
+  const url = new URL(request.url);
+  const format = url.searchParams.get("format") ?? "html";
+  const [template, answers, comments] = await Promise.all([
+    getIQAFTemplateWithQuestions(env, entry.template_id),
+    getIQAFAnswers(env, entryId),
+    getIQAFComments(env, entryId),
+  ]);
+  if (!template) return new Response("Not found", { status: 404 });
+  const answerMap = Object.fromEntries(answers.map(a => [a.question_id, a.answer ?? ""]));
+  if (format === "csv") {
+    const rows: string[][] = [["Question", "Answer"], ["Course ID", entry.course_id], ["Course Name", entry.course_name], ["Assessor", entry.assessor_name], ["IQA", entry.iqa_name], ["Planned Date", entry.planned_date], ["Status", entry.status]];
+    for (const q of template.questions) rows.push([q.question_text, answerMap[q.id] ?? ""]);
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const slug = entry.template_title.replace(/[^a-z0-9]/gi, "-").toLowerCase();
+    return new Response(csv, { headers: { "Content-Type": "text/csv", "Content-Disposition": `attachment; filename="iqaf-${slug}.csv"` } });
+  }
+  const questionsHtml = template.questions.map(q => `<tr><td style="padding:0.5rem 1rem;border:1px solid #e2e8f0;font-weight:600">${escapeHtml(q.question_text)}</td><td style="padding:0.5rem 1rem;border:1px solid #e2e8f0">${escapeHtml(answerMap[q.id] ?? "—")}</td></tr>`).join("");
+  const commentsHtml = comments.map(c => `<div style="border:1px solid #e2e8f0;border-radius:6px;padding:0.75rem;margin-bottom:0.5rem"><strong>${escapeHtml(c.author_email ?? c.author_role)}</strong> <span style="color:#64748b;font-size:0.875rem">[${escapeHtml(c.author_role)}] · ${escapeHtml(c.created_at)}</span><p style="margin:0.5rem 0 0">${escapeHtml(c.comment)}</p></div>`).join("");
+  const isPdf = format === "pdf";
+  const printHtml = `<!doctype html><html><head><meta charset="utf-8"><title>IQA Form - ${escapeHtml(entry.template_title)}</title><style>body{font-family:Inter,sans-serif;padding:2rem;color:#0f172a}h1{font-size:1.5rem}table{width:100%;border-collapse:collapse;margin:1rem 0}${isPdf ? "@media print{body{padding:0}}" : ""}</style></head><body><h1>${escapeHtml(entry.template_title)}</h1><p style="color:#64748b">${escapeHtml(entry.course_name)} (${escapeHtml(entry.course_id)}) · Assessor: ${escapeHtml(entry.assessor_name)} · IQA: ${escapeHtml(entry.iqa_name)} · Status: ${escapeHtml(entry.status)}</p><table>${questionsHtml}</table><h2 style="margin-top:2rem">Comments</h2>${commentsHtml || "<p style='color:#64748b'>No comments.</p>"}</body></html>`;
+  const slug = entry.template_title.replace(/[^a-z0-9]/gi, "-").toLowerCase();
+  const headers: Record<string, string> = { "Content-Type": "text/html;charset=utf-8" };
+  if (!isPdf) headers["Content-Disposition"] = `attachment; filename="iqaf-${slug}.html"`;
+  return new Response(printHtml, { headers });
+}
+
+// ─── IQA Forms: renderers ─────────────────────────────────────────────────────
+
+function renderIQAFStatusBadge(status: IQAFEntryStatus, dueDate: string | null): string {
+  const today = new Date().toISOString().split("T")[0];
+  const isOverdue = dueDate && dueDate < today && status !== "complete";
+  const labels: Record<string, string> = { pending: "Pending", assessor_submitted: "Assessor Submitted", iqa_reviewed: "IQA Reviewed", eqa_signed: "EQA Signed", complete: "Complete" };
+  const colors: Record<string, string> = { pending: "#fef3c7;color:#92400e", assessor_submitted: "#dbeafe;color:#1e40af", iqa_reviewed: "#dcfce7;color:#166534", eqa_signed: "#f3e8ff;color:#6b21a8", complete: "#f1f5f9;color:#475569" };
+  const badge = `<span class="lw-status-badge" style="background:${colors[status] ?? "#f1f5f9;color:#475569"}">${labels[status] ?? status}</span>`;
+  return isOverdue ? `${badge} <span class="lw-overdue-badge lw-blink">⚠ OVERDUE</span>` : badge;
+}
+
+function renderIQAFDashboardPage(identity: Identity, entries: IQAFEntryRecord[], templates: IQAFTemplateRecord[], notifications: IQAFNotification[], search: string): string {
+  const user = identity.user!;
+  const canManage = canCreateForms(user);
+  const today = new Date().toISOString().split("T")[0];
+  const nc = notifications.length;
+  const notifBell = nc === 0 ? `<div class="lw-bell">🔔</div>` : `<div class="lw-bell lw-bell-active lw-blink" onclick="document.getElementById('iqnp').classList.toggle('hidden')" title="${nc} unread">🔔 <span class="lw-bell-count">${nc}</span><div id="iqnp" class="lw-notif-panel hidden">${notifications.map(n => `<div class="lw-notif-item"><span>${escapeHtml(n.message)}</span></div>`).join("")}</div></div>`;
+
+  return pageShell("IQA Forms", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "iqa-forms")}
+      <section class="content">
+        <header class="topbar">
+          <div><p class="eyebrow">IQA Forms</p><h1>IQA Forms</h1></div>
+          <div style="display:flex;align-items:center;gap:1rem">${notifBell}<div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></div>
+        </header>
+
+        ${canManage ? `<section class="panel templates-section">
+          <div class="section-header"><p class="eyebrow">IQA Form Templates</p><a class="small-action" href="/iqa-forms/templates/build">+ New template</a></div>
+          <div class="list-stack templates-list">
+            ${templates.length ? templates.map(t => `<article class="list-card template-card"><div class="card-content"><strong>${escapeHtml(t.title)}</strong><span>${escapeHtml(t.description ?? "No description")}</span></div><div class="card-actions"><a href="/iqa-forms/templates/${t.id}/build" class="action-btn edit-btn" title="Edit">✏️</a><form method="POST" action="/api/iqaf/templates/${t.id}/delete" onsubmit="return iqafTmplDel(this)"><input type="hidden" name="confirm" value="DELETE"><button type="submit" class="action-btn delete-btn" title="Delete">🗑️</button></form></div></article>`).join("") : `<p class="hint">No templates yet. Create one to get started.</p>`}
+          </div>
+        </section>` : ""}
+
+        <section class="panel submissions-section">
+          <div class="section-header">
+            <p class="eyebrow">IQA Form Submissions</p>
+            <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+              <form method="GET" action="/iqa-forms" class="search-form-inline"><input name="q" value="${escapeHtml(search)}" placeholder="Search by course, assessor, IQA..."><button type="submit">Search</button></form>
+              ${canManage ? `<a class="small-action" href="/iqa-forms/entries/new">+ New IQA form</a>` : ""}
+            </div>
+          </div>
+          <div class="list-stack">
+            ${entries.length ? entries.map(e => {
+              const isOverdue = e.due_date && e.due_date < today && e.status !== "complete";
+              const delBtn = isSuperuser(user) ? `<button type="button" class="lw-entry-delete-btn" title="Delete" onclick="iqafDel('${e.id}','${escapeHtml(e.template_title).replace(/'/g,"\\'")}')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>` : "";
+              return `<article class="list-card${isOverdue ? " lw-overdue-card" : ""}"><a href="/iqa-forms/entries/${e.id}" style="display:block;flex:1"><strong>${escapeHtml(e.template_title)}</strong><span>Course: ${escapeHtml(e.course_name)} (${escapeHtml(e.course_id)})</span><span>Assessor: ${escapeHtml(e.assessor_name)} · IQA: ${escapeHtml(e.iqa_name)}</span><span>Planned: ${escapeHtml(e.planned_date)}${e.due_date ? ` · Due: ${escapeHtml(e.due_date)}` : ""}</span></a><div style="display:flex;align-items:center;gap:0.5rem">${renderIQAFStatusBadge(e.status, e.due_date)}<button type="button" class="lw-entry-download-btn" title="Download" onclick="iqafDlOpen('${e.id}','${escapeHtml(e.template_title).replace(/'/g,"\\'")}')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>${delBtn}</div></article>`;
+            }).join("") : renderEmpty("No IQA forms found")}
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div id="iqaf-del-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center"><div style="background:#fff;border-radius:12px;padding:2rem;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2)"><h2 style="margin:0 0 0.5rem;font-size:1.25rem">Delete Submission</h2><p style="color:#64748b;margin:0 0 1.25rem">Permanently delete: <strong id="iqaf-del-title"></strong></p><p style="color:#64748b;margin:0 0 0.75rem;font-size:0.9rem">Type <strong>DELETE</strong> to confirm:</p><input id="iqaf-del-input" type="text" placeholder="Type DELETE here" style="width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:0.75rem;font-size:1rem;margin-bottom:1rem"><div style="display:flex;gap:0.75rem;justify-content:flex-end"><button onclick="iqafDelClose()" style="background:#f1f5f9;color:#0f172a;border:none;border-radius:8px;padding:0.7rem 1.25rem;font-weight:600;cursor:pointer">Cancel</button><button id="iqaf-del-btn" onclick="iqafDelSubmit()" style="background:#ff005a;color:#fff;border:none;border-radius:8px;padding:0.7rem 1.25rem;font-weight:600;cursor:pointer">Delete</button></div></div></div>
+    <div id="iqaf-dl-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center"><div class="lw-dl-modal-box"><h2 class="lw-dl-modal-title">Download / Print</h2><p class="lw-dl-modal-sub">Format for: <strong id="iqaf-dl-title"></strong></p><div class="lw-dl-options"><button type="button" class="lw-dl-option" onclick="iqafDlAs('csv')"><span class="lw-dl-icon">📊</span><strong>CSV</strong><span class="lw-dl-desc">Excel / Sheets</span></button><button type="button" class="lw-dl-option" onclick="iqafDlAs('html')"><span class="lw-dl-icon">🌐</span><strong>HTML</strong><span class="lw-dl-desc">Formatted page</span></button><button type="button" class="lw-dl-option" onclick="iqafDlAs('pdf')"><span class="lw-dl-icon">🖨️</span><strong>PDF</strong><span class="lw-dl-desc">Print to PDF</span></button></div><button type="button" class="lw-dl-cancel" onclick="iqafDlClose()">Cancel</button></div></div>
+
+    <script>
+      function iqafTmplDel(form){const t=prompt("Type DELETE to confirm:");if(t!=="DELETE"){alert("Cancelled.");return false;}return true;}
+      let _id=null;
+      function iqafDel(id,title){_id=id;document.getElementById("iqaf-del-title").textContent=title;document.getElementById("iqaf-del-input").value="";document.getElementById("iqaf-del-modal").style.display="flex";}
+      function iqafDelClose(){document.getElementById("iqaf-del-modal").style.display="none";_id=null;}
+      async function iqafDelSubmit(){if(document.getElementById("iqaf-del-input").value.trim()!=="DELETE"){document.getElementById("iqaf-del-input").style.borderColor="#ff005a";return;}const btn=document.getElementById("iqaf-del-btn");btn.disabled=true;btn.textContent="Deleting...";try{const r=await fetch("/api/iqaf/entries/"+_id+"/delete",{method:"POST"});const d=await r.json();if(d.success){iqafDelClose();window.location.reload();}else{alert("Error: "+(d.error||"Failed"));btn.disabled=false;btn.textContent="Delete";}}catch(e){alert("Network error.");btn.disabled=false;btn.textContent="Delete";}}
+      document.getElementById("iqaf-del-modal").addEventListener("click",function(e){if(e.target===this)iqafDelClose();});
+      let _dlId=null;
+      function iqafDlOpen(id,title){_dlId=id;document.getElementById("iqaf-dl-title").textContent=title;document.getElementById("iqaf-dl-modal").style.display="flex";}
+      function iqafDlClose(){document.getElementById("iqaf-dl-modal").style.display="none";_dlId=null;}
+      function iqafDlAs(fmt){if(!_dlId)return;if(fmt==="pdf"){const w=window.open("/api/iqaf/entries/"+_dlId+"/download?format=pdf","_blank");if(w)w.addEventListener("load",function(){setTimeout(function(){w.print();},400);});}else{const a=document.createElement("a");a.href="/api/iqaf/entries/"+_dlId+"/download?format="+fmt;a.click();}iqafDlClose();}
+      document.getElementById("iqaf-dl-modal").addEventListener("click",function(e){if(e.target===this)iqafDlClose();});
+    </script>
+  `);
+}
+
+function renderIQAFTemplateBuilderPage(identity: Identity, template: IQAFTemplateWithQuestions | null, users: UserRecord[]): string {
+  const isEdit = !!template, templateId = template?.id ?? "", title = template?.title ?? "", description = template?.description ?? "";
+  let questions = template?.questions ?? [];
+  const assessors = users.filter(u => ["assessor","assessor_iqa","admin","superuser"].includes(u.role));
+  const iqas = users.filter(u => ["iqa","assessor_iqa","admin","superuser"].includes(u.role));
+  if (!isEdit && questions.length === 0) {
+    questions = [
+      {id:"fixed_course_id",template_id:"",question_text:"Course ID",question_type:"text",options:null,has_text_entry:0,text_entry_label:null,is_required:1,sort_order:0},
+      {id:"fixed_course_name",template_id:"",question_text:"Course Name",question_type:"text",options:null,has_text_entry:0,text_entry_label:null,is_required:1,sort_order:1},
+      {id:"fixed_assessor",template_id:"",question_text:"Assessor",question_type:"dropdown",options:assessors.map(u=>({id:u.id,label:u.email,value:u.id})),has_text_entry:0,text_entry_label:null,is_required:1,sort_order:2},
+      {id:"fixed_iqa",template_id:"",question_text:"IQA",question_type:"dropdown",options:iqas.map(u=>({id:u.id,label:u.email,value:u.id})),has_text_entry:0,text_entry_label:null,is_required:1,sort_order:3},
+      {id:"fixed_planned_date",template_id:"",question_text:"Planned Date",question_type:"date",options:null,has_text_entry:0,text_entry_label:null,is_required:1,sort_order:4},
+      {id:"fixed_due_date",template_id:"",question_text:"Due Date",question_type:"date",options:null,has_text_entry:0,text_entry_label:null,is_required:0,sort_order:5},
+    ] as IQAFTemplateQuestion[];
+  }
+  const qtypes = [{v:"yes_no",l:"Yes/No",i:"✓"},{v:"rag",l:"Green/Amber/Red",i:"●"},{v:"ggaw",l:"Gold/Green/Amber/White",i:"◆"},{v:"single_choice",l:"MCQ (One Answer)",i:"○"},{v:"multiple_choice",l:"Choices (Multiple)",i:"☑"},{v:"dropdown",l:"Dropdown",i:"▼"},{v:"text",l:"Text",i:"T"},{v:"textarea",l:"Long Text",i:"¶"},{v:"date",l:"Date",i:"📅"},{v:"number",l:"Number",i:"#"},{v:"ranking",l:"Ranking",i:"⇅"},{v:"rating",l:"Rating",i:"★"},{v:"time",l:"Time",i:"🕐"},{v:"section",l:"Section Header",i:"▬"}];
+  const fixedIds = new Set(["fixed_course_id","fixed_course_name","fixed_assessor","fixed_iqa","fixed_planned_date","fixed_due_date"]);
+  const renderQ = (q: IQAFTemplateQuestion, i: number) => {
+    const isFixed = fixedIds.has(q.id), isSect = q.question_type === "section";
+    const needsOpts = ["single_choice","multiple_choice","dropdown","ranking"].includes(q.question_type);
+    const actBtns = isFixed ? `<span class="lwfb-fixed-badge">Standard Field</span>` : `<div class="lwfb-reorder-btns"><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'up')">▲</button><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'down')">▼</button></div><button type="button" class="lwfb-delete-q" onclick="delQ(this)">×</button>`;
+    const selOpts = qtypes.map(t => `<option value="${t.v}" ${q.question_type===t.v?"selected":""}>${t.l}</option>`).join("");
+    const optsVal = q.options ? q.options.map((o: QuestionOption) => escapeHtml(o.label)).join("\n") : "";
+    return `<div class="${isFixed?"lwfb-question-card lwfb-fixed-card":"lwfb-question-card"}" data-question-id="${q.id}" data-is-fixed="${isFixed}"><div class="lwfb-question-header"><span class="lwfb-q-number">${i+1}</span><select class="lwfb-q-type-select" onchange="updQType(this)" ${isFixed?"disabled":""}>${selOpts}</select><label class="lwfb-required-label" style="${isSect?"display:none":""}"><input type="checkbox" class="lwfb-q-required" ${q.is_required?"checked":""}> Required</label>${actBtns}</div><div class="lwfb-question-body"><div class="lwfb-section-body ${isSect?"":"hidden"}"><input type="text" class="lwfb-q-text" value="${escapeHtml(q.question_text)}" placeholder="Section heading" style="font-weight:600"><input type="text" class="lwfb-q-section-desc" value="${escapeHtml(q.text_entry_label||"")}" placeholder="Section description" style="margin-top:.5rem;color:#64748b"></div><div class="lwfb-normal-body ${isSect?"hidden":""}"><input type="text" class="lwfb-q-text" value="${escapeHtml(q.question_text)}" placeholder="Enter your question" ${isFixed?"readonly":""}><div class="lwfb-options-section ${needsOpts?"":"hidden"}"><label class="lwfb-options-label">Options (one per line):</label><textarea class="lwfb-q-options" rows="3" ${isFixed?"readonly":""}>${optsVal}</textarea></div></div></div></div>`;
+  };
+  const qHtml = questions.length > 0 ? questions.map((q,i) => renderQ(q,i)).join("") : `<div class="lwfb-empty-state" id="emptyQMsg">No questions yet.</div>`;
+  const pickerGrid = qtypes.map(t => `<div class="type-option" onclick="addQ('${t.v}')"><span class="type-icon">${t.i}</span><span class="type-label">${t.l}</span></div>`).join("");
+  return pageShell(isEdit?"Edit IQA Template":"New IQA Template", `
+    <main class="lwfb-popup-overlay"><div class="lwfb-popup-container">
+      <div class="lwfb-popup-header"><div><p class="lwfb-eyebrow">IQA Form Template Builder</p><h1 class="lwfb-title">${isEdit?"Edit Template":"Create New Template"}</h1></div><button type="button" class="lwfb-close-btn" onclick="location.href='/iqa-forms'">×</button></div>
+      <div class="lwfb-popup-content">
+        <div class="lwfb-section-card"><input type="text" id="tTitle" class="lwfb-title-input" value="${escapeHtml(title)}" placeholder="Untitled Template"><textarea id="tDesc" class="lwfb-desc-input" rows="2" placeholder="Description">${escapeHtml(description)}</textarea></div>
+        <div class="lwfb-section-card"><h3 class="lwfb-section-title">Questions</h3><p class="lwfb-section-hint">First 6 fields are standard for all IQA Forms.</p><div id="qContainer" class="lwfb-questions-container">${qHtml}</div><div style="position:relative"><button type="button" class="lwfb-add-btn" onclick="showPicker()">+ Add Question</button><div id="qPicker" class="lwfb-type-picker hidden"><div class="picker-header"><span>Select Type</span><button type="button" class="close-picker" onclick="hidePicker()">×</button></div><div class="picker-grid">${pickerGrid}</div></div></div></div>
+      </div>
+      <div class="lwfb-popup-footer"><button type="button" class="lwfb-secondary-btn" onclick="location.href='/iqa-forms'">Cancel</button><button type="button" class="lwfb-primary-btn" onclick="saveTmpl()">${isEdit?"Save Changes":"Create Template"}</button></div>
+    </div></main>
+    <script>
+      let qc=${questions.length};const tid="${templateId}";const ie=${JSON.stringify(isEdit)};
+      const allQt=${JSON.stringify(qtypes.map(t=>({v:t.v,l:t.l})))};
+      function showPicker(){document.getElementById('qPicker').classList.remove('hidden');}
+      function hidePicker(){document.getElementById('qPicker').classList.add('hidden');}
+      function delQ(btn){if(!confirm('Delete?'))return;btn.closest('.lwfb-question-card').remove();renum();chkE();}
+      function renum(){document.querySelectorAll('.lwfb-question-card').forEach((c,i)=>c.querySelector('.lwfb-q-number').textContent=i+1);}
+      function chkE(){const c=document.getElementById('qContainer');if(!c.querySelectorAll('.lwfb-question-card').length&&!document.getElementById('emptyQMsg'))c.innerHTML='<div class="lwfb-empty-state" id="emptyQMsg">No questions yet.</div>';}
+      function updQType(sel){const card=sel.closest('.lwfb-question-card'),t=sel.value,no=['single_choice','multiple_choice','dropdown','ranking'].includes(t),is=t==='section';card.querySelector('.lwfb-options-section').classList.toggle('hidden',!no);card.querySelector('.lwfb-section-body')?.classList.toggle('hidden',!is);card.querySelector('.lwfb-normal-body')?.classList.toggle('hidden',is);const r=card.querySelector('.lwfb-required-label');if(r)r.style.display=is?'none':'';}
+      function moveQ(btn,dir){const card=btn.closest('.lwfb-question-card'),cards=Array.from(card.parentNode.querySelectorAll('.lwfb-question-card')),idx=cards.indexOf(card);if(dir==='up'&&idx>0)card.parentNode.insertBefore(card,cards[idx-1]);else if(dir==='down'&&idx<cards.length-1)cards[idx+1].insertAdjacentElement('afterend',card);renum();}
+      function addQ(type){
+        hidePicker();const c=document.getElementById('qContainer');const e=document.getElementById('emptyQMsg');if(e)e.remove();qc++;
+        const no=['single_choice','multiple_choice','dropdown','ranking'].includes(type),is=type==='section';
+        const opts=allQt.map(t=>\`<option value="\${t.v}" \${t.v===type?'selected':''}>\${t.l}</option>\`).join('');
+        const card=document.createElement('div');card.className='lwfb-question-card';card.dataset.questionId='new_'+crypto.randomUUID();card.dataset.sortOrder=String(qc);
+        card.innerHTML=\`<div class="lwfb-question-header"><span class="lwfb-q-number">\${document.querySelectorAll('.lwfb-question-card').length+1}</span><select class="lwfb-q-type-select" onchange="updQType(this)">\${opts}</select><label class="lwfb-required-label" style="\${is?'display:none':''}"><input type="checkbox" class="lwfb-q-required"> Required</label><div class="lwfb-reorder-btns"><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'up')">▲</button><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'down')">▼</button></div><button type="button" class="lwfb-delete-q" onclick="delQ(this)">×</button></div><div class="lwfb-question-body"><div class="lwfb-section-body \${is?'':'hidden'}"><input type="text" class="lwfb-q-text" placeholder="Section heading" style="font-weight:600"><input type="text" class="lwfb-q-section-desc" placeholder="Section description" style="margin-top:.5rem;color:#64748b"></div><div class="lwfb-normal-body \${is?'hidden':''}"><input type="text" class="lwfb-q-text" placeholder="Enter question"><div class="lwfb-options-section \${no?'':'hidden'}"><label class="lwfb-options-label">Options (one per line):</label><textarea class="lwfb-q-options" rows="3"></textarea></div></div></div>\`;
+        c.appendChild(card);card.scrollIntoView({behavior:'smooth',block:'center'});
+      }
+      async function saveTmpl(){
+        const title=document.getElementById('tTitle').value.trim(),desc=document.getElementById('tDesc').value.trim();
+        if(!title){alert('Please enter a title');return;}
+        const qs=[];const cards=Array.from(document.querySelectorAll('.lwfb-question-card')).filter(c=>c.offsetParent!==null);
+        for(let i=0;i<cards.length;i++){
+          const card=cards[i],qId=card.dataset.questionId,qType=card.querySelector('.lwfb-q-type-select').value;
+          const tEl=card.querySelector('.lwfb-normal-body:not(.hidden) .lwfb-q-text')||card.querySelector('.lwfb-section-body:not(.hidden) .lwfb-q-text')||card.querySelector('.lwfb-q-text');
+          const qText=tEl?.value?.trim()||'';if(!qText){tEl?.focus();setTimeout(()=>alert(\`Question \${i+1} missing text\`),100);return;}
+          let options=null;if(['single_choice','multiple_choice','dropdown','ranking'].includes(qType)){const ot=card.querySelector('.lwfb-q-options').value.trim();if(ot)options=ot.split('\\n').map((l,idx)=>({id:'opt_'+idx,label:l.trim(),value:l.trim().toLowerCase().replace(/\\s+/g,'_')})).filter(o=>o.label);}
+          const sd=card.querySelector('.lwfb-q-section-desc');const q={question_text:qText,question_type:qType,is_required:qType==='section'?false:card.querySelector('.lwfb-q-required').checked,sort_order:i,options,text_entry_label:sd?sd.value.trim():null};
+          if(qId&&!qId.startsWith('new_')&&!qId.startsWith('fixed_'))q.id=qId;qs.push(q);
+        }
+        const url=ie?`+"`"+`/api/iqaf/templates/${tid}`+"`"+`:'/api/iqaf/templates';
+        try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,description:desc,questions:qs})});if(!r.ok){const e=await r.json();throw new Error(e.error||'Failed');}location.href='/iqa-forms';}
+        catch(e){alert('Error: '+(e.message||String(e)));}
+      }
+    </script>
+  `);
+}
+
+function renderIQAFEntryTemplateSelectorPage(identity: Identity, templates: IQAFTemplateRecord[]): string {
+  const tHtml = templates.length > 0 ? templates.map(t => `<div class="lw-selector-template-card" data-template-id="${t.id}" data-template-name="${escapeHtml(t.title).toLowerCase()}" onclick="location.href='/iqa-forms/entries/create?templateId=${t.id}'"><div class="lw-selector-template-icon">📋</div><div class="lw-selector-template-info"><strong>${escapeHtml(t.title)}</strong><span>${escapeHtml(t.description ?? "No description")}</span></div><div class="lw-selector-template-arrow">→</div></div>`).join("") : `<div class="lw-selector-empty">No active templates. Create one first.</div>`;
+  return pageShell("New IQA Form", `
+    <main class="lwfb-popup-overlay"><div class="lwfb-popup-container" style="max-width:600px">
+      <div class="lwfb-popup-header"><div><p class="lwfb-eyebrow">New IQA Form</p><h1 class="lwfb-title">Select a Template</h1></div><button type="button" class="lwfb-close-btn" onclick="location.href='/iqa-forms'">×</button></div>
+      <div class="lwfb-popup-content">
+        <div class="lw-selector-search-wrapper"><input type="text" id="tSearch" class="lw-selector-search" placeholder="🔍 Search templates..." oninput="filterT(this.value)"></div>
+        <div id="tList" class="lw-selector-list">${tHtml}</div>
+        <div id="noRes" class="lw-selector-no-results hidden">No templates match.</div>
+      </div>
+      <div class="lwfb-popup-footer"><button type="button" class="lwfb-secondary-btn" onclick="location.href='/iqa-forms'">Cancel</button></div>
+    </div></main>
+    <script>function filterT(s){const t=s.toLowerCase().trim(),cards=document.querySelectorAll('.lw-selector-template-card');let v=0;cards.forEach(c=>{const m=c.dataset.templateName.includes(t);c.style.display=m?'flex':'none';if(m)v++;});document.getElementById('noRes').classList.toggle('hidden',v>0);}</script>
+  `);
+}
+
+function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQuestions, users: UserRecord[]): string {
+  const assessors = users.filter(u => ["assessor","assessor_iqa","admin","superuser"].includes(u.role));
+  const iqas = users.filter(u => ["iqa","assessor_iqa","admin","superuser"].includes(u.role));
+  const eqas = users.filter(u => ["eqa","admin","superuser"].includes(u.role));
+  const qHtml = template.questions.map(q => {
+    if (q.question_type === "section") return `<div class="lw-entry-section" style="grid-column:1/-1"><h3 class="lw-entry-section-title">${escapeHtml(q.question_text)}</h3></div>`;
+    const n = `answer_${q.id}`, req = q.is_required ? "required" : "", rl = q.is_required ? ` <span class="lw-entry-required">*</span>` : "";
+    let inp = `<input type="text" name="${n}" class="lw-entry-input" ${req}>`;
+    if (q.question_type === "textarea") inp = `<textarea name="${n}" class="lw-entry-input" rows="3" ${req}></textarea>`;
+    else if (q.question_type === "yes_no") inp = `<div class="lw-entry-radio-group"><label class="lw-entry-radio"><input type="radio" name="${n}" value="yes" ${req}> Yes</label><label class="lw-entry-radio"><input type="radio" name="${n}" value="no" ${req}> No</label></div>`;
+    else if (q.question_type === "rag") inp = `<div class="lw-entry-rag-group"><label class="lw-entry-rag green"><input type="radio" name="${n}" value="green" ${req}> Green</label><label class="lw-entry-rag amber"><input type="radio" name="${n}" value="amber" ${req}> Amber</label><label class="lw-entry-rag red"><input type="radio" name="${n}" value="red" ${req}> Red</label></div>`;
+    else if (q.question_type === "ggaw") inp = `<div class="lw-entry-ggaw-group"><label class="lw-entry-ggaw gold"><input type="radio" name="${n}" value="gold" ${req}> Gold</label><label class="lw-entry-ggaw green"><input type="radio" name="${n}" value="green" ${req}> Green</label><label class="lw-entry-ggaw amber"><input type="radio" name="${n}" value="amber" ${req}> Amber</label><label class="lw-entry-ggaw white"><input type="radio" name="${n}" value="white" ${req}> White</label></div>`;
+    else if (q.question_type === "date") inp = `<input type="date" name="${n}" class="lw-entry-input" ${req}>`;
+    else if (q.question_type === "number") inp = `<input type="number" name="${n}" class="lw-entry-input" ${req}>`;
+    else if (q.question_type === "single_choice" && q.options) inp = `<div class="lw-entry-radio-group">${q.options.map((o: QuestionOption) => `<label class="lw-entry-radio"><input type="radio" name="${n}" value="${escapeHtml(o.value)}" ${req}> ${escapeHtml(o.label)}</label>`).join("")}</div>`;
+    else if (q.question_type === "dropdown" && q.options) inp = `<select name="${n}" class="lw-entry-select" ${req}><option value="">Select...</option>${q.options.map((o: QuestionOption) => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join("")}</select>`;
+    return `<div class="lw-entry-field"><label class="lw-entry-label">${escapeHtml(q.question_text)}${rl}</label>${inp}</div>`;
+  }).join("");
+  return pageShell("New IQA Form Entry", `
+    <main class="lwfb-popup-overlay"><div class="lwfb-popup-container" style="max-width:760px">
+      <div class="lwfb-popup-header"><div><p class="lwfb-eyebrow">New IQA Form Entry</p><h1 class="lwfb-title">${escapeHtml(template.title)}</h1></div><button type="button" class="lwfb-close-btn" onclick="location.href='/iqa-forms'">×</button></div>
+      <div class="lwfb-popup-content">
+        <div class="lw-entry-section"><h3 class="lw-entry-section-title">Course Information</h3><div class="lw-entry-grid">
+          <div class="lw-entry-field"><label class="lw-entry-label" for="cid">Course ID *</label><input type="text" id="cid" class="lw-entry-input" required></div>
+          <div class="lw-entry-field"><label class="lw-entry-label" for="cname">Course Name *</label><input type="text" id="cname" class="lw-entry-input" required></div>
+        </div></div>
+        <div class="lw-entry-section"><h3 class="lw-entry-section-title">Staff Allocation</h3><div class="lw-entry-grid">
+          <div class="lw-entry-field"><label class="lw-entry-label" for="aid">Assessor *</label><select id="aid" class="lw-entry-select" required><option value="">Select Assessor</option>${assessors.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}</select></div>
+          <div class="lw-entry-field"><label class="lw-entry-label" for="iid">IQA *</label><select id="iid" class="lw-entry-select" required><option value="">Select IQA</option>${iqas.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}</select></div>
+          <div class="lw-entry-field"><label class="lw-entry-label" for="eid">EQA (optional)</label><select id="eid" class="lw-entry-select"><option value="">Select EQA</option>${eqas.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}</select></div>
+          <div class="lw-entry-field"><label class="lw-entry-label" for="pd">Planned Date *</label><input type="date" id="pd" class="lw-entry-input" required></div>
+          <div class="lw-entry-field"><label class="lw-entry-label" for="dd">Due Date</label><input type="date" id="dd" class="lw-entry-input"></div>
+        </div></div>
+        ${qHtml ? `<div class="lw-entry-section"><h3 class="lw-entry-section-title">Form Questions</h3><div class="lw-entry-grid">${qHtml}</div></div>` : ""}
+      </div>
+      <div class="lwfb-popup-footer"><button type="button" class="lwfb-secondary-btn" onclick="location.href='/iqa-forms'">Cancel</button><button type="button" class="lwfb-primary-btn" onclick="subEntry()">Create IQA Form Entry</button></div>
+    </div></main>
+    <script>
+      async function subEntry(){
+        const cid=document.getElementById('cid').value.trim(),cname=document.getElementById('cname').value.trim(),aid=document.getElementById('aid').value,iid=document.getElementById('iid').value,eid=document.getElementById('eid').value||null,pd=document.getElementById('pd').value,dd=document.getElementById('dd').value||null;
+        if(!cid||!cname||!aid||!iid||!pd){alert('Please fill in all required fields.');return;}
+        const ans={};document.querySelectorAll('[name^="answer_"]').forEach(el=>{const k=el.name.replace('answer_','');if(el.type==='radio'){if(el.checked)ans[k]=el.value;}else if(el.tagName==='SELECT'){if(el.value)ans[k]=el.value;}else{if(el.value.trim())ans[k]=el.value.trim();}});
+        try{const r=await fetch('/api/iqaf/entries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template_id:'${template.id}',course_id:cid,course_name:cname,assessor_id:aid,iqa_id:iid,eqa_id:eid,planned_date:pd,due_date:dd,answers:ans})});const d=await r.json();if(d.success)location.href='/iqa-forms/entries/'+d.id;else alert('Error: '+(d.error||'Failed'));}catch(e){alert('Network error.');}
+      }
+    </script>
+  `);
+}
+
+function renderIQAFEntryViewPage(identity: Identity, entry: IQAFEntryRecord, template: IQAFTemplateWithQuestions, answers: IQAFAnswer[], comments: IQAFComment[], users: UserRecord[], canEdit: boolean, canComplete: boolean): string {
+  const user = identity.user!;
+  const ansMap = Object.fromEntries(answers.map(a => [a.question_id, a.answer ?? ""]));
+  const qHtml = template.questions.map(q => {
+    if (q.question_type === "section") return `<tr><td colspan="2" style="padding:.75rem 1rem;background:#f8fafc;font-weight:700;border:1px solid #e2e8f0">${escapeHtml(q.question_text)}</td></tr>`;
+    const ans = ansMap[q.id];
+    let disp = escapeHtml(ans || "—");
+    if (q.question_type === "rag" && ans) { const c: Record<string,string>={green:"#16a34a",amber:"#d97706",red:"#dc2626"}; disp = `<span style="color:${c[ans]??"#0f172a"};font-weight:600">${ans.toUpperCase()}</span>`; }
+    if (q.question_type === "ggaw" && ans) { const c: Record<string,string>={gold:"#b45309",green:"#16a34a",amber:"#d97706",white:"#64748b"}; disp = `<span style="color:${c[ans]??"#0f172a"};font-weight:600">${ans.toUpperCase()}</span>`; }
+    let inp = `<input type="text" data-qid="${q.id}" class="iqaf-ans lw-entry-input" value="${escapeHtml(ans??"")}">`;
+    if (q.question_type === "textarea") inp = `<textarea data-qid="${q.id}" class="iqaf-ans lw-entry-input" rows="2">${escapeHtml(ans??"")}</textarea>`;
+    else if (q.question_type === "yes_no") inp = `<div class="lw-entry-radio-group"><label><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="yes" ${ans==="yes"?"checked":""}> Yes</label><label><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="no" ${ans==="no"?"checked":""}> No</label></div>`;
+    else if (q.question_type === "rag") inp = `<div class="lw-entry-rag-group"><label class="lw-entry-rag green"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="green" ${ans==="green"?"checked":""}> Green</label><label class="lw-entry-rag amber"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="amber" ${ans==="amber"?"checked":""}> Amber</label><label class="lw-entry-rag red"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="red" ${ans==="red"?"checked":""}> Red</label></div>`;
+    else if (q.question_type === "ggaw") inp = `<div class="lw-entry-ggaw-group"><label class="lw-entry-ggaw gold"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="gold" ${ans==="gold"?"checked":""}> Gold</label><label class="lw-entry-ggaw green"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="green" ${ans==="green"?"checked":""}> Green</label><label class="lw-entry-ggaw amber"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="amber" ${ans==="amber"?"checked":""}> Amber</label><label class="lw-entry-ggaw white"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="white" ${ans==="white"?"checked":""}> White</label></div>`;
+    else if (q.question_type === "date") inp = `<input type="date" data-qid="${q.id}" class="iqaf-ans lw-entry-input" value="${escapeHtml(ans??"")}">`;
+    else if (q.question_type === "number") inp = `<input type="number" data-qid="${q.id}" class="iqaf-ans lw-entry-input" value="${escapeHtml(ans??"")}">`;
+    else if (q.question_type === "single_choice" && q.options) inp = `<div class="lw-entry-radio-group">${q.options.map((o: QuestionOption) => `<label class="lw-entry-radio"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="${escapeHtml(o.value)}" ${ans===o.value?"checked":""}> ${escapeHtml(o.label)}</label>`).join("")}</div>`;
+    else if (q.question_type === "dropdown" && q.options) inp = `<select data-qid="${q.id}" class="iqaf-ans lw-entry-select"><option value="">Select...</option>${q.options.map((o: QuestionOption) => `<option value="${escapeHtml(o.value)}" ${ans===o.value?"selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>`;
+    return `<tr><td style="padding:.5rem 1rem;border:1px solid #e2e8f0;font-weight:600;width:40%;vertical-align:top">${escapeHtml(q.question_text)}</td><td style="padding:.5rem 1rem;border:1px solid #e2e8f0">${canEdit ? inp : `<span>${disp}</span>`}</td></tr>`;
+  }).join("");
+
+  const cHtml = comments.map(c => `<div class="lw-comment-item"><div class="lw-comment-header"><span class="lw-comment-author">${escapeHtml(c.author_email??"Unknown")}</span><span class="lw-comment-role">${escapeHtml(c.author_role)}</span><span class="lw-comment-date">${escapeHtml(c.created_at)}</span></div><p class="lw-comment-text">${escapeHtml(c.comment)}</p></div>`).join("");
+
+  const statusFlow = ["pending","assessor_submitted","iqa_reviewed","eqa_signed","complete"];
+  const nxtLabels: Record<string,string> = {assessor_submitted:"Submit as Assessor",iqa_reviewed:"Mark IQA Reviewed",eqa_signed:"Sign as EQA",complete:"Mark Complete"};
+  const curIdx = statusFlow.indexOf(entry.status);
+  const nextStatus = curIdx < statusFlow.length - 1 ? statusFlow[curIdx + 1] : null;
+
+  return pageShell(entry.template_title, `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "iqa-forms")}
+      <section class="content">
+        <header class="topbar"><div><p class="eyebrow"><a href="/iqa-forms" style="color:var(--primary)">← IQA Forms</a></p><h1>${escapeHtml(entry.template_title)}</h1></div><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></header>
+
+        <section class="panel"><div class="meta-panel">
+          <div class="lw-meta-item"><label class="lw-meta-label">Course</label><span>${escapeHtml(entry.course_name)} (${escapeHtml(entry.course_id)})</span></div>
+          <div class="lw-meta-item"><label class="lw-meta-label">Assessor</label><span>${escapeHtml(entry.assessor_name)}</span></div>
+          <div class="lw-meta-item"><label class="lw-meta-label">IQA</label><span>${escapeHtml(entry.iqa_name)}</span></div>
+          <div class="lw-meta-item"><label class="lw-meta-label">Planned</label><span>${escapeHtml(entry.planned_date)}</span></div>
+          ${entry.due_date ? `<div class="lw-meta-item"><label class="lw-meta-label">Due</label><span>${escapeHtml(entry.due_date)}</span></div>` : ""}
+          <div class="lw-meta-item"><label class="lw-meta-label">Status</label><span>${renderIQAFStatusBadge(entry.status, entry.due_date)}</span></div>
+        </div></section>
+
+        <section class="panel checklist-panel">
+          <div class="section-header"><p class="eyebrow">Responses</p>${canEdit ? `<div style="display:flex;gap:.5rem"><button type="button" class="small-action" onclick="saveAns()">Save Answers</button></div>` : ""}</div>
+          <table class="checklist-table"><tbody>${qHtml}</tbody></table>
+        </section>
+
+        ${canEdit && nextStatus ? `<section class="panel"><div class="section-header"><p class="eyebrow">Workflow</p></div><div style="display:flex;gap:.75rem;flex-wrap:wrap"><button type="button" class="small-action" onclick="advStatus('${nextStatus}')">${nxtLabels[nextStatus] ?? nextStatus}</button>${canComplete ? `<button type="button" class="small-action" style="background:#16a34a" onclick="advStatus('complete')">Mark Complete</button>` : ""}</div></section>` : ""}
+
+        <section class="panel"><div class="section-header"><p class="eyebrow">Comments</p></div><div class="comment-list">${cHtml || `<p class="hint" style="color:var(--muted)">No comments yet.</p>`}</div>${canEdit ? `<div class="comment-form"><textarea id="commentBox" class="lw-entry-input" rows="3" placeholder="Add a comment..."></textarea><button type="button" class="small-action" onclick="addCmt()">Add Comment</button></div>` : ""}</section>
+      </section>
+    </main>
+    <script>
+      const entryId='${entry.id}';
+      async function saveAns(){
+        const ans={};document.querySelectorAll('.iqaf-ans').forEach(el=>{const k=el.dataset.qid;if(!k)return;if(el.type==='radio'){if(el.checked)ans[k]=el.value;}else if(el.tagName==='SELECT'){if(el.value)ans[k]=el.value;}else{if(el.value.trim())ans[k]=el.value.trim();}});
+        try{const r=await fetch('/api/iqaf/entries/'+entryId+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({answers:ans})});const d=await r.json();if(d.success)alert('Saved!');else alert('Error: '+(d.error||'Failed'));}catch(e){alert('Network error.');}
+      }
+      async function advStatus(status){
+        if(!confirm('Advance to status: '+status+'?'))return;
+        try{const r=await fetch('/api/iqaf/entries/'+entryId+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});const d=await r.json();if(d.success)location.reload();else alert('Error: '+(d.error||'Failed'));}catch(e){alert('Network error.');}
+      }
+      async function addCmt(){
+        const comment=document.getElementById('commentBox').value.trim();if(!comment){alert('Please enter a comment.');return;}
+        try{const r=await fetch('/api/iqaf/entries/'+entryId+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({comment})});const d=await r.json();if(d.success)location.reload();else alert('Error: '+(d.error||'Failed'));}catch(e){alert('Network error.');}
+      }
+    </script>
+  `);
+}
+
 function renderNotFoundPage() {
-  return pageShell("Not found", `<main class="auth-shell"><section class="auth-card"><h1>Page not found</h1><a class="primary-action" href="/dashboard">Go to dashboard</a></section></main>`);
+  return pageShell("Not found", `<main class="auth-shell"><section class="auth-card"><h1>Page not found</h1><a class="primary-action" href="/learning-walks">Go to dashboard</a></section></main>`);
 }
 
 function canCreateForms(user: UserRecord) { return user.role === "admin" || user.role === "superuser"; }
 function isSuperuser(user: UserRecord) { return user.role === "superuser"; }
-function canAssess(user: UserRecord) { return ["assessor", "admin", "superuser"].includes(user.role); }
 function stageForUser(user: UserRecord): Stage { return user.role === "iqa" ? "iqa" : user.role === "eqa" ? "eqa" : user.stage ?? "assess"; }
 function roleToStage(role: Role): Stage | null { return role === "iqa" ? "iqa" : role === "eqa" ? "eqa" : role === "assessor" ? "assess" : null; }
 function canEditStage(user: UserRecord, status: EntryStatus, stage: Stage) { return user.role === "superuser" || user.role === "admin" || (status === "assessment" && stage === "assess") || (status === "iqa" && stage === "iqa") || (status === "eqa" && stage === "eqa"); }
@@ -2910,7 +3716,7 @@ function wantsJson(request: Request) { return request.headers.get("accept")?.inc
 function json(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: jsonHeaders }); }
 
 function renderLoginPage() {
-  return pageShell("Sign in", `<main class="auth-shell"><section class="auth-card"><div class="brand-mark">E</div><p class="eyebrow">ESOLQA</p><h1>Sign in to continue</h1><p class="lede">Use your Microsoft work account to access assessment forms, IQA reviews, and EQA records.</p><a class="primary-action" href="/auth/microsoft/start">Continue with Microsoft</a><p class="hint">You will be redirected to Microsoft, then returned securely to ESOLQA.</p></section></main>`);
+  return pageShell("Sign in", `<main class="auth-shell"><section class="auth-card"><div class="brand-mark">H</div><p class="eyebrow">HLQUALITY</p><h1>Sign in to continue</h1><p class="lede">Use your Microsoft work account to access Learning Walks, IQA Forms, and quality records.</p><a class="primary-action" href="/auth/microsoft/start">Continue with Microsoft</a><p class="hint">You will be redirected to Microsoft, then returned securely to HLQUALITY.</p></section></main>`);
 }
 
 function renderConfigMissingPage() {
@@ -2993,7 +3799,7 @@ async function serveStaticFile(pathname: string, env: Env): Promise<Response> {
 }
 
 function pageShell(title: string, body: string) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)} | ESOLQA</title><link rel="icon" type="image/x-icon" href="/favicon.ico"><style>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)} | HLQUALITY</title><link rel="icon" type="image/x-icon" href="/favicon.ico"><style>
     :root{--bg:#f7f8fc;--panel:#ffffff;--text:#0f172a;--muted:#64748b;--primary:#ff005a;--primary-dark:#cc0048;--secondary:#1a1f2e;--border:#e5e7eb;--success:#e6f7ee;--warn:#fff4e5;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);min-height:100vh}a{color:inherit;text-decoration:none}button,.small-action,.primary-action{border:0;border-radius:8px;background:var(--primary);color:#fff;font-weight:600;padding:.7rem 1.25rem;cursor:pointer;display:inline-flex;justify-content:center;align-items:center;gap:.5rem;font-size:.9375rem;transition:background .15s}.primary-action{width:100%;margin:1rem 0}.small-action{width:auto}.primary-action:hover,button:hover,.small-action:hover{background:var(--primary-dark)}input,select,textarea{width:100%;border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;font:inherit;background:#fff;color:var(--text);transition:border-color .15s,box-shadow .15s}input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px rgba(255,0,90,.2)}textarea{resize:vertical}.auth-shell{min-height:100vh;display:grid;place-items:center;padding:2rem;background:var(--bg)}.auth-card{width:min(100%,30rem);background:var(--panel);border:1px solid var(--border);border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.08);padding:2.5rem;text-align:center}.brand-mark{width:3rem;height:3rem;display:inline-grid;place-items:center;border-radius:10px;background:var(--primary);color:#fff;font-weight:800}.eyebrow{margin:0 0 .5rem;color:var(--primary);font-size:.75rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase}h1,h2,p{margin-top:0}h1{font-size:clamp(1.75rem,4vw,2.5rem);line-height:1.15;margin-bottom:.75rem;font-weight:700;color:var(--text)}h2{font-size:1.25rem;font-weight:600;color:var(--text)}.lede,.hint{color:var(--muted);line-height:1.6}.dashboard-shell{display:grid;grid-template-columns:17rem 1fr;min-height:100vh}.sidebar{background:#1a1f2e;color:#cbd5f5;padding:1.5rem}.sidebar-brand{display:flex;align-items:center;gap:.8rem;margin-bottom:2rem}.sidebar-brand strong{color:#fff}.sidebar-brand span{display:block;color:#94a3b8;font-size:.8rem}nav{display:grid;gap:.25rem}nav a{padding:.75rem 1rem;border-radius:8px;color:#94a3b8;font-size:.9375rem;font-weight:500;transition:background .15s,color .15s}nav a:hover{background:rgba(255,255,255,.07);color:#fff}.nav-active{background:rgba(255,0,90,.15)!important;color:#fff!important}.content{padding:2rem;overflow-y:auto}.topbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:2rem;padding-bottom:1.25rem;border-bottom:1px solid var(--border)}.profile-pill{background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:.5rem 1rem;color:var(--muted);font-weight:600;font-size:.9rem}.logout-link{color:var(--primary);font-weight:600;font-size:.9rem}.panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.04);padding:1.5rem;margin-bottom:1.5rem}.toolbar{display:flex;justify-content:space-between;gap:1rem;align-items:center}.search-form{display:flex;gap:.8rem;flex:1}.actions-row{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap}.grid-two{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.list-stack{display:grid;gap:.75rem}.list-card{display:grid;gap:.35rem;border:1px solid var(--border);border-radius:10px;padding:1rem;background:var(--panel);transition:box-shadow .15s}.list-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.06)}.list-card span,.list-card small{color:var(--muted)}.empty-state{border:1px dashed var(--border);border-radius:10px;padding:1.5rem;text-align:center;color:var(--muted)}.form-grid{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:1rem;align-items:end}.stack-form{display:grid;gap:1rem}.narrow-panel{max-width:54rem}.modal-like{margin:auto}.user-table{display:grid;gap:.75rem}.user-row{display:flex;justify-content:space-between;gap:1rem;align-items:center;border-bottom:1px solid var(--border);padding:.8rem 0}.user-row span{display:block;color:var(--muted)}.user-row form{display:flex;gap:.5rem}.meta-panel{display:flex;gap:1rem;flex-wrap:wrap}.checklist-panel{overflow:auto}.checklist-table{width:100%;border-collapse:collapse}.checklist-table th,.checklist-table td{border:1px solid var(--border);padding:.8rem;vertical-align:top}.checklist-table th{background:#f8fafc;text-align:left;color:var(--muted);font-size:.875rem;font-weight:600}.readonly-cell{min-height:3rem;color:var(--muted);white-space:pre-wrap}.comment-form{display:grid;gap:.8rem;margin-top:1rem}@media(max-width:900px){.dashboard-shell,.grid-two{grid-template-columns:1fr}.toolbar,.topbar,.form-grid{display:grid;grid-template-columns:1fr}.search-form{display:grid}.user-row{display:grid}}
   /* Form Builder Styles - MS Forms inspired */
     .form-builder-content{background:var(--bg);min-height:100vh;padding:1.5rem 2rem}
@@ -3072,7 +3878,15 @@ function pageShell(title: string, body: string) {
     .action-btn{background:none;border:none;font-size:1.25rem;cursor:pointer;padding:0.5rem;border-radius:6px;transition:all 0.2s}
     .edit-btn:hover{background:#e0e7ff}
     .delete-btn:hover{background:#fee2e2}
+    .edit-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:0.5rem 1rem;cursor:pointer;color:var(--text);font-size:0.875rem;transition:all 0.2s}
+    .edit-btn:hover{background:#e0e7ff;border-color:var(--primary);color:var(--primary)}
     .delete-form{display:inline;margin:0}
+    .user-row{display:flex;justify-content:space-between;gap:1rem;align-items:center;border-bottom:1px solid var(--border);padding:.8rem 0}
+    .user-info{display:flex;flex-direction:column;gap:0.25rem;align-items:flex-start;flex:1}
+    .user-email{font-weight:500;color:var(--text)}
+    .role-badge{font-size:0.875rem;color:var(--muted);background:#f1f5f9;padding:0.25rem 0.5rem;border-radius:4px}
+    .user-actions{display:flex;gap:0.5rem;align-items:center}
+    .current-user-badge{font-size:0.875rem;color:var(--muted);font-style:italic}
     /* Dashboard layout improvements */
     .section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:1rem}
     .search-form-inline{display:flex;gap:0.5rem}
@@ -3282,18 +4096,30 @@ function pageShell(title: string, body: string) {
     .lw-dl-cancel{background:#f1f5f9;color:#0f172a;border:none;border-radius:8px;padding:0.65rem 1.25rem;font-weight:600;cursor:pointer;font-size:0.9375rem;width:100%}
     .lw-dl-cancel:hover{background:#e2e8f0}
     @media (max-width:768px){.lwfb-header-grid{grid-template-columns:1fr}.lwfb-type-picker .picker-grid{grid-template-columns:repeat(2,1fr)}.lwfb-popup-overlay{padding:1rem}.lwfb-popup-container{max-height:calc(100vh - 2rem)}.lw-entry-grid{grid-template-columns:1fr}.lw-dl-options{grid-template-columns:1fr}}
+    /* CSV Import styles */
+    .import-form{display:flex;flex-direction:column;gap:1rem;align-items:flex-start}
+    .file-input-label{width:100%}
+    .file-input-label span{display:block;font-size:0.875rem;font-weight:600;color:var(--text);margin-bottom:0.5rem}
+    .file-input-label small{display:block;margin-top:0.5rem;color:var(--muted);font-size:0.8125rem}
+    .file-input-label code{background:#f1f5f9;padding:0.125rem 0.375rem;border-radius:4px;font-size:0.8125rem}
+    .form-actions{display:flex;align-items:center;gap:1rem}
+    .btn-secondary{background:#fff;border:1px solid var(--border);color:var(--text)}
+    .btn-secondary:hover{background:var(--bg);border-color:var(--primary);color:var(--primary)}
+    .btn-link{font-size:0.875rem;color:var(--primary);text-decoration:underline}
+    .btn-link:hover{color:var(--primary-dark)}
+    .alert{padding:1rem 1.25rem;border-radius:8px;margin-bottom:1rem;font-size:0.9375rem}
+    .alert-success{background:var(--success);border-left:4px solid #16a34a;color:#166534}
+    .alert-error{background:#fef2f2;border-left:4px solid #dc2626;color:#991b1b}
   </style></head><body>${body}</body></html>`;
 }
 
 function renderSidebar(identity: Identity, active: string) {
   const user = identity.user!;
   return `<aside class="sidebar">
-    <div class="sidebar-brand"><div class="brand-mark"><img src="/favicon.svg" width="36" height="36" style="object-fit:contain;display:block"></div><div><strong>ESOLQA</strong><span>${escapeHtml(user.role === "assessor_iqa" ? "Assessor / IQA" : user.role)}</span></div></div>
+    <div class="sidebar-brand"><div class="brand-mark"><img src="/favicon.svg" width="36" height="36" style="object-fit:contain;display:block"></div><div><strong>HLQUALITY</strong><span>${escapeHtml(user.role === "assessor_iqa" ? "Assessor / IQA" : user.role)}</span></div></div>
     <nav class="sidebar-nav">
-      ${navLink("/dashboard", "Assessment Forms", active === "assessment")}
-      ${navLink("/dashboard?section=iqa", "IQA Forms", active === "iqa")}
-      ${navLink("/dashboard?section=eqa", "EQA Forms", active === "eqa")}
-      ${(user.role !== "assessor" && user.role !== "eqa") ? navLink("/learning-walks", "Learning Walks", active === "learning-walks") : ""}
+      ${navLink("/learning-walks", "Learning Walks", active === "learning-walks")}
+      ${navLink("/iqa-forms", "IQA Forms", active === "iqa-forms")}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
   </aside>`;
