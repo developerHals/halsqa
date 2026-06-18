@@ -2706,6 +2706,18 @@ function renderLWEntryViewPage(
     </main>
 
     <script>
+      // Auto-expand textareas (fallback for browsers without field-sizing:content)
+      function autoExpand(el) {
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+      }
+      document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.lw-entry-textarea').forEach(function(el) {
+          autoExpand(el);
+          el.addEventListener('input', function() { autoExpand(this); });
+        });
+      });
+
       const entryId = "${entry.id}";
       const canEdit = ${canEdit};
 
@@ -4036,7 +4048,7 @@ function pageShell(title: string, body: string) {
     .lw-entry-required{color:var(--primary)}
     .lw-entry-input,.lw-entry-select,.lw-entry-textarea{width:100%;padding:0.875rem 1rem;border:2px solid var(--border);border-radius:8px;font-size:1rem;transition:all 0.2s;background:#fff}
     .lw-entry-input:focus,.lw-entry-select:focus,.lw-entry-textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px rgba(255,0,90,0.2)}
-    .lw-entry-textarea{resize:vertical;min-height:100px}
+    .lw-entry-textarea{resize:vertical;min-height:100px;field-sizing:content;overflow-y:hidden}
     .lw-entry-question{margin-bottom:1.5rem;padding:1.25rem;background:var(--panel);border-radius:8px;border:1px solid var(--border);border-left:3px solid var(--primary)}
     .lw-entry-question-label{font-weight:600;color:var(--text);margin-bottom:0.75rem;display:block}
     .lw-entry-radio-group,.lw-entry-checkbox-group{display:flex;flex-wrap:wrap;gap:1rem}
