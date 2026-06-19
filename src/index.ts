@@ -342,10 +342,14 @@ type LearnerTrackCourse = {
   CourseSeriesDescription?: string | null;
   LocationID?: number | null;
   LocationName?: string | null;
+  LocationLabel?: string | null;
   VenueID?: number | null;
   VenueName?: string | null;
   TutorID?: number | null;
   TutorName?: string | null;
+  Tutor?: string | null;
+  AcademicYear?: number | null;
+  Times?: string | null;
   StartDate?: string | null;
   EndDate?: string | null;
   StartTime?: string | null;
@@ -560,35 +564,45 @@ async function renderCoursesPageHandler(request: Request, env: Env, identity: Id
 }
 
 function renderCoursesPage(identity: Identity, courses: LearnerTrackCourse[], error: string | null): string {
-  const header = ["ID", "Course Code", "Course Title", "Provider", "Level", "Location", "Venue", "Tutor", "Start Date", "End Date", "Day", "Weeks", "Sessions", "Fee"];
-  const rows = courses.map(c => [
-    String(c.ID ?? ""),
-    c.CourseCode ?? "",
-    c.CourseTitle ?? "",
-    c.ProviderLabel ?? "",
-    c.CourseLevelID != null ? String(c.CourseLevelID) : "",
-    c.LocationName ?? "",
-    c.VenueName ?? "",
-    c.TutorName ?? "",
-    c.StartDate ?? "",
-    c.EndDate ?? "",
-    c.DayOfWeek ?? "",
-    c.DurationInWeeks != null ? String(c.DurationInWeeks) : "",
-    c.NumberOfSessions != null ? String(c.NumberOfSessions) : "",
-    c.CourseFee != null ? String(c.CourseFee) : ""
-  ]);
-  const tableBody = rows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  const header = ["ID", "Course Code", "Course Title", "Provider", "Level", "Location", "Venue", "Tutor", "Academic Year", "Times", "Start Date", "End Date", "Day", "Weeks", "Sessions", "Fee"];
+  const tutors = [...new Set(courses.map(c => c.Tutor || c.TutorName || "").filter(Boolean))].sort();
+  const years = [...new Set(courses.map(c => c.AcademicYear != null ? String(c.AcademicYear) : "").filter(Boolean))].sort();
+  const rows = courses.map(c => {
+    const tutor = c.Tutor || c.TutorName || "";
+    const year = c.AcademicYear != null ? String(c.AcademicYear) : "";
+    return [
+      String(c.ID ?? ""),
+      c.CourseCode ?? "",
+      c.CourseTitle ?? "",
+      c.ProviderLabel ?? "",
+      c.CourseLevelID != null ? String(c.CourseLevelID) : "",
+      c.LocationLabel || c.LocationName || "",
+      c.VenueName ?? "",
+      tutor,
+      year,
+      c.Times ?? "",
+      c.StartDate ?? "",
+      c.EndDate ?? "",
+      c.DayOfWeek ?? "",
+      c.DurationInWeeks != null ? String(c.DurationInWeeks) : "",
+      c.NumberOfSessions != null ? String(c.NumberOfSessions) : "",
+      c.CourseFee != null ? String(c.CourseFee) : ""
+    ];
+  });
+  const tableBody = rows.map((row, i) => `<tr data-year="${escapeHtml(row[8])}" data-tutor="${escapeHtml(row[7])}">${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
   const tableHead = `<thead><tr>${header.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
+  const yearFilter = `<select id="filter-year" class="lw-entry-select"><option value="">All years</option>${years.map(y => `<option value="${escapeHtml(y)}">${escapeHtml(y)}</option>`).join("")}</select>`;
+  const tutorFilter = `<select id="filter-tutor" class="lw-entry-select"><option value="">All tutors</option>${tutors.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("")}</select>`;
   return pageShell("Our Courses", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "courses")}
       <section class="content">
         <header class="topbar"><div><p class="eyebrow">Learner Track</p><h1>Our Courses</h1></div><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></header>
         <section class="panel">
-          <div class="section-header"><p class="eyebrow">${courses.length} courses</p></div>
+          <div class="section-header"><p class="eyebrow">${courses.length} courses</p><form class="courses-filters" onsubmit="return false;"><label>Academic Year ${yearFilter}</label><label>Tutor ${tutorFilter}</label><button type="button" class="small-action" onclick="resetFilters()">Reset</button></form></div>
           ${error ? `<div class="alert alert-error">${escapeHtml(error)}</div>` : ""}
           <div class="courses-table-wrap">
-            <table class="courses-table">
+            <table class="courses-table" id="courses-table">
               ${tableHead}
               <tbody>${tableBody || `<tr><td colspan="${header.length}" class="empty-cell">No courses available</td></tr>`}</tbody>
             </table>
@@ -596,6 +610,16 @@ function renderCoursesPage(identity: Identity, courses: LearnerTrackCourse[], er
         </section>
       </section>
     </main>
+    <script>
+      function applyFilters(){
+        const y=document.getElementById('filter-year').value,t=document.getElementById('filter-tutor').value,rows=document.querySelectorAll('#courses-table tbody tr');
+        let n=0;rows.forEach(r=>{const ry=r.dataset.year||'',rt=r.dataset.tutor||'';const show=(!y||ry===y)&&(!t||rt===t);r.style.display=show?'':'none';if(show)n++;});
+        document.querySelector('.section-header .eyebrow').textContent=n+' courses';
+      }
+      function resetFilters(){document.getElementById('filter-year').value='';document.getElementById('filter-tutor').value='';applyFilters();}
+      document.getElementById('filter-year').addEventListener('change',applyFilters);
+      document.getElementById('filter-tutor').addEventListener('change',applyFilters);
+    </script>
   `);
 }
 
@@ -4314,11 +4338,14 @@ function pageShell(title: string, body: string) {
     .alert-success{background:var(--success);border-left:4px solid #16a34a;color:#166534}
     .alert-error{background:#fef2f2;border-left:4px solid #dc2626;color:#991b1b}
     .courses-table-wrap{overflow:auto;max-height:70vh;border:1px solid var(--border);border-radius:8px}
-    .courses-table{width:100%;border-collapse:collapse;min-width:1200px}
+    .courses-table{width:100%;border-collapse:collapse;min-width:1400px}
     .courses-table th,.courses-table td{padding:.75rem 1rem;border:1px solid var(--border);text-align:left;white-space:nowrap}
     .courses-table th{background:#f8fafc;position:sticky;top:0;z-index:1;font-weight:600}
     .courses-table tbody tr:nth-child(even){background:#f8fafc}
     .courses-table .empty-cell{text-align:center;color:var(--muted);padding:2rem}
+    .courses-filters{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
+    .courses-filters label{display:flex;align-items:center;gap:.5rem;font-weight:500;color:var(--text)}
+    .courses-filters .lw-entry-select{min-width:160px}
     .lw-entry-hint{display:block;font-size:.875rem;color:var(--muted);margin-top:.25rem}
   </style></head><body>${body}</body></html>`;
 }
