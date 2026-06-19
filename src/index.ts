@@ -15,6 +15,7 @@ interface Env {
   MICROSOFT_CLIENT_SECRET?: string;
   MICROSOFT_TENANT_ID?: string;
   SESSION_SECRET?: string;
+  "LearnerTrack.API"?: string;
   ASSETS?: { fetch(request: Request): Promise<Response> };
 }
 
@@ -322,6 +323,65 @@ type IQAFAnswer = {
   answer: string | null;
 };
 
+type LearnerTrackCourse = {
+  ID: number;
+  ApiReturnMessage?: string | null;
+  CourseCode: string | null;
+  CatID?: number | null;
+  CatLabel?: string | null;
+  CatDescription?: string | null;
+  CoOrdinatorBy?: number | null;
+  OptionGroupID?: number | null;
+  OptionGroup?: string | null;
+  ProviderID?: number | null;
+  ProviderLabel?: string | null;
+  CourseLevelID?: number | null;
+  CourseTitle: string | null;
+  CourseShortDescription?: string | null;
+  CourseInstanceStopPress?: string | null;
+  CourseSeriesDescription?: string | null;
+  LocationID?: number | null;
+  LocationName?: string | null;
+  VenueID?: number | null;
+  VenueName?: string | null;
+  TutorID?: number | null;
+  TutorName?: string | null;
+  StartDate?: string | null;
+  EndDate?: string | null;
+  StartTime?: string | null;
+  EndTime?: string | null;
+  DayOfWeek?: string | null;
+  DurationInWeeks?: number | null;
+  NumberOfSessions?: number | null;
+  HoursPerSession?: number | null;
+  TotalHours?: number | null;
+  NumberOfPlaces?: number | null;
+  PlacesAvailable?: number | null;
+  Full?: number | null;
+  CourseFee?: number | null;
+  ConcessionFee?: number | null;
+  MinimumAge?: number | null;
+  MaximumAge?: number | null;
+  Gender?: string | null;
+  WebSite?: string | null;
+  ImageFile?: string | null;
+  ImageFileURL?: string | null;
+  Active?: number | null;
+  Deleted?: number | null;
+  Notes?: string | null;
+  AddedBy?: number | null;
+  AddedByName?: string | null;
+  AddedDate?: string | null;
+  ModifiedBy?: number | null;
+  ModifiedByName?: string | null;
+  ModifiedDate?: string | null;
+  EOEID?: number | null;
+  EOECode?: string | null;
+  EOEName?: string | null;
+  EOEProviderRef?: string | null;
+  [key: string]: unknown;
+};
+
 type IQAFNotification = {
   id: string;
   user_id: string;
@@ -359,6 +419,9 @@ export default {
 
     if (url.pathname === "/dashboard") return Response.redirect(`${url.origin}/learning-walks`, 302);
     if (url.pathname === "/users") return renderUsersPage(request, env, identity);
+
+    if (url.pathname === "/courses") return renderCoursesPageHandler(request, env, identity);
+    if (url.pathname === "/api/courses/learnertrack" && request.method === "GET") return fetchLearnerTrackCourses(env, identity);
 
     if (url.pathname === "/api/me") return json(identity);
     if (url.pathname === "/api/users" && request.method === "POST") return createUser(request, env, identity);
@@ -473,6 +536,68 @@ async function renderUsersPage(request: Request, env: Env, identity: Identity): 
   return htmlResponse(renderUsers(identity, users.results, importResult));
 }
 
+async function fetchLearnerTrackCourses(env: Env, identity: Identity): Promise<Response> {
+  const apiKey = env["LearnerTrack.API"];
+  if (!apiKey) return json({ error: "LearnerTrack API key not configured" }, 500);
+  const username = "GiuseppeA";
+  const url = `https://api.learnertrack.net/api/CourseInstance?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}`;
+  try {
+    const r = await fetch(url, { headers: { "Accept": "application/json" } });
+    if (!r.ok) return json({ error: `LearnerTrack API returned ${r.status}` }, r.status);
+    const data = await r.json() as LearnerTrackCourse[] | { error?: string };
+    if (Array.isArray(data)) return json(data);
+    return json(data, 200);
+  } catch (err: any) {
+    return json({ error: "Failed to fetch courses: " + (err?.message || String(err)) }, 500);
+  }
+}
+
+async function renderCoursesPageHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const r = await fetchLearnerTrackCourses(env, identity);
+  const courses = await r.json() as { error?: string } | LearnerTrackCourse[];
+  if ("error" in courses && courses.error) return htmlResponse(renderCoursesPage(identity, [], String(courses.error)), 500);
+  return htmlResponse(renderCoursesPage(identity, Array.isArray(courses) ? courses : [], null));
+}
+
+function renderCoursesPage(identity: Identity, courses: LearnerTrackCourse[], error: string | null): string {
+  const header = ["ID", "Course Code", "Course Title", "Provider", "Level", "Location", "Venue", "Tutor", "Start Date", "End Date", "Day", "Weeks", "Sessions", "Fee"];
+  const rows = courses.map(c => [
+    String(c.ID ?? ""),
+    c.CourseCode ?? "",
+    c.CourseTitle ?? "",
+    c.ProviderLabel ?? "",
+    c.CourseLevelID != null ? String(c.CourseLevelID) : "",
+    c.LocationName ?? "",
+    c.VenueName ?? "",
+    c.TutorName ?? "",
+    c.StartDate ?? "",
+    c.EndDate ?? "",
+    c.DayOfWeek ?? "",
+    c.DurationInWeeks != null ? String(c.DurationInWeeks) : "",
+    c.NumberOfSessions != null ? String(c.NumberOfSessions) : "",
+    c.CourseFee != null ? String(c.CourseFee) : ""
+  ]);
+  const tableBody = rows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  const tableHead = `<thead><tr>${header.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
+  return pageShell("Our Courses", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "courses")}
+      <section class="content">
+        <header class="topbar"><div><p class="eyebrow">Learner Track</p><h1>Our Courses</h1></div><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></header>
+        <section class="panel">
+          <div class="section-header"><p class="eyebrow">${courses.length} courses</p></div>
+          ${error ? `<div class="alert alert-error">${escapeHtml(error)}</div>` : ""}
+          <div class="courses-table-wrap">
+            <table class="courses-table">
+              ${tableHead}
+              <tbody>${tableBody || `<tr><td colspan="${header.length}" class="empty-cell">No courses available</td></tr>`}</tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+  `);
+}
 
 async function requireIdentity(request: Request, env: Env): Promise<Identity | null> {
   const session = getCookie(request, sessionCookie);
@@ -1711,6 +1836,13 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
     <div class="lw-entry-section">
       <h3 class="lw-entry-section-title">Course Information</h3>
       <div class="lw-entry-grid">
+        <div class="lw-entry-field" style="grid-column:1/-1">
+          <label class="lw-entry-label" for="course_picker">Select from Learner Track</label>
+          <select id="course_picker" class="lw-entry-select">
+            <option value="">-- choose a course or type manually below --</option>
+          </select>
+          <span class="lw-entry-hint">Loading courses from Learner Track...</span>
+        </div>
         <div class="lw-entry-field">
           <label class="lw-entry-label" for="course_id">Course ID *</label>
           <input type="text" id="course_id" name="course_id" class="lw-entry-input" required placeholder="e.g., ESOL-2024-001">
@@ -1917,6 +2049,35 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
     </main>
 
     <script>
+      (async function loadCourses(){
+        const sel = document.getElementById('course_picker');
+        const hint = sel.parentElement.querySelector('.lw-entry-hint');
+        try {
+          const r = await fetch('/api/courses/learnertrack');
+          const data = await r.json();
+          if (!Array.isArray(data)) throw new Error(data.error || 'Unexpected response');
+          sel.innerHTML = '<option value="">-- choose a course or type manually below --</option>';
+          data.forEach(c => {
+            const code = c.CourseCode || '';
+            const title = c.CourseTitle || '';
+            const opt = document.createElement('option');
+            opt.value = JSON.stringify({course_id: code, course_name: title});
+            opt.textContent = (title ? title + ' ' : '') + (code ? '(' + code + ')' : '');
+            sel.appendChild(opt);
+          });
+          if (hint) hint.textContent = data.length + ' courses loaded from Learner Track.';
+          sel.addEventListener('change', () => {
+            if (!sel.value) return;
+            const v = JSON.parse(sel.value);
+            document.getElementById('course_id').value = v.course_id || '';
+            document.getElementById('course_name').value = v.course_name || '';
+          });
+        } catch (err) {
+          if (hint) hint.textContent = 'Could not load courses. You can still type the course details manually.';
+          console.error('Course load error:', err);
+        }
+      })();
+
       async function submitEntry(e) {
         e.preventDefault();
 
@@ -3617,6 +3778,7 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
       <div class="lwfb-popup-header"><div><p class="lwfb-eyebrow">New IQA Form Entry</p><h1 class="lwfb-title">${escapeHtml(template.title)}</h1></div><button type="button" class="lwfb-close-btn" onclick="location.href='/iqa-forms'">×</button></div>
       <div class="lwfb-popup-content">
         <div class="lw-entry-section"><h3 class="lw-entry-section-title">Course Information</h3><div class="lw-entry-grid">
+          <div class="lw-entry-field" style="grid-column:1/-1"><label class="lw-entry-label" for="course_picker">Select from Learner Track</label><select id="course_picker" class="lw-entry-select"><option value="">-- choose a course or type manually below --</option></select><span class="lw-entry-hint">Loading courses from Learner Track...</span></div>
           <div class="lw-entry-field"><label class="lw-entry-label" for="cid">Course ID *</label><input type="text" id="cid" class="lw-entry-input" required></div>
           <div class="lw-entry-field"><label class="lw-entry-label" for="cname">Course Name *</label><input type="text" id="cname" class="lw-entry-input" required></div>
         </div></div>
@@ -3632,6 +3794,35 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
       <div class="lwfb-popup-footer"><button type="button" class="lwfb-secondary-btn" onclick="location.href='/iqa-forms'">Cancel</button><button type="button" class="lwfb-primary-btn" onclick="subEntry()">Create IQA Form Entry</button></div>
     </div></main>
     <script>
+      (async function loadCourses(){
+        const sel = document.getElementById('course_picker');
+        const hint = sel.parentElement.querySelector('.lw-entry-hint');
+        try {
+          const r = await fetch('/api/courses/learnertrack');
+          const data = await r.json();
+          if (!Array.isArray(data)) throw new Error(data.error || 'Unexpected response');
+          sel.innerHTML = '<option value="">-- choose a course or type manually below --</option>';
+          data.forEach(c => {
+            const code = c.CourseCode || '';
+            const title = c.CourseTitle || '';
+            const opt = document.createElement('option');
+            opt.value = JSON.stringify({course_id: code, course_name: title});
+            opt.textContent = (title ? title + ' ' : '') + (code ? '(' + code + ')' : '');
+            sel.appendChild(opt);
+          });
+          if (hint) hint.textContent = data.length + ' courses loaded from Learner Track.';
+          sel.addEventListener('change', () => {
+            if (!sel.value) return;
+            const v = JSON.parse(sel.value);
+            document.getElementById('cid').value = v.course_id || '';
+            document.getElementById('cname').value = v.course_name || '';
+          });
+        } catch (err) {
+          if (hint) hint.textContent = 'Could not load courses. You can still type the course details manually.';
+          console.error('Course load error:', err);
+        }
+      })();
+
       async function subEntry(){
         const cid=document.getElementById('cid').value.trim(),cname=document.getElementById('cname').value.trim(),aid=document.getElementById('aid').value,iid=document.getElementById('iid').value,eid=document.getElementById('eid').value||null,pd=document.getElementById('pd').value,dd=document.getElementById('dd').value||null;
         if(!cid||!cname||!aid||!iid||!pd){alert('Please fill in all required fields.');return;}
@@ -4122,6 +4313,13 @@ function pageShell(title: string, body: string) {
     .alert{padding:1rem 1.25rem;border-radius:8px;margin-bottom:1rem;font-size:0.9375rem}
     .alert-success{background:var(--success);border-left:4px solid #16a34a;color:#166534}
     .alert-error{background:#fef2f2;border-left:4px solid #dc2626;color:#991b1b}
+    .courses-table-wrap{overflow:auto;max-height:70vh;border:1px solid var(--border);border-radius:8px}
+    .courses-table{width:100%;border-collapse:collapse;min-width:1200px}
+    .courses-table th,.courses-table td{padding:.75rem 1rem;border:1px solid var(--border);text-align:left;white-space:nowrap}
+    .courses-table th{background:#f8fafc;position:sticky;top:0;z-index:1;font-weight:600}
+    .courses-table tbody tr:nth-child(even){background:#f8fafc}
+    .courses-table .empty-cell{text-align:center;color:var(--muted);padding:2rem}
+    .lw-entry-hint{display:block;font-size:.875rem;color:var(--muted);margin-top:.25rem}
   </style></head><body>${body}</body></html>`;
 }
 
@@ -4132,6 +4330,7 @@ function renderSidebar(identity: Identity, active: string) {
     <nav class="sidebar-nav">
       ${navLink("/learning-walks", "Learning Walks", active === "learning-walks")}
       ${navLink("/iqa-forms", "IQA Forms", active === "iqa-forms")}
+      ${navLink("/courses", "Our Courses", active === "courses")}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
   </aside>`;
