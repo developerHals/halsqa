@@ -386,6 +386,23 @@ type LearnerTrackCourse = {
   [key: string]: unknown;
 };
 
+type LearnerTrackEnrolment = {
+  CourseCode: string | null;
+  LearnerID: number;
+  StudentLabel: string | null;
+  CourseTitle: string | null;
+  HasAttended: number | null;
+  WithdrawReason: number | null;
+  CourseTypeCategory: string | null;
+  LearnStartDate: string | null;
+  LearnActEndDate: string | null;
+  Times: string | null;
+  Weeks: number | null;
+  CourseStatus: string | null;
+  AcademicYear: number | null;
+  [key: string]: unknown;
+};
+
 type IQAFNotification = {
   id: string;
   user_id: string;
@@ -426,6 +443,8 @@ export default {
 
     if (url.pathname === "/courses") return renderCoursesPageHandler(request, env, identity);
     if (url.pathname === "/api/courses/learnertrack" && request.method === "GET") return fetchLearnerTrackCourses(env, identity);
+    if (url.pathname === "/my-class") return renderMyClassPageHandler(request, env, identity);
+    if (url.pathname === "/api/enrolment" && request.method === "GET") return fetchLearnerTrackEnrolment(request, env, identity);
 
     if (url.pathname === "/api/me") return json(identity);
     if (url.pathname === "/api/users" && request.method === "POST") return createUser(request, env, identity);
@@ -563,6 +582,40 @@ async function renderCoursesPageHandler(request: Request, env: Env, identity: Id
   return htmlResponse(renderCoursesPage(identity, Array.isArray(courses) ? courses : [], null));
 }
 
+async function fetchLearnerTrackEnrolment(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const apiKey = env["LearnerTrack.API"];
+  if (!apiKey) return json({ error: "LearnerTrack API key not configured" }, 500);
+  const url = new URL(request.url);
+  const courseInstanceId = url.searchParams.get("courseinstanceid")?.trim();
+  if (!courseInstanceId) return json({ error: "courseinstanceid is required" }, 400);
+  const username = "GiuseppeA";
+  const apiUrl = `https://betaapi.learnertrack.net/api/Enrolment?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}&courseinstanceid=${encodeURIComponent(courseInstanceId)}`;
+  try {
+    const r = await fetch(apiUrl, { headers: { "Accept": "application/json" } });
+    if (!r.ok) return json({ error: `LearnerTrack API returned ${r.status}` }, r.status);
+    const data = await r.json() as LearnerTrackEnrolment[] | { error?: string };
+    if (Array.isArray(data)) return json(data);
+    return json(data, 200);
+  } catch (err: any) {
+    return json({ error: "Failed to fetch enrolment: " + (err?.message || String(err)) }, 500);
+  }
+}
+
+async function renderMyClassPageHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const url = new URL(request.url);
+  const courseInstanceId = url.searchParams.get("courseId")?.trim() ?? "";
+  let enrolments: LearnerTrackEnrolment[] = [];
+  let error: string | null = null;
+  let courseTitle = "";
+  if (courseInstanceId) {
+    const r = await fetchLearnerTrackEnrolment(new Request(`${url.origin}/api/enrolment?courseinstanceid=${encodeURIComponent(courseInstanceId)}`), env, identity);
+    const data = await r.json() as { error?: string } | LearnerTrackEnrolment[];
+    if ("error" in data && data.error) error = String(data.error);
+    else if (Array.isArray(data)) { enrolments = data; if (data.length) courseTitle = data[0].CourseTitle ?? ""; }
+  }
+  return htmlResponse(renderMyClassPage(identity, courseInstanceId, courseTitle, enrolments, error));
+}
+
 function renderCoursesPage(identity: Identity, courses: LearnerTrackCourse[], error: string | null): string {
   const header = ["ID", "Course Code", "Course Title", "Provider", "Level", "Location", "Venue", "Tutor", "Academic Year", "Times", "Start Date", "End Date", "Day", "Weeks", "Sessions", "Fee"];
   const tutors = [...new Set(courses.map(c => c.Tutor || c.TutorName || "").filter(Boolean))].sort();
@@ -620,6 +673,71 @@ function renderCoursesPage(identity: Identity, courses: LearnerTrackCourse[], er
       document.getElementById('filter-year').addEventListener('change',applyFilters);
       document.getElementById('filter-tutor').addEventListener('change',applyFilters);
     </script>
+  `);
+}
+
+function renderMyClassPage(identity: Identity, courseInstanceId: string, courseTitle: string, enrolments: LearnerTrackEnrolment[], error: string | null): string {
+  const header = ["Learner ID", "Student", "Course Code", "Course Title", "Attended", "Withdraw Reason", "Category", "Start Date", "End Date", "Times", "Weeks", "Status", "Academic Year"];
+  const rows = enrolments.map(e => {
+    const attended = e.HasAttended != null ? Math.round(e.HasAttended * 100) + "%" : "";
+    const withdraw = e.WithdrawReason != null && e.WithdrawReason !== 0 ? String(e.WithdrawReason) : "";
+    return [
+      String(e.LearnerID ?? ""),
+      e.StudentLabel ?? "",
+      e.CourseCode ?? "",
+      e.CourseTitle ?? "",
+      attended,
+      withdraw,
+      e.CourseTypeCategory ?? "",
+      e.LearnStartDate ?? "",
+      e.LearnActEndDate ?? "",
+      e.Times ?? "",
+      e.Weeks != null ? String(e.Weeks) : "",
+      e.CourseStatus ?? "",
+      e.AcademicYear != null ? String(e.AcademicYear) : ""
+    ];
+  });
+  const total = enrolments.length;
+  const withdrawn = enrolments.filter(e => e.WithdrawReason != null && e.WithdrawReason !== 0).length;
+  const active = total - withdrawn;
+  const activeEnrolments = enrolments.filter(e => e.WithdrawReason == null || e.WithdrawReason === 0);
+  const avgAttendance = active > 0 && activeEnrolments.every(e => e.HasAttended != null)
+    ? Math.round((activeEnrolments.reduce((sum, e) => sum + (e.HasAttended ?? 0), 0) / active) * 100) + "%"
+    : active > 0 ? "N/A" : "N/A";
+  const tableBody = rows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  const tableHead = `<thead><tr>${header.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
+  return pageShell("My Class", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "my-class")}
+      <section class="content">
+        <header class="topbar"><div><p class="eyebrow">Learner Track</p><h1>My Class</h1></div><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></header>
+        <section class="panel">
+          <div class="section-header"><p class="eyebrow">Class enrolments</p></div>
+          <form method="GET" action="/my-class" class="my-class-search">
+            <label for="courseId">Course ID</label>
+            <input type="text" id="courseId" name="courseId" value="${escapeHtml(courseInstanceId)}" class="lw-entry-input" placeholder="e.g. 10511" required>
+            <button type="submit" class="primary-action">Load class</button>
+          </form>
+          ${error ? `<div class="alert alert-error">${escapeHtml(error)}</div>` : ""}
+          ${courseInstanceId ? `
+            <div class="my-class-stats">
+              <div class="stat-card"><span class="stat-label">Course ID</span><span class="stat-value">${escapeHtml(courseInstanceId)}</span></div>
+              <div class="stat-card"><span class="stat-label">Course Title</span><span class="stat-value">${escapeHtml(courseTitle)}</span></div>
+              <div class="stat-card"><span class="stat-label">Total Students</span><span class="stat-value">${total}</span></div>
+              <div class="stat-card"><span class="stat-label">Withdrawn</span><span class="stat-value">${withdrawn}</span></div>
+              <div class="stat-card"><span class="stat-label">Active Students</span><span class="stat-value">${active}</span></div>
+              <div class="stat-card"><span class="stat-label">Avg Attendance (active)</span><span class="stat-value">${avgAttendance}</span></div>
+            </div>
+            <div class="courses-table-wrap">
+              <table class="courses-table" id="enrolment-table">
+                ${tableHead}
+                <tbody>${tableBody || `<tr><td colspan="${header.length}" class="empty-cell">No enrolments found</td></tr>`}</tbody>
+              </table>
+            </div>
+          ` : ""}
+        </section>
+      </section>
+    </main>
   `);
 }
 
@@ -4346,6 +4464,13 @@ function pageShell(title: string, body: string) {
     .courses-filters{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
     .courses-filters label{display:flex;align-items:center;gap:.5rem;font-weight:500;color:var(--text)}
     .courses-filters .lw-entry-select{min-width:160px}
+    .my-class-search{display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:1rem}
+    .my-class-search label{display:flex;flex-direction:column;gap:.25rem;font-weight:500;color:var(--text)}
+    .my-class-search .lw-entry-input{min-width:220px}
+    .my-class-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem}
+    .stat-card{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:1rem}
+    .stat-label{display:block;font-size:.875rem;color:var(--muted);margin-bottom:.25rem}
+    .stat-value{display:block;font-size:1.25rem;font-weight:700;color:var(--text)}
     .lw-entry-hint{display:block;font-size:.875rem;color:var(--muted);margin-top:.25rem}
   </style></head><body>${body}</body></html>`;
 }
@@ -4358,6 +4483,7 @@ function renderSidebar(identity: Identity, active: string) {
       ${navLink("/learning-walks", "Learning Walks", active === "learning-walks")}
       ${navLink("/iqa-forms", "IQA Forms", active === "iqa-forms")}
       ${navLink("/courses", "Our Courses", active === "courses")}
+      ${navLink("/my-class", "My Class", active === "my-class")}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
   </aside>`;
