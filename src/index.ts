@@ -445,6 +445,8 @@ export default {
     if (url.pathname === "/api/courses/learnertrack" && request.method === "GET") return fetchLearnerTrackCourses(env, identity);
     if (url.pathname === "/my-class") return renderMyClassPageHandler(request, env, identity);
     if (url.pathname === "/api/enrolment" && request.method === "GET") return fetchLearnerTrackEnrolment(request, env, identity);
+    if (url.pathname === "/students") return renderStudentsPageHandler(request, env, identity);
+    if (url.pathname === "/api/enrolment/student" && request.method === "GET") return fetchStudentEnrolments(request, env, identity);
 
     if (url.pathname === "/api/me") return json(identity);
     if (url.pathname === "/api/users" && request.method === "POST") return createUser(request, env, identity);
@@ -747,6 +749,103 @@ function renderMyClassPage(identity: Identity, courseInstanceId: string, courseT
                 <tbody>${tableBody || `<tr><td colspan="${header.length}" class="empty-cell">No enrolments found</td></tr>`}</tbody>
               </table>
             </div>
+          ` : ""}
+        </section>
+      </section>
+    </main>
+  `);
+}
+
+async function fetchStudentEnrolments(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const apiKey = env["LearnerTrack.API"];
+  if (!apiKey) return json({ error: "LearnerTrack API key not configured" }, 500);
+  const url = new URL(request.url);
+  const learnerId = url.searchParams.get("learnerid")?.trim();
+  if (!learnerId) return json({ error: "learnerid is required" }, 400);
+  const username = "GiuseppeA";
+  const apiUrl = `https://betaapi.learnertrack.net/api/Enrolment?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}&learnerid=${encodeURIComponent(learnerId)}`;
+  try {
+    const r = await fetch(apiUrl, { headers: { "Accept": "application/json" } });
+    if (!r.ok) return json({ error: `LearnerTrack API returned ${r.status}` }, r.status);
+    const data = await r.json() as LearnerTrackEnrolment[] | { error?: string };
+    if (Array.isArray(data)) return json(data);
+    return json(data, 200);
+  } catch (err: any) {
+    return json({ error: "Failed to fetch student enrolments: " + (err?.message || String(err)) }, 500);
+  }
+}
+
+async function renderStudentsPageHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const url = new URL(request.url);
+  const learnerId = url.searchParams.get("learnerId")?.trim() ?? "";
+  let enrolments: LearnerTrackEnrolment[] = [];
+  let error: string | null = null;
+  if (learnerId) {
+    const r = await fetchStudentEnrolments(new Request(`${url.origin}/api/enrolment/student?learnerid=${encodeURIComponent(learnerId)}`), env, identity);
+    const data = await r.json() as { error?: string } | LearnerTrackEnrolment[];
+    if ("error" in data && data.error) error = String(data.error);
+    else if (Array.isArray(data)) enrolments = data;
+  }
+  return htmlResponse(renderStudentsPage(identity, learnerId, enrolments, error));
+}
+
+function renderStudentsPage(identity: Identity, learnerId: string, enrolments: LearnerTrackEnrolment[], error: string | null): string {
+  const first = enrolments.length > 0 ? enrolments[0] : null;
+  const studentInfo = first ? [
+    ["Learner ID", String(first.LearnerID ?? "")],
+    ["Student Name", first.StudentLabel ?? ""],
+    ["Academic Year", first.AcademicYear != null ? String(first.AcademicYear) : ""],
+  ] : [];
+  const studentInfoHtml = studentInfo.length ? `
+    <div class="student-profile-card">
+      <div class="student-avatar">${escapeHtml((first?.StudentLabel ?? "?").charAt(0).toUpperCase())}</div>
+      <div class="student-profile-details">
+        <h2 class="student-name">${escapeHtml(first?.StudentLabel ?? "")}</h2>
+        <div class="student-meta">
+          <span class="student-meta-item"><strong>Learner ID:</strong> ${escapeHtml(String(first?.LearnerID ?? ""))}</span>
+          <span class="student-meta-item"><strong>Academic Year:</strong> ${escapeHtml(first?.AcademicYear != null ? String(first.AcademicYear) : "N/A")}</span>
+        </div>
+      </div>
+    </div>` : "";
+  const enrolHeader = ["Course Code", "Course Title", "Category", "Attended", "Withdraw Reason", "Start Date", "End Date", "Times", "Weeks", "Status"];
+  const enrolRows = enrolments.map(e => [
+    e.CourseCode ?? "",
+    e.CourseTitle ?? "",
+    e.CourseTypeCategory ?? "",
+    e.HasAttended != null ? Math.round(e.HasAttended * 100) + "%" : "",
+    e.WithdrawReason != null && e.WithdrawReason !== 0 ? String(e.WithdrawReason) : "0",
+    e.LearnStartDate ?? "",
+    e.LearnActEndDate ?? "",
+    e.Times ?? "",
+    e.Weeks != null ? String(e.Weeks) : "",
+    e.CourseStatus ?? ""
+  ]);
+  const enrolTHead = `<thead><tr>${enrolHeader.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
+  const enrolTBody = enrolRows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  return pageShell("Students", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "students")}
+      <section class="content">
+        <header class="topbar"><div><p class="eyebrow">Learner Track</p><h1>Students</h1></div><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></header>
+        <section class="panel">
+          <div class="section-header"><p class="eyebrow">Student lookup</p></div>
+          <form method="GET" action="/students" class="my-class-search">
+            <label for="learnerId">Learner ID</label>
+            <input type="text" id="learnerId" name="learnerId" value="${escapeHtml(learnerId)}" class="lw-entry-input" placeholder="e.g. 43123" required>
+            <button type="submit" class="primary-action">Search student</button>
+          </form>
+          ${error ? `<div class="alert alert-error">${escapeHtml(error)}</div>` : ""}
+          ${learnerId && !error ? `
+            ${studentInfoHtml}
+            ${enrolments.length > 0 ? `
+              <div class="section-header" style="margin-top:1.5rem"><p class="eyebrow">${enrolments.length} enrolment${enrolments.length !== 1 ? "s" : ""}</p></div>
+              <div class="courses-table-wrap">
+                <table class="courses-table">
+                  ${enrolTHead}
+                  <tbody>${enrolTBody}</tbody>
+                </table>
+              </div>
+            ` : `<div class="alert alert-error">No enrolments found for this learner ID.</div>`}
           ` : ""}
         </section>
       </section>
@@ -4487,6 +4586,13 @@ function pageShell(title: string, body: string) {
     .pie-chart-wrap{display:flex;flex-direction:column;align-items:center;margin-bottom:1.5rem}
     .pie-chart{display:block}
     .pie-chart-label{margin-top:.5rem;font-size:.875rem;font-weight:500;color:var(--muted)}
+    .student-profile-card{display:flex;align-items:center;gap:1.25rem;background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem}
+    .student-avatar{width:56px;height:56px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;flex-shrink:0}
+    .student-profile-details{display:flex;flex-direction:column;gap:.25rem}
+    .student-name{margin:0;font-size:1.25rem;font-weight:700;color:var(--text)}
+    .student-meta{display:flex;gap:1.5rem;flex-wrap:wrap}
+    .student-meta-item{font-size:.9375rem;color:var(--muted)}
+    .student-meta-item strong{color:var(--text)}
     .lw-entry-hint{display:block;font-size:.875rem;color:var(--muted);margin-top:.25rem}
   </style></head><body>${body}</body></html>`;
 }
@@ -4500,6 +4606,7 @@ function renderSidebar(identity: Identity, active: string) {
       ${navLink("/iqa-forms", "IQA Forms", active === "iqa-forms")}
       ${navLink("/courses", "Our Courses", active === "courses")}
       ${navLink("/my-class", "My Class", active === "my-class")}
+      ${navLink("/students", "Students", active === "students")}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
   </aside>`;
