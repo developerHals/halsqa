@@ -701,11 +701,23 @@ function renderMyClassPage(identity: Identity, courseInstanceId: string, courseT
   const withdrawn = enrolments.filter(e => e.WithdrawReason != null && e.WithdrawReason !== 0).length;
   const active = total - withdrawn;
   const activeEnrolments = enrolments.filter(e => e.WithdrawReason == null || e.WithdrawReason === 0);
-  const avgAttendance = active > 0 && activeEnrolments.every(e => e.HasAttended != null)
-    ? Math.round((activeEnrolments.reduce((sum, e) => sum + (e.HasAttended ?? 0), 0) / active) * 100) + "%"
-    : active > 0 ? "N/A" : "N/A";
+  const avgAttendanceNum = active > 0 && activeEnrolments.every(e => e.HasAttended != null)
+    ? Math.round((activeEnrolments.reduce((sum, e) => sum + (e.HasAttended ?? 0), 0) / active) * 100)
+    : -1;
+  const avgAttendance = avgAttendanceNum >= 0 ? avgAttendanceNum + "%" : "N/A";
   const tableBody = rows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
   const tableHead = `<thead><tr>${header.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
+  const pieChart = avgAttendanceNum >= 0 ? `
+    <div class="pie-chart-wrap">
+      <svg viewBox="0 0 200 200" width="200" height="200" class="pie-chart">
+        <circle cx="100" cy="100" r="90" fill="none" stroke="#e2e8f0" stroke-width="20"/>
+        <circle cx="100" cy="100" r="90" fill="none" stroke="var(--primary)" stroke-width="20"
+          stroke-dasharray="${(avgAttendanceNum / 100 * 2 * Math.PI * 90).toFixed(1)} ${(2 * Math.PI * 90).toFixed(1)}"
+          stroke-dashoffset="0" stroke-linecap="round" transform="rotate(-90 100 100)"/>
+        <text x="100" y="108" text-anchor="middle" font-size="28" font-weight="700" fill="var(--text)">${avgAttendanceNum}%</text>
+      </svg>
+      <span class="pie-chart-label">Avg Attendance (active students)</span>
+    </div>` : "";
   return pageShell("My Class", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "my-class")}
@@ -728,6 +740,7 @@ function renderMyClassPage(identity: Identity, courseInstanceId: string, courseT
               <div class="stat-card"><span class="stat-label">Active Students</span><span class="stat-value">${active}</span></div>
               <div class="stat-card"><span class="stat-label">Avg Attendance (active)</span><span class="stat-value">${avgAttendance}</span></div>
             </div>
+            ${pieChart}
             <div class="courses-table-wrap">
               <table class="courses-table" id="enrolment-table">
                 ${tableHead}
@@ -4471,6 +4484,9 @@ function pageShell(title: string, body: string) {
     .stat-card{background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:1rem}
     .stat-label{display:block;font-size:.875rem;color:var(--muted);margin-bottom:.25rem}
     .stat-value{display:block;font-size:1.25rem;font-weight:700;color:var(--text)}
+    .pie-chart-wrap{display:flex;flex-direction:column;align-items:center;margin-bottom:1.5rem}
+    .pie-chart{display:block}
+    .pie-chart-label{margin-top:.5rem;font-size:.875rem;font-weight:500;color:var(--muted)}
     .lw-entry-hint{display:block;font-size:.875rem;color:var(--muted);margin-top:.25rem}
   </style></head><body>${body}</body></html>`;
 }
