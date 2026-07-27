@@ -927,8 +927,8 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
 
   const [usersResult, templatesResult, adminsResult] = await Promise.all([
     env.esol_marking_db
-      .prepare("SELECT id, email FROM users ORDER BY email")
-      .all<{ id: string; email: string }>(),
+      .prepare("SELECT id, email, role FROM users ORDER BY email")
+      .all<{ id: string; email: string; role: string }>(),
     env.esol_marking_db
       .prepare("SELECT id, title FROM lw_templates ORDER BY title")
       .all<{ id: string; title: string }>(),
@@ -942,7 +942,15 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
   const admins = adminsResult.results || [];
   const userById = new Map(allUsers.map((u) => [u.id, u]));
 
-  const teachers: { key: string; email: string }[] = allUsers.map((u) => ({ key: u.id, email: u.email }));
+  const roleOrder: Record<string, number> = { assessor: 0, iqa: 1, assessor_iqa: 2, admin: 3, superuser: 4, eqa: 5 };
+  const sortByRole = (a: { role?: string; email: string }, b: { role?: string; email: string }) => {
+    const orderA = roleOrder[a.role || ""] ?? 99;
+    const orderB = roleOrder[b.role || ""] ?? 99;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.email.localeCompare(b.email);
+  };
+
+  const teachers: { key: string; email: string; role?: string }[] = allUsers.map((u) => ({ key: u.id, email: u.email, role: u.role }));
   const teacherByKey = new Map(teachers.map((t) => [t.key, t]));
 
   const entriesResult = await env.esol_marking_db
@@ -971,13 +979,16 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
   const observations = new Map<string, Map<number, { id: string; date: string }[]>>();
   for (const row of entriesResult.results || []) {
     let key = row.allocated_assessor_id || "";
-    if (!key || !userById.has(key)) {
+    let user = userById.get(key);
+    if (!key || !user) {
       key = row.assessor_name || "";
+      user = key ? allUsers.find((u) => u.email.toLowerCase() === key.toLowerCase()) : undefined;
     }
     if (!key) continue;
     if (!teacherByKey.has(key)) {
-      const email = row.assessor_name || row.allocated_assessor_id || key;
-      const t = { key, email };
+      const email = user?.email || row.assessor_name || row.allocated_assessor_id || key;
+      const role = user?.role;
+      const t = { key, email, role };
       teachers.push(t);
       teacherByKey.set(key, t);
     }
@@ -990,7 +1001,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
     observations.set(key, teacherMap);
   }
 
-  teachers.sort((a, b) => a.email.localeCompare(b.email));
+  teachers.sort(sortByRole);
   const displayTeachers = teacherId ? teachers.filter((t) => t.key === teacherId) : teachers;
 
   const trackerTable = reportType === "all" || reportType === "learning-walk-tracker"
