@@ -231,6 +231,7 @@ type LWEntryRecord = {
   created_at: string;
   iqa_completed_at: string | null;
   assessor_responded_at: string | null;
+  academic_year: number;
 };
 
 type LWComment = {
@@ -306,6 +307,7 @@ type IQAFEntryRecord = {
   assessor_submitted_at: string | null;
   iqa_reviewed_at: string | null;
   eqa_signed_at: string | null;
+  academic_year: number;
 };
 
 type IQAFComment = {
@@ -417,6 +419,12 @@ const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 const oauthStateCookie = "hlquality_oauth_state";
 const sessionCookie = "hlquality_session";
 const roles: Role[] = ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa"];
+
+function getCurrentAcademicYear(date = new Date()): number {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  return month >= 9 ? year : year - 1;
+}
 const stages: Stage[] = ["assess", "iqa", "eqa"];
 
 export default {
@@ -442,7 +450,7 @@ export default {
     if (url.pathname === "/users") return renderUsersPage(request, env, identity);
 
     if (url.pathname === "/courses") return renderCoursesPageHandler(request, env, identity);
-    if (url.pathname === "/api/courses/learnertrack" && request.method === "GET") return fetchLearnerTrackCourses(env, identity);
+    if (url.pathname === "/api/courses/learnertrack" && request.method === "GET") return fetchLearnerTrackCourses(request, env, identity);
     if (url.pathname === "/my-class") return renderMyClassPageHandler(request, env, identity);
     if (url.pathname === "/api/enrolment" && request.method === "GET") return fetchLearnerTrackEnrolment(request, env, identity);
     if (url.pathname === "/students") return renderStudentsPageHandler(request, env, identity);
@@ -561,13 +569,16 @@ async function renderUsersPage(request: Request, env: Env, identity: Identity): 
   return htmlResponse(renderUsers(identity, users.results, importResult));
 }
 
-async function fetchLearnerTrackCourses(env: Env, identity: Identity): Promise<Response> {
+async function fetchLearnerTrackCourses(request: Request, env: Env, identity: Identity): Promise<Response> {
   const apiKey = env["LearnerTrack.API"];
   if (!apiKey) return json({ error: "LearnerTrack API key not configured" }, 500);
+  const url = new URL(request.url);
+  const academicYear = url.searchParams.get("academicYear")?.trim();
   const username = "GiuseppeA";
-  const url = `https://api.learnertrack.net/api/CourseInstance?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}`;
+  let apiUrl = `https://api.learnertrack.net/api/CourseInstance?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}`;
+  if (academicYear) apiUrl += `&academicYear=${encodeURIComponent(academicYear)}`;
   try {
-    const r = await fetch(url, { headers: { "Accept": "application/json" } });
+    const r = await fetch(apiUrl, { headers: { "Accept": "application/json" } });
     if (!r.ok) return json({ error: `LearnerTrack API returned ${r.status}` }, r.status);
     const data = await r.json() as LearnerTrackCourse[] | { error?: string };
     if (Array.isArray(data)) return json(data);
@@ -578,7 +589,7 @@ async function fetchLearnerTrackCourses(env: Env, identity: Identity): Promise<R
 }
 
 async function renderCoursesPageHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
-  const r = await fetchLearnerTrackCourses(env, identity);
+  const r = await fetchLearnerTrackCourses(request, env, identity);
   const courses = await r.json() as { error?: string } | LearnerTrackCourse[];
   if ("error" in courses && courses.error) return htmlResponse(renderCoursesPage(identity, [], String(courses.error)), 500);
   return htmlResponse(renderCoursesPage(identity, Array.isArray(courses) ? courses : [], null));
@@ -1216,7 +1227,7 @@ async function getLWEntries(env: Env, user: UserRecord, search: string): Promise
   const like = `%${search}%`;
   const isPrivileged = user.role === "admin" || user.role === "superuser";
   const query = `SELECT e.id, e.template_id, t.title AS template_title,
-    e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
+    e.academic_year, e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
     e.status, e.allocated_iqa_id, e.allocated_assessor_id,
     iqa.email AS iqa_email, assr.email AS assessor_email,
     e.created_by, e.created_at, e.iqa_completed_at, e.assessor_responded_at
@@ -1234,7 +1245,7 @@ async function getLWEntries(env: Env, user: UserRecord, search: string): Promise
 async function getLWEntry(env: Env, user: UserRecord, id: string): Promise<LWEntryRecord | null> {
   const isPrivileged = user.role === "admin" || user.role === "superuser";
   const r = await env.esol_marking_db.prepare(`SELECT e.id, e.template_id, t.title AS template_title,
-    e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
+    e.academic_year, e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
     e.status, e.allocated_iqa_id, e.allocated_assessor_id,
     iqa.email AS iqa_email, assr.email AS assessor_email,
     e.created_by, e.created_at, e.iqa_completed_at, e.assessor_responded_at
@@ -1385,7 +1396,7 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
               return `<article class="list-card${isOverdue ? " lw-overdue-card" : ""}">
                 <a href="/learning-walks/entries/${e.id}" style="display:block;flex:1">
                   <strong>${escapeHtml(e.template_title)}</strong>
-                  <span>Course: ${escapeHtml(e.course_name)} (${escapeHtml(e.course_id)})</span>
+                  <span>Academic Year: ${escapeHtml(String(e.academic_year))} · Course: ${escapeHtml(e.course_name)} (${escapeHtml(e.course_id)})</span>
                   <span>Assessor: ${escapeHtml(e.assessor_name)} · IQA: ${escapeHtml(e.iqa_name)}</span>
                   <span>Planned: ${escapeHtml(e.planned_date)}${e.due_date ? ` · Due: ${escapeHtml(e.due_date)}` : ""}</span>
                 </a>
@@ -2098,6 +2109,13 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
           <span class="lw-entry-hint">Loading courses from Learner Track...</span>
         </div>
         <div class="lw-entry-field">
+          <label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label>
+          <input type="number" id="academic_year" name="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY">
+        </div>
+        <div class="lw-entry-field" style="display:flex;align-items:flex-end">
+          <button type="button" id="refresh_courses" class="secondary-action">Refresh courses</button>
+        </div>
+        <div class="lw-entry-field">
           <label class="lw-entry-label" for="course_id">Course ID *</label>
           <input type="text" id="course_id" name="course_id" class="lw-entry-input" required placeholder="e.g., ESOL-2024-001">
         </div>
@@ -2303,11 +2321,11 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
     </main>
 
     <script>
-      (async function loadCourses(){
+      (async function loadCourses(year){
         const sel = document.getElementById('course_picker');
         const hint = sel.parentElement.querySelector('.lw-entry-hint');
         try {
-          const r = await fetch('/api/courses/learnertrack');
+          const r = await fetch('/api/courses/learnertrack?academicYear=' + encodeURIComponent(year));
           const data = await r.json();
           if (!Array.isArray(data)) throw new Error(data.error || 'Unexpected response');
           sel.innerHTML = '<option value="">-- choose a course or type manually below --</option>';
@@ -2319,7 +2337,7 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
             opt.textContent = (title ? title + ' ' : '') + (code ? '(' + code + ')' : '');
             sel.appendChild(opt);
           });
-          if (hint) hint.textContent = data.length + ' courses loaded from Learner Track.';
+          if (hint) hint.textContent = data.length + ' courses loaded for academic year ' + year + '.';
           sel.addEventListener('change', () => {
             if (!sel.value) return;
             const v = JSON.parse(sel.value);
@@ -2330,12 +2348,22 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
           if (hint) hint.textContent = 'Could not load courses. You can still type the course details manually.';
           console.error('Course load error:', err);
         }
-      })();
+      })(document.getElementById('academic_year').value);
+
+      document.getElementById('refresh_courses').addEventListener('click', () => {
+        const year = document.getElementById('academic_year').value;
+        if (!year || year.length !== 4) { alert('Please enter a valid YYYY academic year'); return; }
+        const sel = document.getElementById('course_picker');
+        const hint = sel.parentElement.querySelector('.lw-entry-hint');
+        if (hint) hint.textContent = 'Loading courses for ' + year + '...';
+        loadCourses(year);
+      });
 
       async function submitEntry(e) {
         e.preventDefault();
 
         const templateId = document.getElementById('template_id').value;
+        const academicYear = document.getElementById('academic_year').value;
         const courseId = document.getElementById('course_id').value;
         const courseName = document.getElementById('course_name').value;
         const assessorId = document.getElementById('assessor_name').value;
@@ -2393,6 +2421,7 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
 
         const payload = {
           template_id: templateId,
+          academic_year: parseInt(academicYear, 10),
           course_id: courseId,
           course_name: courseName,
           assessor_name: assessorName,
@@ -2721,6 +2750,7 @@ async function saveLWEntry(request: Request, env: Env, identity: Identity): Prom
   try {
     const body = await request.json() as {
       template_id: string;
+      academic_year: number;
       course_id: string;
       course_name: string;
       assessor_name: string;
@@ -2738,13 +2768,14 @@ async function saveLWEntry(request: Request, env: Env, identity: Identity): Prom
     // Insert entry
     await env.esol_marking_db.prepare(
       `INSERT INTO lw_entries (
-        id, template_id, course_id, course_name, assessor_name, iqa_name,
+        id, template_id, academic_year, course_id, course_name, assessor_name, iqa_name,
         planned_date, due_date, allocated_iqa_id, allocated_assessor_id,
         status, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       entryId,
       body.template_id,
+      body.academic_year ?? getCurrentAcademicYear(),
       body.course_id,
       body.course_name,
       body.assessor_name,
@@ -3415,6 +3446,7 @@ async function downloadLWEntry(request: Request, env: Env, identity: Identity, e
       ["Template", entry.template_title],
       ["Status", statusLabels[entry.status] || entry.status],
       ["Course ID", entry.course_id],
+      ["Academic Year", String(entry.academic_year)],
       ["Course Name", entry.course_name],
       ["Assessor", entry.assessor_name],
       ["IQA", entry.iqa_name],
@@ -3458,6 +3490,7 @@ async function downloadLWEntry(request: Request, env: Env, identity: Identity, e
   const metaRows = [
     ["Template", entry.template_title],
     ["Status", statusLabels[entry.status] || entry.status],
+    ["Academic Year", String(entry.academic_year)],
     ["Course", `${entry.course_name} (${entry.course_id})`],
     ["Assessor", entry.assessor_name],
     ["IQA", entry.iqa_name],
@@ -3590,7 +3623,7 @@ async function getIQAFEntries(env: Env, user: UserRecord, search: string): Promi
   const like = `%${search}%`;
   const isPrivileged = user.role === "admin" || user.role === "superuser";
   const r = await env.esol_marking_db.prepare(`SELECT e.id, e.template_id, t.title AS template_title,
-    e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
+    e.academic_year, e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
     e.status, e.allocated_assessor_id, e.allocated_iqa_id, e.allocated_eqa_id,
     assr.email AS assessor_email, iqa.email AS iqa_email, eqa.email AS eqa_email,
     e.created_by, e.created_at, e.assessor_submitted_at, e.iqa_reviewed_at, e.eqa_signed_at
@@ -3608,7 +3641,7 @@ async function getIQAFEntries(env: Env, user: UserRecord, search: string): Promi
 async function getIQAFEntry(env: Env, user: UserRecord, id: string): Promise<IQAFEntryRecord | null> {
   const isPrivileged = user.role === "admin" || user.role === "superuser";
   return env.esol_marking_db.prepare(`SELECT e.id, e.template_id, t.title AS template_title,
-    e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
+    e.academic_year, e.course_id, e.course_name, e.assessor_name, e.iqa_name, e.planned_date, e.due_date,
     e.status, e.allocated_assessor_id, e.allocated_iqa_id, e.allocated_eqa_id,
     assr.email AS assessor_email, iqa.email AS iqa_email, eqa.email AS eqa_email,
     e.created_by, e.created_at, e.assessor_submitted_at, e.iqa_reviewed_at, e.eqa_signed_at
@@ -3702,16 +3735,16 @@ async function renderIQAFEntryView(request: Request, env: Env, identity: Identit
 async function saveIQAFEntry(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!canCreateForms(identity.user!)) return json({ error: "Forbidden" }, 403);
   try {
-    const body = await request.json() as { template_id: string; course_id: string; course_name: string; assessor_id: string; iqa_id: string; eqa_id?: string; planned_date: string; due_date?: string; answers: Record<string, string> };
-    const { template_id, course_id, course_name, assessor_id, iqa_id, eqa_id, planned_date, due_date, answers } = body;
-    if (!template_id || !course_id || !course_name || !assessor_id || !iqa_id || !planned_date) return json({ error: "Missing required fields" }, 400);
+    const body = await request.json() as { template_id: string; academic_year: number; course_id: string; course_name: string; assessor_id: string; iqa_id: string; eqa_id?: string; planned_date: string; due_date?: string; answers: Record<string, string> };
+    const { template_id, academic_year, course_id, course_name, assessor_id, iqa_id, eqa_id, planned_date, due_date, answers } = body;
+    if (!template_id || !academic_year || !course_id || !course_name || !assessor_id || !iqa_id || !planned_date) return json({ error: "Missing required fields" }, 400);
     const [assessorUser, iqaUser] = await Promise.all([
       env.esol_marking_db.prepare("SELECT id, email FROM users WHERE id = ?").bind(assessor_id).first<{ id: string; email: string }>(),
       env.esol_marking_db.prepare("SELECT id, email FROM users WHERE id = ?").bind(iqa_id).first<{ id: string; email: string }>(),
     ]);
     if (!assessorUser || !iqaUser) return json({ error: "Invalid assessor or IQA" }, 400);
     const entryId = crypto.randomUUID();
-    await env.esol_marking_db.prepare("INSERT INTO iqaf_entries (id, template_id, course_id, course_name, assessor_name, iqa_name, planned_date, due_date, allocated_assessor_id, allocated_iqa_id, allocated_eqa_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(entryId, template_id, course_id, course_name, assessorUser.email, iqaUser.email, planned_date, due_date || null, assessor_id, iqa_id, eqa_id || null, identity.user!.id).run();
+    await env.esol_marking_db.prepare("INSERT INTO iqaf_entries (id, template_id, academic_year, course_id, course_name, assessor_name, iqa_name, planned_date, due_date, allocated_assessor_id, allocated_iqa_id, allocated_eqa_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(entryId, template_id, academic_year ?? getCurrentAcademicYear(), course_id, course_name, assessorUser.email, iqaUser.email, planned_date, due_date || null, assessor_id, iqa_id, eqa_id || null, identity.user!.id).run();
     if (answers && typeof answers === "object") {
       for (const [qId, ans] of Object.entries(answers)) {
         if (ans !== null && ans !== undefined && String(ans).trim() !== "") {
@@ -3831,7 +3864,7 @@ async function downloadIQAFEntry(request: Request, env: Env, identity: Identity,
   if (!template) return new Response("Not found", { status: 404 });
   const answerMap = Object.fromEntries(answers.map(a => [a.question_id, a.answer ?? ""]));
   if (format === "csv") {
-    const rows: string[][] = [["Question", "Answer"], ["Course ID", entry.course_id], ["Course Name", entry.course_name], ["Assessor", entry.assessor_name], ["IQA", entry.iqa_name], ["Planned Date", entry.planned_date], ["Status", entry.status]];
+    const rows: string[][] = [["Question", "Answer"], ["Course ID", entry.course_id], ["Academic Year", String(entry.academic_year)], ["Course Name", entry.course_name], ["Assessor", entry.assessor_name], ["IQA", entry.iqa_name], ["Planned Date", entry.planned_date], ["Status", entry.status]];
     for (const q of template.questions) rows.push([q.question_text, answerMap[q.id] ?? ""]);
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const slug = entry.template_title.replace(/[^a-z0-9]/gi, "-").toLowerCase();
@@ -3893,7 +3926,7 @@ function renderIQAFDashboardPage(identity: Identity, entries: IQAFEntryRecord[],
             ${entries.length ? entries.map(e => {
               const isOverdue = e.due_date && e.due_date < today && e.status !== "complete";
               const delBtn = isSuperuser(user) ? `<button type="button" class="lw-entry-delete-btn" title="Delete" onclick="iqafDel('${e.id}','${escapeHtml(e.template_title).replace(/'/g,"\\'")}')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>` : "";
-              return `<article class="list-card${isOverdue ? " lw-overdue-card" : ""}"><a href="/iqa-forms/entries/${e.id}" style="display:block;flex:1"><strong>${escapeHtml(e.template_title)}</strong><span>Course: ${escapeHtml(e.course_name)} (${escapeHtml(e.course_id)})</span><span>Assessor: ${escapeHtml(e.assessor_name)} · IQA: ${escapeHtml(e.iqa_name)}</span><span>Planned: ${escapeHtml(e.planned_date)}${e.due_date ? ` · Due: ${escapeHtml(e.due_date)}` : ""}</span></a><div style="display:flex;align-items:center;gap:0.5rem">${renderIQAFStatusBadge(e.status, e.due_date)}<button type="button" class="lw-entry-download-btn" title="Download" onclick="iqafDlOpen('${e.id}','${escapeHtml(e.template_title).replace(/'/g,"\\'")}')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>${delBtn}</div></article>`;
+              return `<article class="list-card${isOverdue ? " lw-overdue-card" : ""}"><a href="/iqa-forms/entries/${e.id}" style="display:block;flex:1"><strong>${escapeHtml(e.template_title)}</strong><span>Academic Year: ${escapeHtml(String(e.academic_year))} · Course: ${escapeHtml(e.course_name)} (${escapeHtml(e.course_id)})</span><span>Assessor: ${escapeHtml(e.assessor_name)} · IQA: ${escapeHtml(e.iqa_name)}</span><span>Planned: ${escapeHtml(e.planned_date)}${e.due_date ? ` · Due: ${escapeHtml(e.due_date)}` : ""}</span></a><div style="display:flex;align-items:center;gap:0.5rem">${renderIQAFStatusBadge(e.status, e.due_date)}<button type="button" class="lw-entry-download-btn" title="Download" onclick="iqafDlOpen('${e.id}','${escapeHtml(e.template_title).replace(/'/g,"\\'")}')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>${delBtn}</div></article>`;
             }).join("") : renderEmpty("No IQA forms found")}
           </div>
         </section>
@@ -4033,6 +4066,8 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
       <div class="lwfb-popup-content">
         <div class="lw-entry-section"><h3 class="lw-entry-section-title">Course Information</h3><div class="lw-entry-grid">
           <div class="lw-entry-field" style="grid-column:1/-1"><label class="lw-entry-label" for="course_picker">Select from Learner Track</label><select id="course_picker" class="lw-entry-select"><option value="">-- choose a course or type manually below --</option></select><span class="lw-entry-hint">Loading courses from Learner Track...</span></div>
+          <div class="lw-entry-field"><label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label><input type="number" id="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY"></div>
+          <div class="lw-entry-field" style="display:flex;align-items:flex-end"><button type="button" id="refresh_courses" class="lwfb-secondary-btn">Refresh courses</button></div>
           <div class="lw-entry-field"><label class="lw-entry-label" for="cid">Course ID *</label><input type="text" id="cid" class="lw-entry-input" required></div>
           <div class="lw-entry-field"><label class="lw-entry-label" for="cname">Course Name *</label><input type="text" id="cname" class="lw-entry-input" required></div>
         </div></div>
@@ -4048,11 +4083,11 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
       <div class="lwfb-popup-footer"><button type="button" class="lwfb-secondary-btn" onclick="location.href='/iqa-forms'">Cancel</button><button type="button" class="lwfb-primary-btn" onclick="subEntry()">Create IQA Form Entry</button></div>
     </div></main>
     <script>
-      (async function loadCourses(){
+      (async function loadCourses(year){
         const sel = document.getElementById('course_picker');
         const hint = sel.parentElement.querySelector('.lw-entry-hint');
         try {
-          const r = await fetch('/api/courses/learnertrack');
+          const r = await fetch('/api/courses/learnertrack?academicYear=' + encodeURIComponent(year));
           const data = await r.json();
           if (!Array.isArray(data)) throw new Error(data.error || 'Unexpected response');
           sel.innerHTML = '<option value="">-- choose a course or type manually below --</option>';
@@ -4064,7 +4099,7 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
             opt.textContent = (title ? title + ' ' : '') + (code ? '(' + code + ')' : '');
             sel.appendChild(opt);
           });
-          if (hint) hint.textContent = data.length + ' courses loaded from Learner Track.';
+          if (hint) hint.textContent = data.length + ' courses loaded for academic year ' + year + '.';
           sel.addEventListener('change', () => {
             if (!sel.value) return;
             const v = JSON.parse(sel.value);
@@ -4075,13 +4110,22 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
           if (hint) hint.textContent = 'Could not load courses. You can still type the course details manually.';
           console.error('Course load error:', err);
         }
-      })();
+      })(document.getElementById('academic_year').value);
+
+      document.getElementById('refresh_courses').addEventListener('click', () => {
+        const year = document.getElementById('academic_year').value;
+        if (!year || year.length !== 4) { alert('Please enter a valid YYYY academic year'); return; }
+        const sel = document.getElementById('course_picker');
+        const hint = sel.parentElement.querySelector('.lw-entry-hint');
+        if (hint) hint.textContent = 'Loading courses for ' + year + '...';
+        loadCourses(year);
+      });
 
       async function subEntry(){
-        const cid=document.getElementById('cid').value.trim(),cname=document.getElementById('cname').value.trim(),aid=document.getElementById('aid').value,iid=document.getElementById('iid').value,eid=document.getElementById('eid').value||null,pd=document.getElementById('pd').value,dd=document.getElementById('dd').value||null;
-        if(!cid||!cname||!aid||!iid||!pd){alert('Please fill in all required fields.');return;}
+        const ay=document.getElementById('academic_year').value,cid=document.getElementById('cid').value.trim(),cname=document.getElementById('cname').value.trim(),aid=document.getElementById('aid').value,iid=document.getElementById('iid').value,eid=document.getElementById('eid').value||null,pd=document.getElementById('pd').value,dd=document.getElementById('dd').value||null;
+        if(!ay||!cid||!cname||!aid||!iid||!pd){alert('Please fill in all required fields.');return;}
         const ans={};document.querySelectorAll('[name^="answer_"]').forEach(el=>{const k=el.name.replace('answer_','');if(el.type==='radio'){if(el.checked)ans[k]=el.value;}else if(el.tagName==='SELECT'){if(el.value)ans[k]=el.value;}else{if(el.value.trim())ans[k]=el.value.trim();}});
-        try{const r=await fetch('/api/iqaf/entries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template_id:'${template.id}',course_id:cid,course_name:cname,assessor_id:aid,iqa_id:iid,eqa_id:eid,planned_date:pd,due_date:dd,answers:ans})});const d=await r.json();if(d.success)location.href='/iqa-forms/entries/'+d.id;else alert('Error: '+(d.error||'Failed'));}catch(e){alert('Network error.');}
+        try{const r=await fetch('/api/iqaf/entries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template_id:'${template.id}',academic_year:parseInt(ay,10),course_id:cid,course_name:cname,assessor_id:aid,iqa_id:iid,eqa_id:eid,planned_date:pd,due_date:dd,answers:ans})});const d=await r.json();if(d.success)location.href='/iqa-forms/entries/'+d.id;else alert('Error: '+(d.error||'Failed'));}catch(e){alert('Network error.');}
       }
     </script>
   `);
