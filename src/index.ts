@@ -1046,7 +1046,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                       });
                     })
                     .join("");
-                  return `<tr><td class="sticky-col teacher-name${highlight}">${escapeHtml(t.email)}</td>${cells}</tr>`;
+                  return `<tr><td class="sticky-col teacher-name${highlight}">${escapeHtml(t.email || t.key || "Unknown")}</td>${cells}</tr>`;
                 })
                 .join("")}
             </tbody>
@@ -4966,8 +4966,8 @@ function pageShell(title: string, body: string) {
     .reports-table{border-collapse:collapse;width:100%;font-size:.875rem}
     .reports-table th,.reports-table td{padding:.5rem .75rem;border:1px solid #e2e8f0;text-align:center;white-space:nowrap}
     .reports-table th{background:#f8fafc;color:var(--muted);font-weight:600}
-    .reports-table .sticky-col{position:sticky;left:0;background:#fff;z-index:2;text-align:left;min-width:220px;box-shadow:2px 0 4px rgba(0,0,0,.05)}
-    .reports-table thead .sticky-col{background:#f8fafc;z-index:3}
+    .reports-table .sticky-col{text-align:left;min-width:220px;background:#fff}
+    .reports-table thead .sticky-col{background:#f8fafc}
     .reports-table .year-header{background:#eef2ff;color:var(--text);font-weight:700}
     .reports-table .empty-cell{color:#cbd5e1}
     .reports-table td a{color:var(--primary);text-decoration:underline}
