@@ -425,6 +425,9 @@ function getCurrentAcademicYear(date = new Date()): number {
   const month = date.getMonth() + 1;
   return month >= 9 ? year : year - 1;
 }
+function canViewReports(user: UserRecord): boolean {
+  return user.role === "admin" || user.role === "superuser";
+}
 const stages: Stage[] = ["assess", "iqa", "eqa"];
 
 export default {
@@ -455,6 +458,9 @@ export default {
     if (url.pathname === "/api/enrolment" && request.method === "GET") return fetchLearnerTrackEnrolment(request, env, identity);
     if (url.pathname === "/students") return renderStudentsPageHandler(request, env, identity);
     if (url.pathname === "/api/enrolment/student" && request.method === "GET") return fetchStudentEnrolments(request, env, identity);
+
+    if (url.pathname === "/reports" && canViewReports(identity.user!)) return renderReportsPage(request, env, identity);
+    if (url.pathname === "/quality-calendar" && canViewReports(identity.user!)) return renderQualityCalendarPage(identity);
 
     if (url.pathname === "/api/me") return json(identity);
     if (url.pathname === "/api/users" && request.method === "POST") return createUser(request, env, identity);
@@ -862,6 +868,226 @@ function renderStudentsPage(identity: Identity, learnerId: string, enrolments: L
       </section>
     </main>
   `);
+}
+
+function buildReportUrl(url: URL, changes: Record<string, string>): string {
+  const u = new URL(url);
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === "") u.searchParams.delete(key);
+    else u.searchParams.set(key, value);
+  }
+  return u.pathname + "?" + u.searchParams.toString();
+}
+
+function formatReportDate(d: string): string {
+  if (!d) return "";
+  const [y, m, day] = d.split("-");
+  if (!y || !m || !day) return d;
+  return `${day}/${m}/${y}`;
+}
+
+function renderQualityCalendarPage(identity: Identity): Response {
+  return htmlResponse(
+    pageShell("Quality Calendar", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "quality-calendar")}
+      <section class="content">
+        ${renderTopbar(identity, "Quality Calendar")}
+        <section class="panel" style="background:#f8fafc">
+          <div class="section-header"><p class="eyebrow">Coming soon</p><h2>Quality Calendar</h2></div>
+          <p class="hint">This page is under construction and will be available to administrators.</p>
+        </section>
+      </section>
+    </main>
+  `)
+  );
+}
+
+async function renderReportsPage(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const user = identity.user!;
+  if (!canViewReports(user)) {
+    return Response.redirect(new URL(request.url).origin + "/learning-walks", 302);
+  }
+
+  const url = new URL(request.url);
+  const reportType = url.searchParams.get("type") || "all";
+  const anchorYear = parseInt(url.searchParams.get("year") || String(getCurrentAcademicYear()), 10);
+  const templateId = url.searchParams.get("template") || "";
+  const teacherId = url.searchParams.get("teacher") || "";
+  const adminId = url.searchParams.get("admin") || "";
+  const subject = url.searchParams.get("subject") || "";
+  const qualification = url.searchParams.get("qualification") || "";
+  const dateFrom = url.searchParams.get("date_from") || "";
+  const dateTo = url.searchParams.get("date_to") || "";
+
+  const [teachersResult, templatesResult, adminsResult] = await Promise.all([
+    env.esol_marking_db
+      .prepare("SELECT id, email FROM users WHERE role IN ('assessor','assessor_iqa') ORDER BY email")
+      .all<{ id: string; email: string }>(),
+    env.esol_marking_db
+      .prepare("SELECT id, title FROM lw_templates ORDER BY title")
+      .all<{ id: string; title: string }>(),
+    env.esol_marking_db
+      .prepare("SELECT id, email FROM users WHERE role IN ('iqa','assessor_iqa','admin','superuser') ORDER BY email")
+      .all<{ id: string; email: string }>(),
+  ]);
+
+  const teachers = teachersResult.results || [];
+  const templates = templatesResult.results || [];
+  const admins = adminsResult.results || [];
+
+  const displayYears = [anchorYear, anchorYear - 1, anchorYear - 2];
+  const minYear = Math.min(...displayYears);
+  const maxYear = Math.max(...displayYears);
+  const currentYear = getCurrentAcademicYear();
+
+  const entriesResult = await env.esol_marking_db
+    .prepare(
+      `SELECT e.id, e.template_id, t.title AS template_title, e.allocated_assessor_id, e.academic_year, e.planned_date, e.course_name, e.allocated_iqa_id
+       FROM lw_entries e
+       JOIN lw_templates t ON t.id = e.template_id
+       WHERE (? = '' OR e.template_id = ?)
+         AND (? = '' OR e.allocated_assessor_id = ?)
+         AND (? = '' OR e.allocated_iqa_id = ?)
+         AND (? = '' OR e.planned_date >= ?)
+         AND (? = '' OR e.planned_date <= ?)
+         AND e.academic_year BETWEEN ? AND ?
+       ORDER BY e.allocated_assessor_id, e.academic_year, e.planned_date ASC`
+    )
+    .bind(
+      templateId, templateId,
+      teacherId, teacherId,
+      adminId, adminId,
+      dateFrom, dateFrom,
+      dateTo, dateTo,
+      minYear, maxYear
+    )
+    .all<{ id: string; allocated_assessor_id: string; academic_year: number; planned_date: string }>();
+
+  const observations = new Map<string, Map<number, { id: string; date: string }[]>>();
+  for (const row of entriesResult.results || []) {
+    const teacherMap = observations.get(row.allocated_assessor_id) || new Map<number, { id: string; date: string }[]>();
+    const yearList = teacherMap.get(row.academic_year) || [];
+    if (yearList.length < 6) {
+      yearList.push({ id: row.id, date: row.planned_date });
+      teacherMap.set(row.academic_year, yearList);
+    }
+    observations.set(row.allocated_assessor_id, teacherMap);
+  }
+
+  const displayTeachers = teacherId ? teachers.filter((t) => t.id === teacherId) : teachers;
+
+  const trackerTable = reportType === "all" || reportType === "learning-walk-tracker"
+    ? `
+      <section class="panel reports-panel">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Tracker</p>
+            <h2>Learning Walk Tracker</h2>
+          </div>
+          <div class="year-nav">
+            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear - 1) })}">← Previous year</a>
+            <span class="year-label">${anchorYear}</span>
+            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear + 1) })}">Next year →</a>
+          </div>
+        </div>
+        <div class="reports-table-wrap">
+          <table class="reports-table">
+            <thead>
+              <tr>
+                <th class="sticky-col" rowspan="2">Teacher</th>
+                ${displayYears.map((y) => `<th colspan="6" class="year-header">${y}${y === currentYear ? " (current)" : ""}</th>`).join("")}
+              </tr>
+              <tr>
+                ${displayYears.map(() => Array.from({ length: 6 }, (_, i) => `<th>Obs ${i + 1}</th>`).join("")).join("")}
+              </tr>
+            </thead>
+            <tbody>
+              ${displayTeachers
+                .map((t) => {
+                  const teacherObs = observations.get(t.id) || new Map<number, { id: string; date: string }[]>();
+                  const hasCurrent = (teacherObs.get(currentYear)?.length || 0) > 0;
+                  const highlight = !hasCurrent ? " brand-highlight" : "";
+                  const cells = displayYears
+                    .flatMap((y) => {
+                      const list = teacherObs.get(y) || [];
+                      return Array.from({ length: 6 }, (_, i) => {
+                        const obs = list[i];
+                        return obs
+                          ? `<td><a href="/learning-walks/entries/${obs.id}">${formatReportDate(obs.date)}</a></td>`
+                          : `<td class="empty-cell">—</td>`;
+                      });
+                    })
+                    .join("");
+                  return `<tr><td class="sticky-col teacher-name${highlight}">${escapeHtml(t.email)}</td>${cells}</tr>`;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+        ${displayTeachers.length === 0 ? `<p class="hint">No teachers found.</p>` : ""}
+      </section>`
+    : `<section class="panel reports-panel"><p class="hint">Select a report type to begin.</p></section>`;
+
+  const page = pageShell("Reports", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "reports")}
+      <section class="content">
+        ${renderTopbar(identity, "Reports")}
+        <section class="panel" style="background:#f8fafc">
+          <div class="section-header"><p class="eyebrow">Reports</p><h2>Quality Reports</h2></div>
+          <form method="GET" action="/reports" class="reports-filters">
+            <div class="filter-row">
+              <label>Report
+                <select name="type" onchange="this.form.submit()">
+                  <option value="all" ${reportType === "all" ? "selected" : ""}>All</option>
+                  <option value="learning-walk-tracker" ${reportType === "learning-walk-tracker" ? "selected" : ""}>Learning Walk Tracker</option>
+                </select>
+              </label>
+              <label>Academic Year
+                <input type="number" name="year" value="${anchorYear}" min="2000" max="2100" placeholder="YYYY">
+              </label>
+              <label>Template
+                <select name="template">
+                  <option value="">All templates</option>
+                  ${templates.map((t) => `<option value="${t.id}" ${templateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")}
+                </select>
+              </label>
+              <label>Teacher
+                <select name="teacher">
+                  <option value="">All teachers</option>
+                  ${teachers.map((t) => `<option value="${t.id}" ${teacherId === t.id ? "selected" : ""}>${escapeHtml(t.email)}</option>`).join("")}
+                </select>
+              </label>
+              <label>Admin / IQA
+                <select name="admin">
+                  <option value="">All</option>
+                  ${admins.map((u) => `<option value="${u.id}" ${adminId === u.id ? "selected" : ""}>${escapeHtml(u.email)}</option>`).join("")}
+                </select>
+              </label>
+              <label>Subject
+                <input type="text" name="subject" value="${escapeHtml(subject)}" placeholder="Filter by subject">
+              </label>
+              <label>Qualification
+                <input type="text" name="qualification" value="${escapeHtml(qualification)}" placeholder="Filter by qualification">
+              </label>
+              <label>From
+                <input type="date" name="date_from" value="${escapeHtml(dateFrom)}">
+              </label>
+              <label>To
+                <input type="date" name="date_to" value="${escapeHtml(dateTo)}">
+              </label>
+              <div class="filter-actions"><button type="submit" class="small-action">Apply</button></div>
+            </div>
+            ${subject || qualification ? `<p class="hint">Subject and qualification filters are placeholders until those fields are available.</p>` : ""}
+          </form>
+        </section>
+        ${trackerTable}
+      </section>
+    </main>
+  `);
+
+  return htmlResponse(page);
 }
 
 async function requireIdentity(request: Request, env: Env): Promise<Identity | null> {
@@ -4638,6 +4864,26 @@ function pageShell(title: string, body: string) {
     .student-meta-item{font-size:.9375rem;color:var(--muted)}
     .student-meta-item strong{color:var(--text)}
     .lw-entry-hint{display:block;font-size:.875rem;color:var(--muted);margin-top:.25rem}
+    .reports-filters{margin-top:.5rem}
+    .filter-row{display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-end}
+    .filter-row label{display:flex;flex-direction:column;gap:.35rem;font-size:.8125rem;font-weight:600;color:var(--text)}
+    .filter-row input,.filter-row select{min-width:140px;width:auto;padding:.5rem .75rem;font-size:.875rem;border-radius:6px}
+    .filter-actions{display:flex;align-items:flex-end}
+    .year-nav{display:flex;align-items:center;gap:.75rem}
+    .year-label{font-weight:700;font-size:1.1rem;color:var(--text);min-width:4rem;text-align:center}
+    .reports-panel{overflow:hidden}
+    .reports-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px}
+    .reports-table{border-collapse:collapse;width:100%;font-size:.875rem}
+    .reports-table th,.reports-table td{padding:.5rem .75rem;border:1px solid #e2e8f0;text-align:center;white-space:nowrap}
+    .reports-table th{background:#f8fafc;color:var(--muted);font-weight:600}
+    .reports-table .sticky-col{position:sticky;left:0;background:#fff;z-index:2;text-align:left;min-width:220px;box-shadow:2px 0 4px rgba(0,0,0,.05)}
+    .reports-table thead .sticky-col{background:#f8fafc;z-index:3}
+    .reports-table .year-header{background:#eef2ff;color:var(--text);font-weight:700}
+    .reports-table .empty-cell{color:#cbd5e1}
+    .reports-table td a{color:var(--primary);text-decoration:underline}
+    .teacher-name{font-weight:600}
+    .brand-highlight{background:var(--primary);color:#fff}
+    .brand-highlight a{color:#fff}
   </style></head><body>${body}</body></html>`;
 }
 
@@ -4651,6 +4897,7 @@ function renderSidebar(identity: Identity, active: string) {
       ${navLink("/courses", "Our Courses", active === "courses")}
       ${navLink("/my-class", "My Class", active === "my-class")}
       ${navLink("/students", "Students", active === "students")}
+      ${canViewReports(user) ? navLink("/reports", "Reports", active === "reports") + navLink("/quality-calendar", "Quality Calendar", active === "quality-calendar") : ""}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
   </aside>`;
