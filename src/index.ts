@@ -920,9 +920,14 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
   const dateFrom = url.searchParams.get("date_from") || "";
   const dateTo = url.searchParams.get("date_to") || "";
 
-  const [teachersResult, templatesResult, adminsResult] = await Promise.all([
+  const displayYears = [anchorYear, anchorYear - 1, anchorYear - 2];
+  const minYear = Math.min(...displayYears);
+  const maxYear = Math.max(...displayYears);
+  const currentYear = getCurrentAcademicYear();
+
+  const [usersResult, templatesResult, adminsResult] = await Promise.all([
     env.esol_marking_db
-      .prepare("SELECT id, email FROM users WHERE role IN ('assessor','assessor_iqa') ORDER BY email")
+      .prepare("SELECT id, email FROM users ORDER BY email")
       .all<{ id: string; email: string }>(),
     env.esol_marking_db
       .prepare("SELECT id, title FROM lw_templates ORDER BY title")
@@ -932,18 +937,17 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
       .all<{ id: string; email: string }>(),
   ]);
 
-  const teachers = teachersResult.results || [];
+  const allUsers = usersResult.results || [];
   const templates = templatesResult.results || [];
   const admins = adminsResult.results || [];
+  const userById = new Map(allUsers.map((u) => [u.id, u]));
 
-  const displayYears = [anchorYear, anchorYear - 1, anchorYear - 2];
-  const minYear = Math.min(...displayYears);
-  const maxYear = Math.max(...displayYears);
-  const currentYear = getCurrentAcademicYear();
+  const teachers: { key: string; email: string }[] = allUsers.map((u) => ({ key: u.id, email: u.email }));
+  const teacherByKey = new Map(teachers.map((t) => [t.key, t]));
 
   const entriesResult = await env.esol_marking_db
     .prepare(
-      `SELECT e.id, e.template_id, t.title AS template_title, e.allocated_assessor_id, e.academic_year, e.planned_date, e.course_name, e.allocated_iqa_id
+      `SELECT e.id, e.template_id, t.title AS template_title, e.allocated_assessor_id, e.assessor_name, e.academic_year, e.planned_date, e.course_name, e.allocated_iqa_id
        FROM lw_entries e
        JOIN lw_templates t ON t.id = e.template_id
        WHERE (? = '' OR e.template_id = ?)
@@ -962,20 +966,32 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
       dateTo, dateTo,
       minYear, maxYear
     )
-    .all<{ id: string; allocated_assessor_id: string; academic_year: number; planned_date: string }>();
+    .all<{ id: string; allocated_assessor_id: string; assessor_name: string; academic_year: number; planned_date: string }>();
 
   const observations = new Map<string, Map<number, { id: string; date: string }[]>>();
   for (const row of entriesResult.results || []) {
-    const teacherMap = observations.get(row.allocated_assessor_id) || new Map<number, { id: string; date: string }[]>();
+    let key = row.allocated_assessor_id || "";
+    if (!key || !userById.has(key)) {
+      key = row.assessor_name || "";
+    }
+    if (!key) continue;
+    if (!teacherByKey.has(key)) {
+      const email = row.assessor_name || row.allocated_assessor_id || key;
+      const t = { key, email };
+      teachers.push(t);
+      teacherByKey.set(key, t);
+    }
+    const teacherMap = observations.get(key) || new Map<number, { id: string; date: string }[]>();
     const yearList = teacherMap.get(row.academic_year) || [];
     if (yearList.length < 6) {
       yearList.push({ id: row.id, date: row.planned_date });
       teacherMap.set(row.academic_year, yearList);
     }
-    observations.set(row.allocated_assessor_id, teacherMap);
+    observations.set(key, teacherMap);
   }
 
-  const displayTeachers = teacherId ? teachers.filter((t) => t.id === teacherId) : teachers;
+  teachers.sort((a, b) => a.email.localeCompare(b.email));
+  const displayTeachers = teacherId ? teachers.filter((t) => t.key === teacherId) : teachers;
 
   const trackerTable = reportType === "all" || reportType === "learning-walk-tracker"
     ? `
@@ -1005,7 +1021,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
             <tbody>
               ${displayTeachers
                 .map((t) => {
-                  const teacherObs = observations.get(t.id) || new Map<number, { id: string; date: string }[]>();
+                  const teacherObs = observations.get(t.key) || new Map<number, { id: string; date: string }[]>();
                   const hasCurrent = (teacherObs.get(currentYear)?.length || 0) > 0;
                   const highlight = !hasCurrent ? " brand-highlight" : "";
                   const cells = displayYears
@@ -1056,7 +1072,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
               <label>Teacher
                 <select name="teacher">
                   <option value="">All teachers</option>
-                  ${teachers.map((t) => `<option value="${t.id}" ${teacherId === t.id ? "selected" : ""}>${escapeHtml(t.email)}</option>`).join("")}
+                  ${teachers.map((t) => `<option value="${t.key}" ${teacherId === t.key ? "selected" : ""}>${escapeHtml(t.email)}</option>`).join("")}
                 </select>
               </label>
               <label>Admin / IQA
@@ -4272,7 +4288,10 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
   const assessors = users.filter(u => ["assessor","assessor_iqa","admin","superuser"].includes(u.role));
   const iqas = users.filter(u => ["iqa","assessor_iqa","admin","superuser"].includes(u.role));
   const eqas = users.filter(u => ["eqa","admin","superuser"].includes(u.role));
-  const qHtml = template.questions.map(q => {
+  const fixedQuestionIds = new Set(["fixed_course_id","fixed_course_name","fixed_assessor","fixed_iqa","fixed_planned_date","fixed_due_date"]);
+  const fixedQuestionTexts = new Set(["Course ID","Course Name","Assessor","IQA","Planned Date","Due Date"]);
+  const visibleQuestions = template.questions.filter(q => !fixedQuestionIds.has(q.id) && !fixedQuestionTexts.has(q.question_text));
+  const qHtml = visibleQuestions.map((q, index) => {
     if (q.question_type === "section") return `<div class="lw-entry-section" style="grid-column:1/-1"><h3 class="lw-entry-section-title">${escapeHtml(q.question_text)}</h3></div>`;
     const n = `answer_${q.id}`, req = q.is_required ? "required" : "", rl = q.is_required ? ` <span class="lw-entry-required">*</span>` : "";
     let inp = `<input type="text" name="${n}" class="lw-entry-input" ${req}>`;
@@ -4286,28 +4305,85 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
     else if (q.question_type === "dropdown" && q.options) inp = `<select name="${n}" class="lw-entry-select" ${req}><option value="">Select...</option>${q.options.map((o: QuestionOption) => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join("")}</select>`;
     return `<div class="lw-entry-field"><label class="lw-entry-label">${escapeHtml(q.question_text)}${rl}</label>${inp}</div>`;
   }).join("");
-  return pageShell("New IQA Form Entry", `
-    <main class="lwfb-popup-overlay"><div class="lwfb-popup-container" style="max-width:760px">
-      <div class="lwfb-popup-header"><div><p class="lwfb-eyebrow">New IQA Form Entry</p><h1 class="lwfb-title">${escapeHtml(template.title)}</h1></div><button type="button" class="lwfb-close-btn" onclick="location.href='/iqa-forms'">×</button></div>
-      <div class="lwfb-popup-content">
-        <div class="lw-entry-section"><h3 class="lw-entry-section-title">Course Information</h3><div class="lw-entry-grid">
-          <div class="lw-entry-field" style="grid-column:1/-1"><label class="lw-entry-label" for="course_picker">Select from Learner Track</label><select id="course_picker" class="lw-entry-select"><option value="">-- choose a course or type manually below --</option></select><span class="lw-entry-hint">Loading courses from Learner Track...</span></div>
-          <div class="lw-entry-field"><label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label><input type="number" id="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY"></div>
-          <div class="lw-entry-field" style="display:flex;align-items:flex-end"><button type="button" id="refresh_courses" class="lwfb-secondary-btn">Refresh courses</button></div>
-          <div class="lw-entry-field"><label class="lw-entry-label" for="cid">Course ID *</label><input type="text" id="cid" class="lw-entry-input" required></div>
-          <div class="lw-entry-field"><label class="lw-entry-label" for="cname">Course Name *</label><input type="text" id="cname" class="lw-entry-input" required></div>
-        </div></div>
-        <div class="lw-entry-section"><h3 class="lw-entry-section-title">Staff Allocation</h3><div class="lw-entry-grid">
-          <div class="lw-entry-field"><label class="lw-entry-label" for="aid">Assessor *</label><select id="aid" class="lw-entry-select" required><option value="">Select Assessor</option>${assessors.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}</select></div>
-          <div class="lw-entry-field"><label class="lw-entry-label" for="iid">IQA *</label><select id="iid" class="lw-entry-select" required><option value="">Select IQA</option>${iqas.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}</select></div>
-          <div class="lw-entry-field"><label class="lw-entry-label" for="eid">EQA (optional)</label><select id="eid" class="lw-entry-select"><option value="">Select EQA</option>${eqas.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}</select></div>
-          <div class="lw-entry-field"><label class="lw-entry-label" for="pd">Planned Date *</label><input type="date" id="pd" class="lw-entry-input" required></div>
-          <div class="lw-entry-field"><label class="lw-entry-label" for="dd">Due Date</label><input type="date" id="dd" class="lw-entry-input"></div>
-        </div></div>
-        ${qHtml ? `<div class="lw-entry-section"><h3 class="lw-entry-section-title">Form Questions</h3><div class="lw-entry-grid">${qHtml}</div></div>` : ""}
-      </div>
-      <div class="lwfb-popup-footer"><button type="button" class="lwfb-secondary-btn" onclick="location.href='/iqa-forms'">Cancel</button><button type="button" class="lwfb-primary-btn" onclick="subEntry()">Create IQA Form Entry</button></div>
-    </div></main>
+  return pageShell(`New IQA Form Entry - ${escapeHtml(template.title)}`, `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "iqa-forms")}
+      <section class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">New IQA Form Entry</p>
+            <h1>${escapeHtml(template.title)}</h1>
+          </div>
+          <div style="display:flex;align-items:center;gap:1rem">
+            <div class="profile-pill">${escapeHtml(identity.email)}</div>
+            <a class="logout-link" href="/logout">Sign out</a>
+          </div>
+        </header>
+
+        <form id="entryForm" class="lw-entry-form" onsubmit="event.preventDefault(); subEntry();">
+          <input type="hidden" id="template_id" value="${template.id}">
+
+          <div class="lw-entry-section">
+            <h3 class="lw-entry-section-title">Course Information</h3>
+            <div class="lw-entry-grid">
+              <div class="lw-entry-field" style="grid-column:1/-1">
+                <label class="lw-entry-label" for="course_picker">Select from Learner Track</label>
+                <select id="course_picker" class="lw-entry-select"><option value="">-- choose a course or type manually below --</option></select>
+                <span class="lw-entry-hint">Loading courses from Learner Track...</span>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label>
+                <input type="number" id="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY">
+              </div>
+              <div class="lw-entry-field" style="display:flex;align-items:flex-end">
+                <button type="button" id="refresh_courses" class="secondary-action">Refresh courses</button>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label" for="cid">Course ID *</label>
+                <input type="text" id="cid" class="lw-entry-input" required>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label" for="cname">Course Name *</label>
+                <input type="text" id="cname" class="lw-entry-input" required>
+              </div>
+            </div>
+          </div>
+
+          <div class="lw-entry-section">
+            <h3 class="lw-entry-section-title">Staff Allocation</h3>
+            <div class="lw-entry-grid">
+              <div class="lw-entry-field">
+                <label class="lw-entry-label" for="aid">Assessor *</label>
+                <select id="aid" class="lw-entry-select" required><option value="">Select Assessor</option>${assessors.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}</select>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label" for="iid">IQA *</label>
+                <select id="iid" class="lw-entry-select" required><option value="">Select IQA</option>${iqas.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}</select>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label" for="eid">EQA (optional)</label>
+                <select id="eid" class="lw-entry-select"><option value="">Select EQA</option>${eqas.map(u => `<option value="${u.id}">${escapeHtml(u.email)}</option>`).join("")}</select>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label" for="pd">Planned Date *</label>
+                <input type="date" id="pd" class="lw-entry-input" required>
+              </div>
+              <div class="lw-entry-field">
+                <label class="lw-entry-label" for="dd">Due Date</label>
+                <input type="date" id="dd" class="lw-entry-input">
+              </div>
+            </div>
+          </div>
+
+          ${qHtml ? `<div class="lw-entry-section"><h3 class="lw-entry-section-title">Form Questions</h3><div class="lw-entry-grid" style="grid-template-columns:1fr">${qHtml}</div></div>` : ""}
+
+          <div class="lw-entry-actions">
+            <a href="/iqa-forms" class="secondary-action">Cancel</a>
+            <button type="submit" class="primary-action">Create IQA Form Entry</button>
+          </div>
+        </form>
+      </section>
+    </main>
     <script>
       (async function loadCourses(year){
         const sel = document.getElementById('course_picker');
@@ -4360,7 +4436,10 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
 function renderIQAFEntryViewPage(identity: Identity, entry: IQAFEntryRecord, template: IQAFTemplateWithQuestions, answers: IQAFAnswer[], comments: IQAFComment[], users: UserRecord[], canEdit: boolean, canComplete: boolean): string {
   const user = identity.user!;
   const ansMap = Object.fromEntries(answers.map(a => [a.question_id, a.answer ?? ""]));
-  const qHtml = template.questions.map(q => {
+  const fixedQuestionIds = new Set(["fixed_course_id","fixed_course_name","fixed_assessor","fixed_iqa","fixed_planned_date","fixed_due_date"]);
+  const fixedQuestionTexts = new Set(["Course ID","Course Name","Assessor","IQA","Planned Date","Due Date"]);
+  const visibleQuestions = template.questions.filter(q => !fixedQuestionIds.has(q.id) && !fixedQuestionTexts.has(q.question_text));
+  const qHtml = visibleQuestions.map(q => {
     if (q.question_type === "section") return `<tr><td colspan="2" style="padding:.75rem 1rem;background:#f8fafc;font-weight:700;border:1px solid #e2e8f0">${escapeHtml(q.question_text)}</td></tr>`;
     const ans = ansMap[q.id];
     let disp = escapeHtml(ans || "—");
