@@ -2364,18 +2364,16 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
           <span class="lw-entry-hint">Loading courses from Learner Track...</span>
         </div>
         <div class="lw-entry-field" style="grid-column:1/-1;display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap">
-          <div style="flex:1;min-width:220px">
+          <div style="flex:1;min-width:180px">
+            <label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label>
+            <input type="number" id="academic_year" name="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY">
+          </div>
+          <button type="button" id="refresh_courses" class="secondary-action">Refresh courses</button>
+          <div style="flex:1;min-width:200px">
             <label class="lw-entry-label" for="course_search">Search by Course ID</label>
             <input type="text" id="course_search" class="lw-entry-input" placeholder="e.g. 10534">
           </div>
           <button type="button" id="find_course_btn" class="secondary-action">Find course</button>
-        </div>
-        <div class="lw-entry-field">
-          <label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label>
-          <input type="number" id="academic_year" name="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY">
-        </div>
-        <div class="lw-entry-field" style="display:flex;align-items:flex-end">
-          <button type="button" id="refresh_courses" class="secondary-action">Refresh courses</button>
         </div>
         <div class="lw-entry-field">
           <label class="lw-entry-label" for="course_id">Course ID *</label>
@@ -2596,6 +2594,7 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
             const title = c.CourseTitle || '';
             const opt = document.createElement('option');
             opt.value = JSON.stringify({course_id: code, course_name: title});
+            opt.dataset.courseInstanceId = c.ID != null ? String(c.ID) : '';
             opt.textContent = (title ? title + ' ' : '') + (code ? '(' + code + ')' : '');
             sel.appendChild(opt);
           });
@@ -2658,6 +2657,8 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
             document.getElementById('academic_year').value = c.AcademicYear;
             await loadCourses(c.AcademicYear);
           }
+          const match = Array.from(sel.options).find(o => o.dataset.courseInstanceId === String(c.ID));
+          if (match) { sel.value = match.value; }
           if (hint) hint.textContent = 'Found: ' + (c.CourseTitle || '') + ' (' + (c.CourseCode || '') + ').';
         } catch (err) {
           if (hint) hint.textContent = 'Course search failed. You can still type the details manually.';
@@ -4396,18 +4397,16 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
                 <span class="lw-entry-hint">Loading courses from Learner Track...</span>
               </div>
               <div class="lw-entry-field" style="grid-column:1/-1;display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap">
-                <div style="flex:1;min-width:220px">
+                <div style="flex:1;min-width:180px">
+                  <label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label>
+                  <input type="number" id="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY">
+                </div>
+                <button type="button" id="refresh_courses" class="secondary-action">Refresh courses</button>
+                <div style="flex:1;min-width:200px">
                   <label class="lw-entry-label" for="course_search">Search by Course ID</label>
                   <input type="text" id="course_search" class="lw-entry-input" placeholder="e.g. 10534">
                 </div>
                 <button type="button" id="find_course_btn" class="secondary-action">Find course</button>
-              </div>
-              <div class="lw-entry-field">
-                <label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label>
-                <input type="number" id="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY">
-              </div>
-              <div class="lw-entry-field" style="display:flex;align-items:flex-end">
-                <button type="button" id="refresh_courses" class="secondary-action">Refresh courses</button>
               </div>
               <div class="lw-entry-field">
                 <label class="lw-entry-label" for="cid">Course ID *</label>
@@ -4469,6 +4468,7 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
             const title = c.CourseTitle || '';
             const opt = document.createElement('option');
             opt.value = JSON.stringify({course_id: code, course_name: title});
+            opt.dataset.courseInstanceId = c.ID != null ? String(c.ID) : '';
             opt.textContent = (title ? title + ' ' : '') + (code ? '(' + code + ')' : '');
             sel.appendChild(opt);
           });
@@ -4531,6 +4531,8 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
             document.getElementById('academic_year').value = c.AcademicYear;
             await loadCourses(c.AcademicYear);
           }
+          const match = Array.from(sel.options).find(o => o.dataset.courseInstanceId === String(c.ID));
+          if (match) { sel.value = match.value; }
           if (hint) hint.textContent = 'Found: ' + (c.CourseTitle || '') + ' (' + (c.CourseCode || '') + ').';
         } catch (err) {
           if (hint) hint.textContent = 'Course search failed. You can still type the details manually.';
