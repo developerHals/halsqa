@@ -1034,7 +1034,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                 .map((t) => {
                   const teacherObs = observations.get(t.key) || new Map<number, { id: string; date: string }[]>();
                   const hasCurrent = (teacherObs.get(currentYear)?.length || 0) > 0;
-                  const highlight = !hasCurrent ? " brand-highlight" : "";
+                  const highlight = !hasCurrent ? "brand-highlight" : "";
                   const cells = displayYears
                     .flatMap((y) => {
                       const list = teacherObs.get(y) || [];
@@ -1046,7 +1046,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                       });
                     })
                     .join("");
-                  return `<tr><td class="sticky-col teacher-name${highlight}">${escapeHtml(t.email || t.key || "Unknown")}</td>${cells}</tr>`;
+                  return `<tr class="${highlight}"><td class="sticky-col teacher-name">${escapeHtml(t.email || t.key || "Unknown")}</td>${cells}</tr>`;
                 })
                 .join("")}
             </tbody>
@@ -4972,8 +4972,10 @@ function pageShell(title: string, body: string) {
     .reports-table .empty-cell{color:#cbd5e1}
     .reports-table td a{color:var(--primary);text-decoration:underline}
     .teacher-name{font-weight:600}
-    .brand-highlight{background:var(--primary);color:#fff}
-    .brand-highlight a{color:#fff}
+    .brand-highlight td{background:#fff7ed;color:#9a3412}
+    .brand-highlight td a{color:#9a3412}
+    .brand-highlight .teacher-name{font-weight:700}
+    .reports-table .brand-highlight .empty-cell{color:#cbd5e1}
   </style></head><body>${body}</body></html>`;
 }
 
