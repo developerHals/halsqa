@@ -2363,7 +2363,7 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
           </select>
           <span class="lw-entry-hint">Loading courses from Learner Track...</span>
         </div>
-        <div class="lw-entry-field" style="grid-column:1/-1;display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap">
+        <div class="lw-entry-field" style="grid-column:1/-1;display:flex;flex-direction:row;gap:0.75rem;align-items:flex-end;flex-wrap:wrap">
           <div style="flex:1;min-width:180px">
             <label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label>
             <input type="number" id="academic_year" name="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY">
@@ -4396,7 +4396,7 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
                 <select id="course_picker" class="lw-entry-select"><option value="">-- choose a course or type manually below --</option></select>
                 <span class="lw-entry-hint">Loading courses from Learner Track...</span>
               </div>
-              <div class="lw-entry-field" style="grid-column:1/-1;display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap">
+              <div class="lw-entry-field" style="grid-column:1/-1;display:flex;flex-direction:row;gap:0.75rem;align-items:flex-end;flex-wrap:wrap">
                 <div style="flex:1;min-width:180px">
                   <label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label>
                   <input type="number" id="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY">
