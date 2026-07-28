@@ -915,6 +915,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
   const reportType = url.searchParams.get("type") || "all";
   const anchorYear = parseInt(url.searchParams.get("year") || String(getCurrentAcademicYear()), 10);
   const templateId = url.searchParams.get("template") || "";
+  const iqafTemplateId = url.searchParams.get("iqaf_template") || "";
   const teacherId = url.searchParams.get("teacher") || "";
   const adminId = url.searchParams.get("admin") || "";
   const subject = url.searchParams.get("subject") || "";
@@ -927,7 +928,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
   const maxYear = Math.max(...displayYears);
   const currentYear = getCurrentAcademicYear();
 
-  const [usersResult, templatesResult, adminsResult] = await Promise.all([
+  const [usersResult, templatesResult, adminsResult, iqafTemplatesResult] = await Promise.all([
     env.esol_marking_db
       .prepare("SELECT id, email, role FROM users ORDER BY email")
       .all<{ id: string; email: string; role: string }>(),
@@ -937,11 +938,15 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
     env.esol_marking_db
       .prepare("SELECT id, email FROM users WHERE role IN ('iqa','assessor_iqa','admin','superuser') ORDER BY email")
       .all<{ id: string; email: string }>(),
+    env.esol_marking_db
+      .prepare("SELECT id, title FROM iqaf_templates ORDER BY title")
+      .all<{ id: string; title: string }>(),
   ]);
 
   const allUsers = usersResult.results || [];
   const templates = templatesResult.results || [];
   const admins = adminsResult.results || [];
+  const iqafTemplates = iqafTemplatesResult.results || [];
   const userById = new Map(allUsers.map((u) => [u.id, u]));
 
   const roleOrder: Record<string, number> = { assessor: 0, iqa: 1, assessor_iqa: 2, admin: 3, superuser: 4, eqa: 5 };
@@ -1003,8 +1008,64 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
     observations.set(key, teacherMap);
   }
 
+  const iqafEntriesResult = await env.esol_marking_db
+    .prepare(
+      `SELECT e.id, e.template_id, t.title AS template_title, e.allocated_assessor_id, e.assessor_name, e.academic_year, e.planned_date, e.course_name, e.allocated_iqa_id
+       FROM iqaf_entries e
+       JOIN iqaf_templates t ON t.id = e.template_id
+       WHERE (? = '' OR e.template_id = ?)
+         AND (? = '' OR e.allocated_assessor_id = ?)
+         AND (? = '' OR e.allocated_iqa_id = ?)
+         AND (? = '' OR e.planned_date >= ?)
+         AND (? = '' OR e.planned_date <= ?)
+         AND e.academic_year BETWEEN ? AND ?
+       ORDER BY e.allocated_assessor_id, e.academic_year, e.planned_date ASC`
+    )
+    .bind(
+      iqafTemplateId, iqafTemplateId,
+      teacherId, teacherId,
+      adminId, adminId,
+      dateFrom, dateFrom,
+      dateTo, dateTo,
+      minYear, maxYear
+    )
+    .all<{ id: string; allocated_assessor_id: string; assessor_name: string; academic_year: number; planned_date: string }>();
+
+  const iqafObservations = new Map<string, Map<number, { id: string; date: string }[]>>();
+  for (const row of iqafEntriesResult.results || []) {
+    let key = row.allocated_assessor_id || "";
+    let user = userById.get(key);
+    if (!key || !user) {
+      key = row.assessor_name || "";
+      user = key ? allUsers.find((u) => u.email.toLowerCase() === key.toLowerCase()) : undefined;
+    }
+    if (!key) continue;
+    if (!teacherByKey.has(key)) {
+      const email = user?.email || row.assessor_name || row.allocated_assessor_id || key;
+      const role = user?.role;
+      const t = { key, email, role };
+      teachers.push(t);
+      teacherByKey.set(key, t);
+    }
+    const teacherMap = iqafObservations.get(key) || new Map<number, { id: string; date: string }[]>();
+    const yearList = teacherMap.get(row.academic_year) || [];
+    yearList.push({ id: row.id, date: row.planned_date });
+    teacherMap.set(row.academic_year, yearList);
+    iqafObservations.set(key, teacherMap);
+  }
+
   teachers.sort(sortByRole);
   const displayTeachers = teacherId ? teachers.filter((t) => t.key === teacherId) : teachers;
+
+  const iqafYearMaxCounts: Record<number, number> = {};
+  for (const y of displayYears) {
+    let max = 0;
+    for (const t of displayTeachers) {
+      const count = iqafObservations.get(t.key)?.get(y)?.length || 0;
+      if (count > max) max = count;
+    }
+    iqafYearMaxCounts[y] = Math.max(max, 1);
+  }
 
   const trackerTable = reportType === "all" || reportType === "learning-walk-tracker"
     ? `
@@ -1056,7 +1117,63 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
         </div>
         ${displayTeachers.length === 0 ? `<p class="hint">No teachers found.</p>` : ""}
       </section>`
-    : `<section class="panel reports-panel"><p class="hint">Select a report type to begin.</p></section>`;
+    : "";
+
+  const iqafTrackerTable = reportType === "all" || reportType === "iqa-forms-tracker"
+    ? `
+      <section class="panel reports-panel">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Tracker</p>
+            <h2>IQA Forms Tracker</h2>
+          </div>
+          <div class="year-nav">
+            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear - 1) })}">← Previous year</a>
+            <span class="year-label">${anchorYear}</span>
+            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear + 1) })}">Next year →</a>
+          </div>
+        </div>
+        <div class="reports-table-wrap">
+          <table class="reports-table">
+            <thead>
+              <tr>
+                <th class="sticky-col" rowspan="2">Teacher</th>
+                ${displayYears.map((y) => `<th colspan="${iqafYearMaxCounts[y]}" class="year-header">${y}${y === currentYear ? " (current)" : ""}</th>`).join("")}
+              </tr>
+              <tr>
+                ${displayYears.map((y) => Array.from({ length: iqafYearMaxCounts[y] }, (_, i) => `<th>Obs ${i + 1}</th>`).join("")).join("")}
+              </tr>
+            </thead>
+            <tbody>
+              ${displayTeachers
+                .map((t) => {
+                  const teacherObs = iqafObservations.get(t.key) || new Map<number, { id: string; date: string }[]>();
+                  const hasCurrent = (teacherObs.get(currentYear)?.length || 0) > 0;
+                  const highlight = !hasCurrent ? "brand-highlight" : "";
+                  const cells = displayYears
+                    .flatMap((y) => {
+                      const list = teacherObs.get(y) || [];
+                      return Array.from({ length: iqafYearMaxCounts[y] }, (_, i) => {
+                        const obs = list[i];
+                        return obs
+                          ? `<td><a href="/iqa-forms/entries/${obs.id}">${formatReportDate(obs.date)}</a></td>`
+                          : `<td class="empty-cell">—</td>`;
+                      });
+                    })
+                    .join("");
+                  return `<tr class="${highlight}"><td class="sticky-col teacher-name">${escapeHtml(t.email || t.key || "Unknown")}</td>${cells}</tr>`;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+        ${displayTeachers.length === 0 ? `<p class="hint">No teachers found.</p>` : ""}
+      </section>`
+    : "";
+
+  const noReportSelected = !trackerTable && !iqafTrackerTable
+    ? `<section class="panel reports-panel"><p class="hint">Select a report type to begin.</p></section>`
+    : "";
 
   const page = pageShell("Reports", `
     <main class="dashboard-shell">
@@ -1071,6 +1188,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                 <select name="type" onchange="this.form.submit()">
                   <option value="all" ${reportType === "all" ? "selected" : ""}>All</option>
                   <option value="learning-walk-tracker" ${reportType === "learning-walk-tracker" ? "selected" : ""}>Learning Walk Tracker</option>
+                  <option value="iqa-forms-tracker" ${reportType === "iqa-forms-tracker" ? "selected" : ""}>IQA Forms Tracker</option>
                 </select>
               </label>
               <label>Academic Year
@@ -1080,6 +1198,12 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                 <select name="template">
                   <option value="">All templates</option>
                   ${templates.map((t) => `<option value="${t.id}" ${templateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")}
+                </select>
+              </label>
+              <label>IQA Forms Template
+                <select name="iqaf_template">
+                  <option value="">All templates</option>
+                  ${iqafTemplates.map((t) => `<option value="${t.id}" ${iqafTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")}
                 </select>
               </label>
               <label>Teacher
@@ -1112,6 +1236,8 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
           </form>
         </section>
         ${trackerTable}
+        ${iqafTrackerTable}
+        ${noReportSelected}
       </section>
     </main>
   `);
