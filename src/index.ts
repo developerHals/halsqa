@@ -2426,8 +2426,8 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
       case 'yes_no':
         inputHtml = `
           <div class="lw-entry-radio-group">
-            <label class="lw-entry-radio"><input type="radio" name="${answerId}" value="yes" ${requiredAttr}> Yes</label>
-            <label class="lw-entry-radio"><input type="radio" name="${answerId}" value="no" ${requiredAttr}> No</label>
+            <label class="lw-entry-radio"><input type="radio" name="${answerId}" value="yes" ${requiredAttr}> <span>Yes</span></label>
+            <label class="lw-entry-radio"><input type="radio" name="${answerId}" value="no" ${requiredAttr}> <span>No</span></label>
           </div>`;
         break;
       case 'rag':
@@ -2453,7 +2453,7 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
         break;
       case 'multiple_choice':
         const mcOptions = q.options?.map(o => `
-          <label class="lw-entry-checkbox"><input type="checkbox" name="${answerId}[]" value="${escapeHtml(o.value)}"> ${escapeHtml(o.label)}</label>
+          <label class="lw-entry-checkbox"><input type="checkbox" name="${answerId}[]" value="${escapeHtml(o.value)}"> <span>${escapeHtml(o.label)}</span></label>
         `).join('') || '';
         inputHtml = `<div class="lw-entry-checkbox-group">${mcOptions}</div>`;
         break;
@@ -4307,12 +4307,12 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
     const n = `answer_${q.id}`, req = q.is_required ? "required" : "", rl = q.is_required ? ` <span class="lw-entry-required">*</span>` : "";
     let inp = `<input type="text" name="${n}" class="lw-entry-input" ${req}>`;
     if (q.question_type === "textarea") inp = `<textarea name="${n}" class="lw-entry-input" rows="3" ${req}></textarea>`;
-    else if (q.question_type === "yes_no") inp = `<div class="lw-entry-radio-group"><label class="lw-entry-radio"><input type="radio" name="${n}" value="yes" ${req}> Yes</label><label class="lw-entry-radio"><input type="radio" name="${n}" value="no" ${req}> No</label></div>`;
+    else if (q.question_type === "yes_no") inp = `<div class="lw-entry-radio-group"><label class="lw-entry-radio"><input type="radio" name="${n}" value="yes" ${req}> <span>Yes</span></label><label class="lw-entry-radio"><input type="radio" name="${n}" value="no" ${req}> <span>No</span></label></div>`;
     else if (q.question_type === "rag") inp = `<div class="lw-entry-rag-group"><label class="lw-entry-rag green"><input type="radio" name="${n}" value="green" ${req}> Green</label><label class="lw-entry-rag amber"><input type="radio" name="${n}" value="amber" ${req}> Amber</label><label class="lw-entry-rag red"><input type="radio" name="${n}" value="red" ${req}> Red</label></div>`;
     else if (q.question_type === "ggaw") inp = `<div class="lw-entry-ggaw-group"><label class="lw-entry-ggaw gold"><input type="radio" name="${n}" value="gold" ${req}> Gold</label><label class="lw-entry-ggaw green"><input type="radio" name="${n}" value="green" ${req}> Green</label><label class="lw-entry-ggaw amber"><input type="radio" name="${n}" value="amber" ${req}> Amber</label><label class="lw-entry-ggaw white"><input type="radio" name="${n}" value="white" ${req}> White</label></div>`;
     else if (q.question_type === "date") inp = `<input type="date" name="${n}" class="lw-entry-input" ${req}>`;
     else if (q.question_type === "number") inp = `<input type="number" name="${n}" class="lw-entry-input" ${req}>`;
-    else if (q.question_type === "single_choice" && q.options) inp = `<div class="lw-entry-radio-group">${q.options.map((o: QuestionOption) => `<label class="lw-entry-radio"><input type="radio" name="${n}" value="${escapeHtml(o.value)}" ${req}> ${escapeHtml(o.label)}</label>`).join("")}</div>`;
+    else if (q.question_type === "single_choice" && q.options) inp = `<div class="lw-entry-radio-group">${q.options.map((o: QuestionOption) => `<label class="lw-entry-radio"><input type="radio" name="${n}" value="${escapeHtml(o.value)}" ${req}> <span>${escapeHtml(o.label)}</span></label>`).join("")}</div>`;
     else if (q.question_type === "dropdown" && q.options) inp = `<select name="${n}" class="lw-entry-select" ${req}><option value="">Select...</option>${q.options.map((o: QuestionOption) => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join("")}</select>`;
     return `<div class="lw-entry-field"><label class="lw-entry-label">${escapeHtml(q.question_text)}${rl}</label>${inp}</div>`;
   }).join("");
@@ -4458,12 +4458,12 @@ function renderIQAFEntryViewPage(identity: Identity, entry: IQAFEntryRecord, tem
     if (q.question_type === "ggaw" && ans) { const c: Record<string,string>={gold:"#b45309",green:"#16a34a",amber:"#d97706",white:"#64748b"}; disp = `<span style="color:${c[ans]??"#0f172a"};font-weight:600">${ans.toUpperCase()}</span>`; }
     let inp = `<input type="text" data-qid="${q.id}" class="iqaf-ans lw-entry-input" value="${escapeHtml(ans??"")}">`;
     if (q.question_type === "textarea") inp = `<textarea data-qid="${q.id}" class="iqaf-ans lw-entry-input" rows="2">${escapeHtml(ans??"")}</textarea>`;
-    else if (q.question_type === "yes_no") inp = `<div class="lw-entry-radio-group"><label><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="yes" ${ans==="yes"?"checked":""}> Yes</label><label><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="no" ${ans==="no"?"checked":""}> No</label></div>`;
+    else if (q.question_type === "yes_no") inp = `<div class="lw-entry-radio-group"><label class="lw-entry-radio"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="yes" ${ans==="yes"?"checked":""}> <span>Yes</span></label><label class="lw-entry-radio"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="no" ${ans==="no"?"checked":""}> <span>No</span></label></div>`;
     else if (q.question_type === "rag") inp = `<div class="lw-entry-rag-group"><label class="lw-entry-rag green"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="green" ${ans==="green"?"checked":""}> Green</label><label class="lw-entry-rag amber"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="amber" ${ans==="amber"?"checked":""}> Amber</label><label class="lw-entry-rag red"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="red" ${ans==="red"?"checked":""}> Red</label></div>`;
     else if (q.question_type === "ggaw") inp = `<div class="lw-entry-ggaw-group"><label class="lw-entry-ggaw gold"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="gold" ${ans==="gold"?"checked":""}> Gold</label><label class="lw-entry-ggaw green"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="green" ${ans==="green"?"checked":""}> Green</label><label class="lw-entry-ggaw amber"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="amber" ${ans==="amber"?"checked":""}> Amber</label><label class="lw-entry-ggaw white"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="white" ${ans==="white"?"checked":""}> White</label></div>`;
     else if (q.question_type === "date") inp = `<input type="date" data-qid="${q.id}" class="iqaf-ans lw-entry-input" value="${escapeHtml(ans??"")}">`;
     else if (q.question_type === "number") inp = `<input type="number" data-qid="${q.id}" class="iqaf-ans lw-entry-input" value="${escapeHtml(ans??"")}">`;
-    else if (q.question_type === "single_choice" && q.options) inp = `<div class="lw-entry-radio-group">${q.options.map((o: QuestionOption) => `<label class="lw-entry-radio"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="${escapeHtml(o.value)}" ${ans===o.value?"checked":""}> ${escapeHtml(o.label)}</label>`).join("")}</div>`;
+    else if (q.question_type === "single_choice" && q.options) inp = `<div class="lw-entry-radio-group">${q.options.map((o: QuestionOption) => `<label class="lw-entry-radio"><input type="radio" data-qid="${q.id}" class="iqaf-ans" name="ia_${q.id}" value="${escapeHtml(o.value)}" ${ans===o.value?"checked":""}> <span>${escapeHtml(o.label)}</span></label>`).join("")}</div>`;
     else if (q.question_type === "dropdown" && q.options) inp = `<select data-qid="${q.id}" class="iqaf-ans lw-entry-select"><option value="">Select...</option>${q.options.map((o: QuestionOption) => `<option value="${escapeHtml(o.value)}" ${ans===o.value?"selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>`;
     return `<tr><td style="padding:.5rem 1rem;border:1px solid #e2e8f0;font-weight:600;width:40%;vertical-align:top">${escapeHtml(q.question_text)}</td><td style="padding:.5rem 1rem;border:1px solid #e2e8f0">${canEdit ? inp : `<span>${disp}</span>`}</td></tr>`;
   }).join("");
@@ -4856,12 +4856,14 @@ function pageShell(title: string, body: string) {
     .lw-entry-textarea{resize:vertical;min-height:100px;field-sizing:content;overflow-y:hidden}
     .lw-entry-question{margin-bottom:1.5rem;padding:1.25rem;background:var(--panel);border-radius:8px;border:1px solid var(--border);border-left:3px solid var(--primary)}
     .lw-entry-question-label{font-weight:600;color:var(--text);margin-bottom:0.75rem;display:block}
-    .lw-entry-radio-group,.lw-entry-checkbox-group{display:flex;flex-wrap:wrap;gap:1rem}
-    .lw-entry-radio,.lw-entry-checkbox{display:flex;align-items:center;gap:0.5rem;cursor:pointer;padding:0.5rem 1rem;background:#fff;border:2px solid var(--border);border-radius:6px;transition:all 0.2s}
+    .lw-entry-radio-group,.lw-entry-checkbox-group{display:flex;flex-direction:column;gap:0.75rem;width:100%}
+    .lw-entry-radio,.lw-entry-checkbox{display:flex;align-items:center;gap:0.9rem;cursor:pointer;padding:0.9rem 1.25rem;background:#fff;border:2px solid var(--border);border-radius:8px;transition:all 0.2s;width:100%;box-sizing:border-box;min-height:3.5rem}
     .lw-entry-radio:hover,.lw-entry-checkbox:hover{border-color:var(--primary)}
-    .lw-entry-radio input,.lw-entry-checkbox input{cursor:pointer}
+    .lw-entry-radio:has(input:checked),.lw-entry-checkbox:has(input:checked){border-color:var(--primary);background:#eef2ff}
+    .lw-entry-radio input,.lw-entry-checkbox input{cursor:pointer;flex:0 0 auto;width:18px;height:18px;margin:0}
+    .lw-entry-radio span,.lw-entry-checkbox span{flex:1;text-align:left;line-height:1.45}
     .lw-entry-rag-group,.lw-entry-ggaw-group{display:flex;flex-wrap:wrap;gap:0.75rem}
-    .lw-entry-rag,.lw-entry-ggaw{padding:0.625rem 1.25rem;border-radius:6px;font-weight:500;cursor:pointer;transition:all 0.2s;border:2px solid transparent}
+    .lw-entry-rag,.lw-entry-ggaw{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.6rem;padding:0.75rem 1.25rem;border-radius:8px;font-weight:500;cursor:pointer;transition:all 0.2s;border:2px solid transparent;min-width:110px}
     .lw-entry-rag.green{background:#dcfce7;color:#166534;border-color:#166534}
     .lw-entry-rag.amber{background:#fef3c7;color:#92400e;border-color:#92400e}
     .lw-entry-rag.red{background:#fee2e2;color:#991b1b;border-color:#991b1b}
@@ -4870,6 +4872,8 @@ function pageShell(title: string, body: string) {
     .lw-entry-ggaw.amber{background:#fef3c7;color:#92400e;border-color:#92400e}
     .lw-entry-ggaw.white{background:#f1f5f9;color:#475569;border-color:#475569}
     .lw-entry-rag input,.lw-entry-ggaw input{display:none}
+    .lw-entry-rag::after,.lw-entry-ggaw::after{content:'';display:block;width:16px;height:16px;border-radius:50%;border:2px solid currentColor;background:transparent;transition:background 0.15s}
+    .lw-entry-rag:has(input:checked)::after,.lw-entry-ggaw:has(input:checked)::after{background:currentColor}
     .lw-entry-rag:has(input:checked),.lw-entry-ggaw:has(input:checked){transform:scale(1.05);box-shadow:0 4px 12px rgba(0,0,0,0.15)}
     .lw-entry-rating{display:flex;gap:0.5rem;flex-wrap:wrap}
     .lw-entry-rating-star{padding:0.5rem 1rem;background:#f1f5f9;border:2px solid var(--border);border-radius:6px;cursor:pointer;transition:all 0.2s}
