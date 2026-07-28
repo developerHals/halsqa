@@ -459,6 +459,8 @@ export default {
     if (url.pathname === "/students") return renderStudentsPageHandler(request, env, identity);
     if (url.pathname === "/api/enrolment/student" && request.method === "GET") return fetchStudentEnrolments(request, env, identity);
 
+    if (url.pathname === "/assessments") return htmlResponse(renderAssessmentsPage(identity));
+
     if (url.pathname === "/reports" && canViewReports(identity.user!)) return renderReportsPage(request, env, identity);
     if (url.pathname === "/quality-calendar" && canViewReports(identity.user!)) return renderQualityCalendarPage(identity);
 
@@ -914,8 +916,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
   const url = new URL(request.url);
   const reportType = url.searchParams.get("type") || "all";
   const anchorYear = parseInt(url.searchParams.get("year") || String(getCurrentAcademicYear()), 10);
-  const templateId = url.searchParams.get("template") || "";
-  const iqafTemplateId = url.searchParams.get("iqaf_template") || "";
+  const rawTemplateId = url.searchParams.get("template") || "";
   const teacherId = url.searchParams.get("teacher") || "";
   const adminId = url.searchParams.get("admin") || "";
   const subject = url.searchParams.get("subject") || "";
@@ -947,6 +948,8 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
   const templates = templatesResult.results || [];
   const admins = adminsResult.results || [];
   const iqafTemplates = iqafTemplatesResult.results || [];
+  const templateId = templates.some((t) => t.id === rawTemplateId) ? rawTemplateId : "";
+  const iqafTemplateId = iqafTemplates.some((t) => t.id === rawTemplateId) ? rawTemplateId : "";
   const userById = new Map(allUsers.map((u) => [u.id, u]));
 
   const roleOrder: Record<string, number> = { assessor: 0, iqa: 1, assessor_iqa: 2, admin: 3, superuser: 4, eqa: 5 };
@@ -1171,8 +1174,21 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
       </section>`
     : "";
 
-  const noReportSelected = !trackerTable && !iqafTrackerTable
-    ? `<section class="panel reports-panel"><p class="hint">Select a report type to begin.</p></section>`
+  const assessmentsTrackerTable = reportType === "all" || reportType === "assessments-tracker"
+    ? `
+      <section class="panel reports-panel">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Tracker</p>
+            <h2>Assessments Tracker</h2>
+          </div>
+        </div>
+        <p class="hint">Assessments tracker is coming soon.</p>
+      </section>`
+    : "";
+
+  const noReportSelected = !trackerTable && !iqafTrackerTable && !assessmentsTrackerTable
+    ? `<section class="panel reports-panel"><p class="hint">Select a category to begin.</p></section>`
     : "";
 
   const page = pageShell("Reports", `
@@ -1184,26 +1200,28 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
           <div class="section-header"><p class="eyebrow">Reports</p><h2>Quality Reports</h2></div>
           <form method="GET" action="/reports" class="reports-filters">
             <div class="filter-row">
-              <label>Report
+              <label>Categories
                 <select name="type" onchange="this.form.submit()">
                   <option value="all" ${reportType === "all" ? "selected" : ""}>All</option>
-                  <option value="learning-walk-tracker" ${reportType === "learning-walk-tracker" ? "selected" : ""}>Learning Walk Tracker</option>
-                  <option value="iqa-forms-tracker" ${reportType === "iqa-forms-tracker" ? "selected" : ""}>IQA Forms Tracker</option>
+                  <option value="learning-walk-tracker" ${reportType === "learning-walk-tracker" ? "selected" : ""}>Learning Walks tracker</option>
+                  <option value="iqa-forms-tracker" ${reportType === "iqa-forms-tracker" ? "selected" : ""}>IQA forms tracker</option>
+                  <option value="assessments-tracker" ${reportType === "assessments-tracker" ? "selected" : ""}>Assessments tracker</option>
                 </select>
               </label>
               <label>Academic Year
                 <input type="number" name="year" value="${anchorYear}" min="2000" max="2100" placeholder="YYYY">
               </label>
-              <label>Template
+              <label>Reports
                 <select name="template">
                   <option value="">All templates</option>
-                  ${templates.map((t) => `<option value="${t.id}" ${templateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")}
-                </select>
-              </label>
-              <label>IQA Forms Template
-                <select name="iqaf_template">
-                  <option value="">All templates</option>
-                  ${iqafTemplates.map((t) => `<option value="${t.id}" ${iqafTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")}
+                  ${reportType === "learning-walk-tracker"
+                    ? templates.map((t) => `<option value="${t.id}" ${rawTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")
+                    : reportType === "iqa-forms-tracker"
+                    ? iqafTemplates.map((t) => `<option value="${t.id}" ${rawTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")
+                    : reportType === "assessments-tracker"
+                    ? `<option value="" disabled>No templates yet</option>`
+                    : `${templates.length ? `<optgroup label="Learning Walks">${templates.map((t) => `<option value="${t.id}" ${rawTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")}</optgroup>` : ""}${iqafTemplates.length ? `<optgroup label="IQA Forms">${iqafTemplates.map((t) => `<option value="${t.id}" ${rawTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")}</optgroup>` : ""}`
+                  }
                 </select>
               </label>
               <label>Teacher
@@ -1237,6 +1255,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
         </section>
         ${trackerTable}
         ${iqafTrackerTable}
+        ${assessmentsTrackerTable}
         ${noReportSelected}
       </section>
     </main>
@@ -1583,6 +1602,20 @@ function renderUserRow(user: UserRecord, currentUserId: string) {
 
 function renderAccessPendingPage(identity: Identity) {
   return pageShell("Access pending", `<main class="auth-shell"><section class="auth-card"><div class="brand-mark">E</div><p class="eyebrow">Access pending</p><h1>User not found in D1</h1><p class="lede">You signed in as ${escapeHtml(identity.email)}, but a superuser needs to create your ESOLQA user record.</p><a class="primary-action" href="/logout">Sign out</a></section></main>`);
+}
+
+function renderAssessmentsPage(identity: Identity) {
+  return pageShell("Assessments", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "assessments")}
+      <section class="content">
+        ${renderTopbar(identity, "Assessments")}
+        <section class="panel">
+          <p class="hint">Assessments is coming soon.</p>
+        </section>
+      </section>
+    </main>
+  `);
 }
 
 function renderForbiddenPage(identity: Identity) {
@@ -5222,6 +5255,7 @@ function renderSidebar(identity: Identity, active: string) {
     <nav class="sidebar-nav">
       ${navLink("/learning-walks", "Learning Walks", active === "learning-walks")}
       ${navLink("/iqa-forms", "IQA Forms", active === "iqa-forms")}
+      ${navLink("/assessments", "Assessments", active === "assessments")}
       ${navLink("/courses", "Our Courses", active === "courses")}
       ${navLink("/my-class", "My Class", active === "my-class")}
       ${navLink("/students", "Students", active === "students")}
