@@ -580,9 +580,11 @@ async function fetchLearnerTrackCourses(request: Request, env: Env, identity: Id
   if (!apiKey) return json({ error: "LearnerTrack API key not configured" }, 500);
   const url = new URL(request.url);
   const academicYear = url.searchParams.get("academicYear")?.trim();
+  const courseInstanceId = url.searchParams.get("courseinstanceid")?.trim();
   const username = "GiuseppeA";
   let apiUrl = `https://api.learnertrack.net/api/CourseInstance?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}`;
   if (academicYear) apiUrl += `&academicYear=${encodeURIComponent(academicYear)}`;
+  if (courseInstanceId) apiUrl += `&courseinstanceid=${encodeURIComponent(courseInstanceId)}`;
   try {
     const r = await fetch(apiUrl, { headers: { "Accept": "application/json" } });
     if (!r.ok) return json({ error: `LearnerTrack API returned ${r.status}` }, r.status);
@@ -2361,6 +2363,13 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
           </select>
           <span class="lw-entry-hint">Loading courses from Learner Track...</span>
         </div>
+        <div class="lw-entry-field" style="grid-column:1/-1;display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px">
+            <label class="lw-entry-label" for="course_search">Search by Course ID</label>
+            <input type="text" id="course_search" class="lw-entry-input" placeholder="e.g. 10534">
+          </div>
+          <button type="button" id="find_course_btn" class="secondary-action">Find course</button>
+        </div>
         <div class="lw-entry-field">
           <label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label>
           <input type="number" id="academic_year" name="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY">
@@ -2574,7 +2583,7 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
     </main>
 
     <script>
-      (async function loadCourses(year){
+      async function loadCourses(year){
         const sel = document.getElementById('course_picker');
         const hint = sel.parentElement.querySelector('.lw-entry-hint');
         try {
@@ -2591,17 +2600,20 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
             sel.appendChild(opt);
           });
           if (hint) hint.textContent = data.length + ' courses loaded for academic year ' + year + '.';
-          sel.addEventListener('change', () => {
-            if (!sel.value) return;
-            const v = JSON.parse(sel.value);
-            document.getElementById('course_id').value = v.course_id || '';
-            document.getElementById('course_name').value = v.course_name || '';
-          });
         } catch (err) {
           if (hint) hint.textContent = 'Could not load courses. You can still type the course details manually.';
           console.error('Course load error:', err);
         }
-      })(document.getElementById('academic_year').value);
+      }
+
+      document.getElementById('course_picker').addEventListener('change', function () {
+        if (!this.value) return;
+        const v = JSON.parse(this.value);
+        document.getElementById('course_id').value = v.course_id || '';
+        document.getElementById('course_name').value = v.course_name || '';
+      });
+
+      loadCourses(document.getElementById('academic_year').value);
 
       document.getElementById('refresh_courses').addEventListener('click', () => {
         const year = document.getElementById('academic_year').value;
@@ -2610,6 +2622,47 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
         const hint = sel.parentElement.querySelector('.lw-entry-hint');
         if (hint) hint.textContent = 'Loading courses for ' + year + '...';
         loadCourses(year);
+      });
+
+      let academicYearDebounce;
+      document.getElementById('academic_year').addEventListener('input', function () {
+        const year = this.value;
+        clearTimeout(academicYearDebounce);
+        academicYearDebounce = setTimeout(() => {
+          if (!year || year.length !== 4) return;
+          const sel = document.getElementById('course_picker');
+          const hint = sel.parentElement.querySelector('.lw-entry-hint');
+          if (hint) hint.textContent = 'Loading courses for ' + year + '...';
+          loadCourses(year);
+        }, 500);
+      });
+
+      document.getElementById('find_course_btn').addEventListener('click', async () => {
+        const search = document.getElementById('course_search');
+        const id = search.value.trim();
+        if (!id) { alert('Please enter a Course ID to search for.'); return; }
+        const sel = document.getElementById('course_picker');
+        const hint = sel.parentElement.querySelector('.lw-entry-hint');
+        if (hint) hint.textContent = 'Searching for course ' + id + '...';
+        try {
+          const r = await fetch('/api/courses/learnertrack?courseinstanceid=' + encodeURIComponent(id));
+          const data = await r.json();
+          if (!Array.isArray(data) || data.length === 0) {
+            if (hint) hint.textContent = 'No course found with ID ' + id + '. You can still type the details manually.';
+            return;
+          }
+          const c = data[0];
+          document.getElementById('course_id').value = c.CourseCode || '';
+          document.getElementById('course_name').value = c.CourseTitle || '';
+          if (c.AcademicYear != null) {
+            document.getElementById('academic_year').value = c.AcademicYear;
+            await loadCourses(c.AcademicYear);
+          }
+          if (hint) hint.textContent = 'Found: ' + (c.CourseTitle || '') + ' (' + (c.CourseCode || '') + ').';
+        } catch (err) {
+          if (hint) hint.textContent = 'Course search failed. You can still type the details manually.';
+          console.error('Course search error:', err);
+        }
       });
 
       async function submitEntry(e) {
@@ -4342,6 +4395,13 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
                 <select id="course_picker" class="lw-entry-select"><option value="">-- choose a course or type manually below --</option></select>
                 <span class="lw-entry-hint">Loading courses from Learner Track...</span>
               </div>
+              <div class="lw-entry-field" style="grid-column:1/-1;display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap">
+                <div style="flex:1;min-width:220px">
+                  <label class="lw-entry-label" for="course_search">Search by Course ID</label>
+                  <input type="text" id="course_search" class="lw-entry-input" placeholder="e.g. 10534">
+                </div>
+                <button type="button" id="find_course_btn" class="secondary-action">Find course</button>
+              </div>
               <div class="lw-entry-field">
                 <label class="lw-entry-label" for="academic_year">Academic Year * <span class="lw-entry-required">(YYYY, e.g. 2025)</span></label>
                 <input type="number" id="academic_year" class="lw-entry-input" value="${getCurrentAcademicYear()}" min="2000" max="2100" required placeholder="YYYY">
@@ -4396,7 +4456,7 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
       </section>
     </main>
     <script>
-      (async function loadCourses(year){
+      async function loadCourses(year){
         const sel = document.getElementById('course_picker');
         const hint = sel.parentElement.querySelector('.lw-entry-hint');
         try {
@@ -4413,17 +4473,20 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
             sel.appendChild(opt);
           });
           if (hint) hint.textContent = data.length + ' courses loaded for academic year ' + year + '.';
-          sel.addEventListener('change', () => {
-            if (!sel.value) return;
-            const v = JSON.parse(sel.value);
-            document.getElementById('cid').value = v.course_id || '';
-            document.getElementById('cname').value = v.course_name || '';
-          });
         } catch (err) {
           if (hint) hint.textContent = 'Could not load courses. You can still type the course details manually.';
           console.error('Course load error:', err);
         }
-      })(document.getElementById('academic_year').value);
+      }
+
+      document.getElementById('course_picker').addEventListener('change', function () {
+        if (!this.value) return;
+        const v = JSON.parse(this.value);
+        document.getElementById('cid').value = v.course_id || '';
+        document.getElementById('cname').value = v.course_name || '';
+      });
+
+      loadCourses(document.getElementById('academic_year').value);
 
       document.getElementById('refresh_courses').addEventListener('click', () => {
         const year = document.getElementById('academic_year').value;
@@ -4432,6 +4495,47 @@ function renderIQAFEntryFormPage(identity: Identity, template: IQAFTemplateWithQ
         const hint = sel.parentElement.querySelector('.lw-entry-hint');
         if (hint) hint.textContent = 'Loading courses for ' + year + '...';
         loadCourses(year);
+      });
+
+      let academicYearDebounce;
+      document.getElementById('academic_year').addEventListener('input', function () {
+        const year = this.value;
+        clearTimeout(academicYearDebounce);
+        academicYearDebounce = setTimeout(() => {
+          if (!year || year.length !== 4) return;
+          const sel = document.getElementById('course_picker');
+          const hint = sel.parentElement.querySelector('.lw-entry-hint');
+          if (hint) hint.textContent = 'Loading courses for ' + year + '...';
+          loadCourses(year);
+        }, 500);
+      });
+
+      document.getElementById('find_course_btn').addEventListener('click', async () => {
+        const search = document.getElementById('course_search');
+        const id = search.value.trim();
+        if (!id) { alert('Please enter a Course ID to search for.'); return; }
+        const sel = document.getElementById('course_picker');
+        const hint = sel.parentElement.querySelector('.lw-entry-hint');
+        if (hint) hint.textContent = 'Searching for course ' + id + '...';
+        try {
+          const r = await fetch('/api/courses/learnertrack?courseinstanceid=' + encodeURIComponent(id));
+          const data = await r.json();
+          if (!Array.isArray(data) || data.length === 0) {
+            if (hint) hint.textContent = 'No course found with ID ' + id + '. You can still type the details manually.';
+            return;
+          }
+          const c = data[0];
+          document.getElementById('cid').value = c.CourseCode || '';
+          document.getElementById('cname').value = c.CourseTitle || '';
+          if (c.AcademicYear != null) {
+            document.getElementById('academic_year').value = c.AcademicYear;
+            await loadCourses(c.AcademicYear);
+          }
+          if (hint) hint.textContent = 'Found: ' + (c.CourseTitle || '') + ' (' + (c.CourseCode || '') + ').';
+        } catch (err) {
+          if (hint) hint.textContent = 'Course search failed. You can still type the details manually.';
+          console.error('Course search error:', err);
+        }
       });
 
       async function subEntry(){
