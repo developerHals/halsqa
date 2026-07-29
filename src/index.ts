@@ -414,6 +414,19 @@ type IQAFNotification = {
   created_at: string;
 };
 
+type QualityCalendarEvent = {
+  id: string;
+  title: string;
+  description: string | null;
+  type: "banner" | "single";
+  start_date: string;
+  end_date: string;
+  include_weekends: number;
+  parent_banner_id: string | null;
+  color_hex: string;
+  created_at: string;
+};
+
 const htmlHeaders = { "content-type": "text/html; charset=utf-8" };
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 const oauthStateCookie = "hlquality_oauth_state";
@@ -554,6 +567,14 @@ export default {
     if (url.pathname.match(/^\/api\/lw\/templates\/[^/]+\/delete$/) && request.method === "POST") {
       return deleteLWTemplate(request, env, identity, url.pathname.split("/")[4]);
     }
+
+    // Quality Calendar APIs
+    if (url.pathname === "/api/calendar/events" && request.method === "GET") return getCalendarEvents(request, env, identity);
+    if (url.pathname === "/api/calendar/events" && request.method === "POST") return createCalendarEvent(request, env, identity);
+    if (url.pathname.match(/^\/api\/calendar\/events\/[^/]+$/) && request.method === "PUT") return updateCalendarEvent(request, env, identity, url.pathname.split("/")[4]);
+    if (url.pathname.match(/^\/api\/calendar\/events\/[^/]+$/) && request.method === "DELETE") return deleteCalendarEvent(request, env, identity, url.pathname.split("/")[4]);
+    if (url.pathname === "/api/calendar/import-csv" && request.method === "POST") return importCalendarCSV(request, env, identity);
+    if (url.pathname === "/api/calendar/export-csv" && request.method === "GET") return exportCalendarCSV(request, env, identity);
 
     return htmlResponse(renderNotFoundPage(), 404);
   },
@@ -890,19 +911,767 @@ function formatReportDate(d: string): string {
   return `${day}/${m}/${y}`;
 }
 
+function getStartOfWeek(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function addDays(date: Date, days: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function formatISODate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function formatDisplayDate(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function escapeCSV(value: string): string {
+  const s = String(value ?? "").replaceAll('"', '""');
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) return `"${s}"`;
+  return s;
+}
+
+function calendarAccessAllowed(user: UserRecord): boolean {
+  return user.role === "admin" || user.role === "superuser";
+}
+
+async function getCalendarEvents(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!calendarAccessAllowed(identity.user!)) return json({ error: "Forbidden" }, 403);
+  const url = new URL(request.url);
+  const startDate = url.searchParams.get("startDate") || formatISODate(getStartOfWeek(new Date()));
+  const endDate = url.searchParams.get("endDate") || formatISODate(addDays(getStartOfWeek(new Date()), 6));
+  const events = await env.esol_marking_db
+    .prepare("SELECT * FROM quality_calendar_events WHERE start_date <= ? AND end_date >= ? ORDER BY start_date ASC, type ASC, created_at ASC")
+    .bind(endDate, startDate)
+    .all<QualityCalendarEvent>();
+  return json({ events: events.results ?? [] });
+}
+
+async function createCalendarEvent(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!calendarAccessAllowed(identity.user!)) return json({ error: "Forbidden" }, 403);
+  try {
+    const body = await request.json() as {
+      title: string;
+      description?: string;
+      type: "banner" | "single";
+      start_date: string;
+      end_date: string;
+      include_weekends?: boolean;
+      parent_banner_id?: string;
+      color_hex?: string;
+      sub_events?: { title: string; description?: string; start_date: string; end_date: string }[];
+    };
+    if (!body.title?.trim()) return json({ error: "Title is required" }, 400);
+    if (!body.start_date || !body.end_date) return json({ error: "Start and end dates are required" }, 400);
+    if (body.end_date < body.start_date) return json({ error: "End date cannot be before start date" }, 400);
+
+    const bannerId = crypto.randomUUID();
+    await env.esol_marking_db
+      .prepare(
+        "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .bind(
+        bannerId,
+        body.title.trim(),
+        body.description?.trim() || null,
+        body.type,
+        body.start_date,
+        body.end_date,
+        body.include_weekends ? 1 : 0,
+        body.parent_banner_id || null,
+        body.color_hex?.trim() || "#00C4DF"
+      )
+      .run();
+
+    if (body.type === "banner" && body.sub_events) {
+      for (const sub of body.sub_events) {
+        if (!sub.title?.trim() || !sub.start_date || !sub.end_date) continue;
+        await env.esol_marking_db
+          .prepare(
+            "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          )
+          .bind(
+            crypto.randomUUID(),
+            sub.title.trim(),
+            sub.description?.trim() || null,
+            "single",
+            sub.start_date,
+            sub.end_date,
+            body.include_weekends ? 1 : 0,
+            bannerId,
+            body.color_hex?.trim() || "#00C4DF"
+          )
+          .run();
+      }
+    }
+
+    return json({ success: true, id: bannerId });
+  } catch (err: any) {
+    return json({ error: "Failed: " + (err?.message || String(err)) }, 500);
+  }
+}
+
+async function updateCalendarEvent(request: Request, env: Env, identity: Identity, eventId: string): Promise<Response> {
+  if (!calendarAccessAllowed(identity.user!)) return json({ error: "Forbidden" }, 403);
+  try {
+    const body = await request.json() as {
+      title: string;
+      description?: string;
+      type: "banner" | "single";
+      start_date: string;
+      end_date: string;
+      include_weekends?: boolean;
+      parent_banner_id?: string;
+      color_hex?: string;
+    };
+    if (!body.title?.trim()) return json({ error: "Title is required" }, 400);
+    if (!body.start_date || !body.end_date) return json({ error: "Start and end dates are required" }, 400);
+    if (body.end_date < body.start_date) return json({ error: "End date cannot be before start date" }, 400);
+
+    await env.esol_marking_db
+      .prepare(
+        "UPDATE quality_calendar_events SET title = ?, description = ?, type = ?, start_date = ?, end_date = ?, include_weekends = ?, parent_banner_id = ?, color_hex = ? WHERE id = ?"
+      )
+      .bind(
+        body.title.trim(),
+        body.description?.trim() || null,
+        body.type,
+        body.start_date,
+        body.end_date,
+        body.include_weekends ? 1 : 0,
+        body.parent_banner_id || null,
+        body.color_hex?.trim() || "#00C4DF",
+        eventId
+      )
+      .run();
+
+    return json({ success: true });
+  } catch (err: any) {
+    return json({ error: "Failed: " + (err?.message || String(err)) }, 500);
+  }
+}
+
+async function deleteCalendarEvent(request: Request, env: Env, identity: Identity, eventId: string): Promise<Response> {
+  if (!calendarAccessAllowed(identity.user!)) return json({ error: "Forbidden" }, 403);
+  try {
+    await env.esol_marking_db.prepare("DELETE FROM quality_calendar_events WHERE id = ?").bind(eventId).run();
+    return json({ success: true });
+  } catch (err: any) {
+    return json({ error: "Failed: " + (err?.message || String(err)) }, 500);
+  }
+}
+
+async function importCalendarCSV(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!calendarAccessAllowed(identity.user!)) return json({ error: "Forbidden" }, 403);
+  try {
+    const body = await request.json() as { csvText?: string };
+    if (!body.csvText?.trim()) return json({ error: "CSV text is required" }, 400);
+
+    const lines = body.csvText.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return json({ error: "CSV must contain a header and at least one row" }, 400);
+
+    const headers = parseCSVLine(lines[0]).map((h) => h.trim().toLowerCase());
+    const typeIdx = headers.indexOf("event_type");
+    const titleIdx = headers.indexOf("title");
+    const descIdx = headers.indexOf("description");
+    const startIdx = headers.indexOf("start_date");
+    const endIdx = headers.indexOf("end_date");
+    const weekendIdx = headers.indexOf("include_weekends");
+    const parentIdx = headers.indexOf("parent_title");
+    const colorIdx = headers.indexOf("color_hex");
+
+    if (typeIdx === -1 || titleIdx === -1 || startIdx === -1 || endIdx === -1) {
+      return json({ error: "CSV must contain event_type, title, start_date, end_date columns" }, 400);
+    }
+
+    const rows: { type: string; title: string; description: string; start: string; end: string; includeWeekends: number; parent: string; color: string }[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i]);
+      const type = values[typeIdx]?.trim().toLowerCase();
+      const title = values[titleIdx]?.trim();
+      if (!type || !title) continue;
+      rows.push({
+        type,
+        title,
+        description: values[descIdx]?.trim() || "",
+        start: values[startIdx]?.trim() || "",
+        end: values[endIdx]?.trim() || values[startIdx]?.trim() || "",
+        includeWeekends: values[weekendIdx]?.trim() === "1" ? 1 : 0,
+        parent: values[parentIdx]?.trim() || "",
+        color: values[colorIdx]?.trim() || "#00C4DF",
+      });
+    }
+
+    const titleToId: Record<string, string> = {};
+    for (const row of rows) {
+      if (row.type !== "banner") continue;
+      const bannerId = crypto.randomUUID();
+      titleToId[row.title] = bannerId;
+      await env.esol_marking_db
+        .prepare(
+          "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(bannerId, row.title, row.description || null, "banner", row.start, row.end, row.includeWeekends, null, row.color)
+        .run();
+    }
+
+    for (const row of rows) {
+      if (row.type === "banner") continue;
+      const parentId = row.parent ? titleToId[row.parent] : null;
+      await env.esol_marking_db
+        .prepare(
+          "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(crypto.randomUUID(), row.title, row.description || null, "single", row.start, row.end, row.includeWeekends, parentId, row.color)
+        .run();
+    }
+
+    return json({ success: true, imported: rows.length });
+  } catch (err: any) {
+    return json({ error: "Failed: " + (err?.message || String(err)) }, 500);
+  }
+}
+
+async function exportCalendarCSV(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!calendarAccessAllowed(identity.user!)) return json({ error: "Forbidden" }, 403);
+  try {
+    const url = new URL(request.url);
+    const year = parseInt(url.searchParams.get("year") || String(new Date().getFullYear()), 10);
+    const start = `${year}-01-01`;
+    const end = `${year}-12-31`;
+    const events = await env.esol_marking_db
+      .prepare("SELECT * FROM quality_calendar_events WHERE start_date <= ? AND end_date >= ? ORDER BY start_date ASC, type ASC, created_at ASC")
+      .bind(end, start)
+      .all<QualityCalendarEvent>();
+
+    const all = events.results ?? [];
+    const banners = new Map<string, QualityCalendarEvent>();
+    for (const e of all) if (e.type === "banner") banners.set(e.id, e);
+
+    const rows = ["event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex"];
+    for (const e of all) {
+      const parentTitle = e.parent_banner_id && banners.has(e.parent_banner_id) ? banners.get(e.parent_banner_id)!.title : "";
+      rows.push(
+        [
+          escapeCSV(e.type),
+          escapeCSV(e.title),
+          escapeCSV(e.description || ""),
+          escapeCSV(e.start_date),
+          escapeCSV(e.end_date),
+          escapeCSV(String(e.include_weekends)),
+          escapeCSV(parentTitle),
+          escapeCSV(e.color_hex),
+        ].join(",")
+      );
+    }
+
+    return new Response(rows.join("\r\n"), {
+      headers: {
+        "Content-Type": "text/csv;charset=utf-8",
+        "Content-Disposition": `attachment; filename="quality-calendar-${year}.csv"`,
+      },
+    });
+  } catch (err: any) {
+    return json({ error: "Failed: " + (err?.message || String(err)) }, 500);
+  }
+}
+
 function renderQualityCalendarPage(identity: Identity): Response {
+  if (!calendarAccessAllowed(identity.user!)) return htmlResponse(renderForbiddenPage(identity), 403);
+  const initialMonday = formatISODate(getStartOfWeek(new Date()));
   return htmlResponse(
     pageShell("Quality Calendar", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "quality-calendar")}
       <section class="content">
         ${renderTopbar(identity, "Quality Calendar")}
-        <section class="panel" style="background:#f8fafc">
-          <div class="section-header"><p class="eyebrow">Coming soon</p><h2>Quality Calendar</h2></div>
-          <p class="hint">This page is under construction and will be available to administrators.</p>
+        <section class="panel qc-panel">
+          <div class="qc-toolbar">
+            <div class="qc-nav-group">
+              <button type="button" id="qc-prev" class="qc-icon-btn" title="Previous week">&#10094;</button>
+              <button type="button" id="qc-today" class="qc-text-btn">Today</button>
+              <button type="button" id="qc-next" class="qc-icon-btn" title="Next week">&#10095;</button>
+            </div>
+            <input type="date" id="qc-date-picker" value="${initialMonday}">
+            <div class="qc-view-toggle">
+              <button type="button" data-days="5" class="qc-view-btn active">5-Day</button>
+              <button type="button" data-days="7" class="qc-view-btn">7-Day</button>
+            </div>
+            <div class="qc-actions">
+              <button type="button" id="qc-new-event" class="qc-primary-btn">+ New Event</button>
+              <button type="button" id="qc-import" class="qc-secondary-btn">Import CSV</button>
+              <button type="button" id="qc-export" class="qc-secondary-btn">Export CSV</button>
+            </div>
+          </div>
+
+          <div class="qc-calendar" id="qc-calendar">
+            <div class="qc-header-row" id="qc-header-row"></div>
+            <div class="qc-grid" id="qc-grid"></div>
+          </div>
         </section>
       </section>
     </main>
+
+    <div id="qc-modal" class="qc-modal-overlay" style="display:none">
+      <div class="qc-modal">
+        <div class="qc-modal-header">
+          <h2 id="qc-modal-title">New Event</h2>
+          <button type="button" id="qc-modal-close" class="qc-modal-close">&times;</button>
+        </div>
+        <form id="qc-form" class="qc-form">
+          <input type="hidden" id="qc-event-id" value="">
+          <div class="qc-type-toggle">
+            <button type="button" data-type="banner" id="qc-type-banner" class="qc-type-btn active">Banner Event</button>
+            <button type="button" data-type="single" id="qc-type-single" class="qc-type-btn">Standalone / Single</button>
+          </div>
+          <label>Title<input type="text" id="qc-title" required placeholder="Event title"></label>
+          <label>Description<textarea id="qc-description" rows="2" placeholder="Optional description"></textarea></label>
+          <div class="qc-form-row">
+            <label>Start Date<input type="date" id="qc-start" required></label>
+            <label>End Date<input type="date" id="qc-end" required></label>
+          </div>
+          <div class="qc-form-row">
+            <label class="qc-checkbox"><input type="checkbox" id="qc-weekends"> Include Weekends?</label>
+            <label>Colour<input type="color" id="qc-color" value="#00C4DF"></label>
+          </div>
+          <div class="qc-form-field" id="qc-parent-field" style="display:none">
+            <label>Parent Banner<select id="qc-parent"></select></label>
+          </div>
+          <div id="qc-subs-section" class="qc-subs-section">
+            <h3>Sub-events</h3>
+            <div id="qc-subs-list"></div>
+            <button type="button" id="qc-add-sub" class="qc-add-sub-btn">+ Add Sub-Event</button>
+          </div>
+          <div class="qc-modal-actions">
+            <button type="button" id="qc-delete" class="qc-delete-btn" style="display:none">Delete</button>
+            <button type="submit" class="qc-primary-btn">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="qc-import-modal" class="qc-modal-overlay" style="display:none">
+      <div class="qc-modal qc-modal-sm">
+        <div class="qc-modal-header"><h2>Import CSV</h2><button type="button" id="qc-import-close" class="qc-modal-close">&times;</button></div>
+        <p class="qc-modal-hint">Columns: <code>event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex</code></p>
+        <textarea id="qc-import-text" rows="10" placeholder="Paste CSV here..."></textarea>
+        <div class="qc-modal-actions">
+          <button type="button" id="qc-import-submit" class="qc-primary-btn">Import</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function() {
+        const state = {
+          monday: new Date("${initialMonday}" + "T00:00:00"),
+          days: 5,
+          events: [],
+          banners: []
+        };
+
+        function getMonday(d) {
+          const date = new Date(d);
+          const day = date.getDay();
+          const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+          return new Date(date.setDate(diff));
+        }
+
+        function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+        function formatISO(d) { return d.toISOString().slice(0, 10); }
+        function isWeekend(d) { const day = d.getDay(); return day === 0 || day === 6; }
+        function formatDisplay(d) { return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); }
+        function dayMatches(d, dateStr) { return formatISO(d) === dateStr; }
+
+        function getWeekDates() {
+          const dates = [];
+          for (let i = 0; i < state.days; i++) dates.push(addDays(state.monday, i));
+          return dates;
+        }
+
+        function getRangeEnd() { return addDays(state.monday, state.days - 1); }
+
+        function buildHeader() {
+          const row = document.getElementById("qc-header-row");
+          row.innerHTML = "";
+          const dates = getWeekDates();
+          dates.forEach((d, i) => {
+            const cell = document.createElement("div");
+            cell.className = "qc-header-cell";
+            cell.innerHTML = \`<div class="qc-day-name">\${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][d.getDay() === 0 ? 6 : d.getDay() - 1]}</div>
+              <div class="qc-day-date">\${formatDisplay(d)}</div>
+              <button type="button" class="qc-day-add" data-date="\${formatISO(d)}" title="Add event">+</button>\`;
+            if (isWeekend(d)) cell.classList.add("qc-weekend");
+            row.appendChild(cell);
+          });
+        }
+
+        function eventInView(e) {
+          const viewStart = formatISO(state.monday);
+          const viewEnd = formatISO(getRangeEnd());
+          return e.start_date <= viewEnd && e.end_date >= viewStart;
+        }
+
+        function visibleDateSpan(e) {
+          const viewStart = formatISO(state.monday);
+          const viewEnd = formatISO(getRangeEnd());
+          const start = e.start_date < viewStart ? viewStart : e.start_date;
+          const end = e.end_date > viewEnd ? viewEnd : e.end_date;
+          return { start, end };
+        }
+
+        function weekendCountBetween(start, end) {
+          let count = 0;
+          let cur = new Date(start + "T00:00:00");
+          const last = new Date(end + "T00:00:00");
+          while (cur <= last) {
+            if (isWeekend(cur)) count++;
+            cur = addDays(cur, 1);
+          }
+          return count;
+        }
+
+        function spanDays(start, end) {
+          const a = new Date(start + "T00:00:00");
+          const b = new Date(end + "T00:00:00");
+          return Math.round((b - a) / (1000 * 60 * 60 * 24)) + 1;
+        }
+
+        function getColumnIndex(dateStr) {
+          const dates = getWeekDates();
+          return dates.findIndex(d => formatISO(d) === dateStr);
+        }
+
+        function getBannerRow(banner) {
+          const grid = document.getElementById("qc-grid");
+          let row = document.getElementById("qc-banner-row-" + banner.id);
+          if (!row) {
+            row = document.createElement("div");
+            row.className = "qc-banner-row";
+            row.id = "qc-banner-row-" + banner.id;
+            row.style.gridColumn = "1 / -1";
+            grid.appendChild(row);
+          }
+          return row;
+        }
+
+        function getSingleRow(bannerId) {
+          const grid = document.getElementById("qc-grid");
+          let row = document.getElementById("qc-single-row-" + (bannerId || "standalone"));
+          if (!row) {
+            row = document.createElement("div");
+            row.className = "qc-single-row";
+            row.id = "qc-single-row-" + (bannerId || "standalone");
+            row.style.gridColumn = "1 / -1";
+            grid.appendChild(row);
+          }
+          return row;
+        }
+
+        function renderBanner(banner) {
+          if (!eventInView(banner)) return;
+          const span = visibleDateSpan(banner);
+          const startIdx = getColumnIndex(span.start);
+          const endIdx = getColumnIndex(span.end);
+          if (startIdx === -1 || endIdx === -1 || startIdx > endIdx) return;
+
+          let colSpan = endIdx - startIdx + 1;
+          if (!banner.include_weekends) {
+            const weekendCount = weekendCountBetween(span.start, span.end);
+            colSpan -= weekendCount;
+          }
+          if (colSpan < 1) colSpan = 1;
+
+          const row = getBannerRow(banner);
+          const tile = document.createElement("div");
+          tile.className = "qc-banner-tile";
+          tile.style.backgroundColor = banner.color_hex + "20";
+          tile.style.borderLeft = "4px solid " + banner.color_hex;
+          tile.style.color = banner.color_hex;
+          tile.style.gridColumn = (startIdx + 1) + " / span " + colSpan;
+          tile.textContent = banner.title;
+          tile.title = banner.title + "\\n" + (banner.description || "") + "\\n" + banner.start_date + " to " + banner.end_date;
+          tile.onclick = () => openModal(banner.id);
+          row.appendChild(tile);
+        }
+
+        function renderSingle(event) {
+          if (!eventInView(event)) return;
+          const span = visibleDateSpan(event);
+          const startIdx = getColumnIndex(span.start);
+          const endIdx = getColumnIndex(span.end);
+          if (startIdx === -1) return;
+
+          const row = getSingleRow(event.parent_banner_id || "");
+          const tile = document.createElement("div");
+          tile.className = "qc-single-tile" + (event.parent_banner_id ? " qc-child-tile" : " qc-standalone-tile");
+          tile.style.backgroundColor = (event.color_hex || "#00C4DF") + "20";
+          tile.style.borderLeft = "4px solid " + (event.color_hex || "#00C4DF");
+          tile.style.color = "#0f172a";
+          tile.style.gridColumn = (startIdx + 1) + " / span " + Math.max(1, endIdx - startIdx + 1);
+          tile.textContent = event.title;
+          tile.title = event.title + "\\n" + (event.description || "") + "\\n" + event.start_date + (event.start_date !== event.end_date ? " to " + event.end_date : "");
+          tile.onclick = () => openModal(event.id);
+          row.appendChild(tile);
+        }
+
+        function renderGrid() {
+          const grid = document.getElementById("qc-grid");
+          grid.innerHTML = "";
+          const dates = getWeekDates();
+          dates.forEach((d, i) => {
+            const col = document.createElement("div");
+            col.className = "qc-grid-col" + (isWeekend(d) ? " qc-weekend" : "");
+            col.style.position = "absolute";
+            col.style.top = "0";
+            col.style.bottom = "0";
+            col.style.left = (i / state.days * 100) + "%";
+            col.style.width = (100 / state.days) + "%";
+            grid.appendChild(col);
+          });
+
+          const banners = state.events.filter(e => e.type === "banner");
+          banners.forEach(renderBanner);
+          state.events.filter(e => e.type === "single").forEach(renderSingle);
+
+          document.querySelectorAll(".qc-day-add").forEach(btn => {
+            btn.onclick = () => openModal(null, btn.dataset.date);
+          });
+        }
+
+        async function loadEvents() {
+          const start = formatISO(state.monday);
+          const end = formatISO(getRangeEnd());
+          const res = await fetch("/api/calendar/events?startDate=" + start + "&endDate=" + end);
+          const data = await res.json();
+          state.events = data.events || [];
+          state.banners = state.events.filter(e => e.type === "banner");
+          buildHeader();
+          renderGrid();
+        }
+
+        function setMonday(d) {
+          state.monday = getMonday(d);
+          document.getElementById("qc-date-picker").value = formatISO(state.monday);
+          loadEvents();
+        }
+
+        function openModal(eventId, prefillDate) {
+          const modal = document.getElementById("qc-modal");
+          const form = document.getElementById("qc-form");
+          form.reset();
+          document.getElementById("qc-event-id").value = "";
+          document.getElementById("qc-subs-list").innerHTML = "";
+          document.getElementById("qc-delete").style.display = "none";
+          document.getElementById("qc-modal-title").textContent = "New Event";
+
+          if (eventId) {
+            const ev = state.events.find(e => e.id === eventId);
+            if (ev) {
+              document.getElementById("qc-event-id").value = ev.id;
+              document.getElementById("qc-title").value = ev.title;
+              document.getElementById("qc-description").value = ev.description || "";
+              document.getElementById("qc-start").value = ev.start_date;
+              document.getElementById("qc-end").value = ev.end_date;
+              document.getElementById("qc-weekends").checked = !!ev.include_weekends;
+              document.getElementById("qc-color").value = ev.color_hex || "#00C4DF";
+              setType(ev.type);
+              document.getElementById("qc-parent").value = ev.parent_banner_id || "";
+              document.getElementById("qc-modal-title").textContent = "Edit Event";
+              document.getElementById("qc-delete").style.display = "inline-block";
+            }
+          } else {
+            if (prefillDate) {
+              document.getElementById("qc-start").value = prefillDate;
+              document.getElementById("qc-end").value = prefillDate;
+            } else {
+              const today = formatISO(new Date());
+              document.getElementById("qc-start").value = today;
+              document.getElementById("qc-end").value = today;
+            }
+            setType("banner");
+          }
+
+          updateParentOptions();
+          updateSubsVisibility();
+          modal.style.display = "flex";
+        }
+
+        function setType(type) {
+          document.getElementById("qc-type-banner").classList.toggle("active", type === "banner");
+          document.getElementById("qc-type-single").classList.toggle("active", type === "single");
+          document.getElementById("qc-type-banner").classList.toggle("qc-type-active", type === "banner");
+          document.getElementById("qc-type-single").classList.toggle("qc-type-active", type === "single");
+          document.getElementById("qc-parent-field").style.display = type === "single" ? "block" : "none";
+          document.getElementById("qc-subs-section").style.display = type === "banner" ? "block" : "none";
+        }
+
+        function updateParentOptions() {
+          const sel = document.getElementById("qc-parent");
+          const current = sel.value;
+          sel.innerHTML = '<option value="">(none)</option>';
+          state.banners.forEach(b => {
+            const opt = document.createElement("option");
+            opt.value = b.id;
+            opt.textContent = b.title;
+            sel.appendChild(opt);
+          });
+          sel.value = current || "";
+        }
+
+        function updateSubsVisibility() {
+          const isBanner = document.getElementById("qc-type-banner").classList.contains("active");
+          document.getElementById("qc-subs-section").style.display = isBanner ? "block" : "none";
+        }
+
+        function addSubEventRow(values) {
+          const list = document.getElementById("qc-subs-list");
+          const row = document.createElement("div");
+          row.className = "qc-sub-row";
+          row.innerHTML = \`
+            <input type="text" class="qc-sub-title" placeholder="Sub-event title" required value="\${values?.title || ''}">
+            <input type="text" class="qc-sub-desc" placeholder="Description" value="\${values?.description || ''}">
+            <input type="date" class="qc-sub-start" required value="\${values?.start_date || ''}">
+            <input type="date" class="qc-sub-end" required value="\${values?.end_date || ''}">
+            <button type="button" class="qc-remove-sub" title="Remove">&times;</button>
+          \`;
+          row.querySelector(".qc-remove-sub").onclick = () => row.remove();
+          list.appendChild(row);
+        }
+
+        async function saveEvent(e) {
+          e.preventDefault();
+          const id = document.getElementById("qc-event-id").value;
+          const type = document.getElementById("qc-type-banner").classList.contains("active") ? "banner" : "single";
+          const body = {
+            title: document.getElementById("qc-title").value,
+            description: document.getElementById("qc-description").value,
+            type,
+            start_date: document.getElementById("qc-start").value,
+            end_date: document.getElementById("qc-end").value,
+            include_weekends: document.getElementById("qc-weekends").checked,
+            color_hex: document.getElementById("qc-color").value,
+          };
+
+          if (type === "single") {
+            const parent = document.getElementById("qc-parent").value;
+            if (parent) body.parent_banner_id = parent;
+          }
+
+          if (type === "banner") {
+            const subEvents = [];
+            document.querySelectorAll(".qc-sub-row").forEach(row => {
+              const t = row.querySelector(".qc-sub-title").value.trim();
+              const d = row.querySelector(".qc-sub-desc").value.trim();
+              const s = row.querySelector(".qc-sub-start").value;
+              const en = row.querySelector(".qc-sub-end").value;
+              if (t && s && en) subEvents.push({ title: t, description: d, start_date: s, end_date: en });
+            });
+            body.sub_events = subEvents;
+          }
+
+          try {
+            const url = id ? "/api/calendar/events/" + id : "/api/calendar/events";
+            const method = id ? "PUT" : "POST";
+            const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            const data = await res.json();
+            if (!res.ok || data.error) throw new Error(data.error || "Save failed");
+            closeModal();
+            await loadEvents();
+          } catch (err) {
+            alert(err.message);
+          }
+        }
+
+        async function deleteEvent() {
+          const id = document.getElementById("qc-event-id").value;
+          if (!id || !confirm("Delete this event?")) return;
+          const res = await fetch("/api/calendar/events/" + id, { method: "DELETE" });
+          const data = await res.json();
+          if (!res.ok || data.error) { alert(data.error || "Delete failed"); return; }
+          closeModal();
+          await loadEvents();
+        }
+
+        function closeModal() {
+          document.getElementById("qc-modal").style.display = "none";
+        }
+
+        function showImportModal() {
+          document.getElementById("qc-import-modal").style.display = "flex";
+        }
+
+        function closeImportModal() {
+          document.getElementById("qc-import-modal").style.display = "none";
+          document.getElementById("qc-import-text").value = "";
+        }
+
+        async function submitImport() {
+          const text = document.getElementById("qc-import-text").value;
+          try {
+            const res = await fetch("/api/calendar/import-csv", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ csvText: text })
+            });
+            const data = await res.json();
+            if (!res.ok || data.error) throw new Error(data.error || "Import failed");
+            alert("Imported " + data.imported + " events");
+            closeImportModal();
+            await loadEvents();
+          } catch (err) {
+            alert(err.message);
+          }
+        }
+
+        function exportCSV() {
+          const year = state.monday.getFullYear();
+          const a = document.createElement("a");
+          a.href = "/api/calendar/export-csv?year=" + year;
+          a.click();
+        }
+
+        document.getElementById("qc-prev").onclick = () => setMonday(addDays(state.monday, -7));
+        document.getElementById("qc-next").onclick = () => setMonday(addDays(state.monday, 7));
+        document.getElementById("qc-today").onclick = () => setMonday(new Date());
+        document.getElementById("qc-date-picker").onchange = e => setMonday(new Date(e.target.value));
+        document.querySelectorAll(".qc-view-btn").forEach(btn => {
+          btn.onclick = () => {
+            document.querySelectorAll(".qc-view-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            state.days = parseInt(btn.dataset.days);
+            document.getElementById("qc-calendar").classList.toggle("qc-seven-day", state.days === 7);
+            loadEvents();
+          };
+        });
+        document.getElementById("qc-new-event").onclick = () => openModal();
+        document.getElementById("qc-modal-close").onclick = closeModal;
+        document.getElementById("qc-form").onsubmit = saveEvent;
+        document.getElementById("qc-delete").onclick = deleteEvent;
+        document.getElementById("qc-type-banner").onclick = () => { setType("banner"); };
+        document.getElementById("qc-type-single").onclick = () => { setType("single"); };
+        document.getElementById("qc-add-sub").onclick = () => addSubEventRow();
+        document.getElementById("qc-import").onclick = showImportModal;
+        document.getElementById("qc-import-close").onclick = closeImportModal;
+        document.getElementById("qc-import-submit").onclick = submitImport;
+        document.getElementById("qc-export").onclick = exportCSV;
+
+        document.getElementById("qc-modal").onclick = e => { if (e.target.id === "qc-modal") closeModal(); };
+        document.getElementById("qc-import-modal").onclick = e => { if (e.target.id === "qc-import-modal") closeImportModal(); };
+
+        loadEvents();
+      })();
+    </script>
   `)
   );
 }
@@ -5245,6 +6014,72 @@ function pageShell(title: string, body: string) {
     .brand-highlight td a{color:#9a3412}
     .brand-highlight .teacher-name{font-weight:700}
     .reports-table .brand-highlight .empty-cell{color:#cbd5e1}
+    /* Quality Calendar */
+    .qc-panel{position:relative}
+    .qc-toolbar{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:space-between;margin-bottom:1.25rem;padding:1rem;background:#fff;border-radius:12px;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,.04)}
+    .qc-nav-group{display:flex;gap:.5rem;align-items:center}
+    .qc-icon-btn,.qc-text-btn{background:#f1f5f9;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:.5rem .875rem;font-weight:600;cursor:pointer;font-size:.875rem;transition:all .15s}
+    .qc-icon-btn:hover,.qc-text-btn:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
+    #qc-date-picker{width:auto;min-width:150px;border:1px solid var(--border);border-radius:8px;padding:.55rem .75rem;font:inherit;color:var(--text)}
+    .qc-view-toggle{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+    .qc-view-btn{background:#fff;color:var(--muted);border:none;padding:.55rem 1rem;font-weight:600;cursor:pointer;font-size:.875rem}
+    .qc-view-btn.active{background:var(--primary);color:#fff}
+    .qc-actions{display:flex;gap:.5rem;flex-wrap:wrap}
+    .qc-primary-btn{background:var(--primary);color:#fff;border:none;border-radius:8px;padding:.65rem 1.25rem;font-weight:600;cursor:pointer;font-size:.9375rem;transition:background .15s}
+    .qc-primary-btn:hover{background:var(--primary-dark)}
+    .qc-secondary-btn{background:#fff;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:.65rem 1.25rem;font-weight:600;cursor:pointer;font-size:.9375rem;transition:all .15s}
+    .qc-secondary-btn:hover{border-color:var(--primary);color:var(--primary)}
+    .qc-calendar{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.04);position:relative}
+    .qc-header-row{display:grid;grid-template-columns:repeat(5,1fr);background:#f8fafc;border-bottom:1px solid var(--border);position:relative;z-index:2}
+    .qc-seven-day .qc-header-row{grid-template-columns:repeat(7,1fr)}
+    .qc-header-cell{padding:1rem .75rem;text-align:center;position:relative;border-right:1px solid var(--border)}
+    .qc-header-cell:last-child{border-right:none}
+    .qc-header-cell.qc-weekend{background:#f1f5f9}
+    .qc-day-name{font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    .qc-day-date{font-size:1rem;font-weight:600;color:var(--text);margin:.25rem 0}
+    .qc-day-add{position:absolute;top:.5rem;right:.5rem;width:1.5rem;height:1.5rem;border-radius:50%;background:var(--primary);color:#fff;border:none;font-size:1rem;line-height:1;cursor:pointer;display:grid;place-items:center;opacity:0;transition:opacity .15s}
+    .qc-header-cell:hover .qc-day-add{opacity:1}
+    .qc-grid{display:grid;grid-template-columns:repeat(5,1fr);grid-auto-rows:min-content;position:relative;min-height:24rem}
+    .qc-seven-day .qc-grid{grid-template-columns:repeat(7,1fr)}
+    .qc-grid-col{position:absolute;top:0;bottom:0;border-right:1px solid #e2e8f0;z-index:0}
+    .qc-grid-col:last-child{border-right:none}
+    .qc-grid-col.qc-weekend{background:#f8fafc}
+    .qc-banner-row,.qc-single-row{display:grid;grid-template-columns:repeat(5,1fr);grid-auto-rows:min-content;gap:.5rem;padding:.5rem;position:relative;z-index:1}
+    .qc-seven-day .qc-banner-row,.qc-seven-day .qc-single-row{grid-template-columns:repeat(7,1fr)}
+    .qc-banner-tile,.qc-single-tile{padding:.65rem .75rem;border-radius:8px;font-size:.875rem;font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:transform .1s,box-shadow .1s}
+    .qc-banner-tile:hover,.qc-single-tile:hover{transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,.1)}
+    .qc-banner-tile{font-size:.9rem;font-weight:700}
+    .qc-standalone-tile{border-left:4px solid #0f172a}
+    .qc-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);z-index:1000;display:flex;justify-content:center;align-items:center;padding:1rem}
+    .qc-modal{background:#fff;border-radius:16px;width:100%;max-width:720px;max-height:calc(100vh - 2rem);overflow-y:auto;box-shadow:0 16px 64px rgba(0,0,0,.18)}
+    .qc-modal-sm{max-width:520px}
+    .qc-modal-header{display:flex;justify-content:space-between;align-items:center;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border)}
+    .qc-modal-header h2{margin:0;font-size:1.25rem;font-weight:700;color:var(--text)}
+    .qc-modal-close{background:none;border:none;font-size:1.75rem;color:var(--muted);cursor:pointer;padding:0;width:2rem;height:2rem;border-radius:8px;transition:background .15s}
+    .qc-modal-close:hover{background:#f1f5f9;color:var(--primary)}
+    .qc-form{padding:1.5rem;display:flex;flex-direction:column;gap:1rem}
+    .qc-form label{display:flex;flex-direction:column;gap:.35rem;font-size:.875rem;font-weight:600;color:var(--text)}
+    .qc-form input,.qc-form textarea,.qc-form select{width:100%;border:1px solid var(--border);border-radius:8px;padding:.65rem .875rem;font:inherit;color:var(--text)}
+    .qc-form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+    .qc-type-toggle{display:flex;gap:.5rem;margin-bottom:.5rem}
+    .qc-type-btn{flex:1;padding:.65rem 1rem;background:#f1f5f9;color:var(--muted);border:1px solid var(--border);border-radius:8px;font-weight:600;cursor:pointer;font-size:.9375rem;transition:all .15s}
+    .qc-type-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+    .qc-type-btn.qc-type-active{background:var(--primary);color:#fff;border-color:var(--primary)}
+    .qc-checkbox{flex-direction:row!important;align-items:center;gap:.5rem!important;cursor:pointer}
+    .qc-checkbox input{width:auto}
+    .qc-subs-section{display:none;border:1px dashed var(--border);border-radius:10px;padding:1rem;background:#f8fafc}
+    .qc-subs-section h3{margin:0 0 .75rem;font-size:1rem;color:var(--text)}
+    .qc-sub-row{display:grid;grid-template-columns:1.5fr 1fr 120px 120px 2rem;gap:.5rem;align-items:center;margin-bottom:.5rem}
+    .qc-sub-row input{font-size:.875rem;padding:.5rem}
+    .qc-remove-sub{background:#fee2e2;color:#dc2626;border:none;border-radius:6px;width:1.75rem;height:1.75rem;cursor:pointer;font-size:1.25rem;display:grid;place-items:center}
+    .qc-add-sub-btn{background:#fff;border:1px dashed var(--border);color:var(--muted);border-radius:8px;padding:.5rem 1rem;font-weight:600;cursor:pointer;font-size:.875rem;width:100%;margin-top:.5rem}
+    .qc-add-sub-btn:hover{border-color:var(--primary);color:var(--primary)}
+    .qc-modal-actions{display:flex;gap:.75rem;justify-content:flex-end;padding-top:1rem;border-top:1px solid var(--border);margin-top:.5rem}
+    .qc-delete-btn{background:#fee2e2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:.65rem 1.25rem;font-weight:600;cursor:pointer;font-size:.9375rem}
+    .qc-delete-btn:hover{background:#fecaca}
+    .qc-modal-hint{color:var(--muted);font-size:.875rem;padding:0 1.5rem .75rem}
+    .qc-modal-hint code{background:#f1f5f9;padding:.125rem .375rem;border-radius:4px}
+    @media(max-width:768px){.qc-toolbar{flex-direction:column;align-items:stretch}.qc-form-row,.qc-sub-row{grid-template-columns:1fr}.qc-header-row,.qc-grid,.qc-banner-row,.qc-single-row{grid-template-columns:repeat(5,1fr)}.qc-seven-day .qc-header-row,.qc-seven-day .qc-grid,.qc-seven-day .qc-banner-row,.qc-seven-day .qc-single-row{grid-template-columns:repeat(7,1fr)}}
   </style></head><body>${body}</body></html>`;
 }
 
