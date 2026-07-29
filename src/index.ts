@@ -461,7 +461,7 @@ export default {
 
     if (url.pathname === "/assessments") return htmlResponse(renderAssessmentsPage(identity));
 
-    if (url.pathname === "/reports" && canViewReports(identity.user!)) return renderReportsPage(request, env, identity);
+    if (url.pathname === "/reports") return renderReportsPage(request, env, identity);
     if (url.pathname === "/quality-calendar" && canViewReports(identity.user!)) return renderQualityCalendarPage(identity);
 
     if (url.pathname === "/api/me") return json(identity);
@@ -909,15 +909,14 @@ function renderQualityCalendarPage(identity: Identity): Response {
 
 async function renderReportsPage(request: Request, env: Env, identity: Identity): Promise<Response> {
   const user = identity.user!;
-  if (!canViewReports(user)) {
-    return Response.redirect(new URL(request.url).origin + "/learning-walks", 302);
-  }
+  const isReportsAdmin = user.role === "admin" || user.role === "superuser";
 
   const url = new URL(request.url);
   const reportType = url.searchParams.get("type") || "all";
   const anchorYear = parseInt(url.searchParams.get("year") || String(getCurrentAcademicYear()), 10);
   const rawTemplateId = url.searchParams.get("template") || "";
-  const teacherId = url.searchParams.get("teacher") || "";
+  // Non-admins/superusers can only ever see their own reports, regardless of any teacher param supplied.
+  const teacherId = isReportsAdmin ? (url.searchParams.get("teacher") || "") : user.id;
   const adminId = url.searchParams.get("admin") || "";
   const subject = url.searchParams.get("subject") || "";
   const qualification = url.searchParams.get("qualification") || "";
@@ -1224,12 +1223,13 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                   }
                 </select>
               </label>
+              ${isReportsAdmin ? `
               <label>Teacher
                 <select name="teacher">
                   <option value="">All teachers</option>
                   ${teachers.map((t) => `<option value="${t.key}" ${teacherId === t.key ? "selected" : ""}>${escapeHtml(t.email)}</option>`).join("")}
                 </select>
-              </label>
+              </label>` : ""}
               <label>Admin / IQA
                 <select name="admin">
                   <option value="">All</option>
@@ -5259,7 +5259,8 @@ function renderSidebar(identity: Identity, active: string) {
       ${navLink("/courses", "Our Courses", active === "courses")}
       ${navLink("/my-class", "My Class", active === "my-class")}
       ${navLink("/students", "Students", active === "students")}
-      ${canViewReports(user) ? navLink("/reports", "Reports", active === "reports") + navLink("/quality-calendar", "Quality Calendar", active === "quality-calendar") : ""}
+      ${navLink("/reports", "Reports", active === "reports")}
+      ${canViewReports(user) ? navLink("/quality-calendar", "Quality Calendar", active === "quality-calendar") : ""}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
   </aside>`;
