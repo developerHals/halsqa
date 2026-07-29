@@ -424,6 +424,7 @@ type QualityCalendarEvent = {
   include_weekends: number;
   parent_banner_id: string | null;
   color_hex: string;
+  created_by: string | null;
   created_at: string;
 };
 
@@ -944,6 +945,12 @@ function escapeCSV(value: string): string {
 function calendarAccessAllowed(user: UserRecord): boolean {
   return user.role === "admin" || user.role === "superuser";
 }
+function calendarEventEditable(user: UserRecord, event: QualityCalendarEvent | null): boolean {
+  if (!event) return true;
+  if (user.role === "superuser") return true;
+  if (user.role === "admin") return event.created_by === user.id;
+  return false;
+}
 
 async function getCalendarEvents(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!calendarAccessAllowed(identity.user!)) return json({ error: "Forbidden" }, 403);
@@ -975,10 +982,11 @@ async function createCalendarEvent(request: Request, env: Env, identity: Identit
     if (!body.start_date || !body.end_date) return json({ error: "Start and end dates are required" }, 400);
     if (body.end_date < body.start_date) return json({ error: "End date cannot be before start date" }, 400);
 
+    const userId = identity.user!.id;
     const bannerId = crypto.randomUUID();
     await env.esol_marking_db
       .prepare(
-        "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .bind(
         bannerId,
@@ -989,7 +997,8 @@ async function createCalendarEvent(request: Request, env: Env, identity: Identit
         body.end_date,
         body.include_weekends ? 1 : 0,
         body.parent_banner_id || null,
-        body.color_hex?.trim() || "#00C4DF"
+        body.color_hex?.trim() || "#00C4DF",
+        userId
       )
       .run();
 
@@ -998,7 +1007,7 @@ async function createCalendarEvent(request: Request, env: Env, identity: Identit
         if (!sub.title?.trim() || !sub.start_date || !sub.end_date) continue;
         await env.esol_marking_db
           .prepare(
-            "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
           )
           .bind(
             crypto.randomUUID(),
@@ -1009,7 +1018,8 @@ async function createCalendarEvent(request: Request, env: Env, identity: Identit
             sub.end_date,
             body.include_weekends ? 1 : 0,
             bannerId,
-            body.color_hex?.trim() || "#00C4DF"
+            body.color_hex?.trim() || "#00C4DF",
+            userId
           )
           .run();
       }
@@ -1024,6 +1034,10 @@ async function createCalendarEvent(request: Request, env: Env, identity: Identit
 async function updateCalendarEvent(request: Request, env: Env, identity: Identity, eventId: string): Promise<Response> {
   if (!calendarAccessAllowed(identity.user!)) return json({ error: "Forbidden" }, 403);
   try {
+    const existing = await env.esol_marking_db.prepare("SELECT * FROM quality_calendar_events WHERE id = ?").bind(eventId).first<QualityCalendarEvent>();
+    if (!existing) return json({ error: "Not found" }, 404);
+    if (!calendarEventEditable(identity.user!, existing)) return json({ error: "You can only edit your own events" }, 403);
+
     const body = await request.json() as {
       title: string;
       description?: string;
@@ -1064,6 +1078,9 @@ async function updateCalendarEvent(request: Request, env: Env, identity: Identit
 async function deleteCalendarEvent(request: Request, env: Env, identity: Identity, eventId: string): Promise<Response> {
   if (!calendarAccessAllowed(identity.user!)) return json({ error: "Forbidden" }, 403);
   try {
+    const existing = await env.esol_marking_db.prepare("SELECT * FROM quality_calendar_events WHERE id = ?").bind(eventId).first<QualityCalendarEvent>();
+    if (!existing) return json({ error: "Not found" }, 404);
+    if (!calendarEventEditable(identity.user!, existing)) return json({ error: "You can only delete your own events" }, 403);
     await env.esol_marking_db.prepare("DELETE FROM quality_calendar_events WHERE id = ?").bind(eventId).run();
     return json({ success: true });
   } catch (err: any) {
@@ -1119,9 +1136,9 @@ async function importCalendarCSV(request: Request, env: Env, identity: Identity)
       titleToId[row.title] = bannerId;
       await env.esol_marking_db
         .prepare(
-          "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(bannerId, row.title, row.description || null, "banner", row.start, row.end, row.includeWeekends, null, row.color)
+        .bind(bannerId, row.title, row.description || null, "banner", row.start, row.end, row.includeWeekends, null, row.color, identity.user!.id)
         .run();
     }
 
@@ -1130,9 +1147,9 @@ async function importCalendarCSV(request: Request, env: Env, identity: Identity)
       const parentId = row.parent ? titleToId[row.parent] : null;
       await env.esol_marking_db
         .prepare(
-          "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          "INSERT INTO quality_calendar_events (id, title, description, type, start_date, end_date, include_weekends, parent_banner_id, color_hex, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(crypto.randomUUID(), row.title, row.description || null, "single", row.start, row.end, row.includeWeekends, parentId, row.color)
+        .bind(crypto.randomUUID(), row.title, row.description || null, "single", row.start, row.end, row.includeWeekends, parentId, row.color, identity.user!.id)
         .run();
     }
 
@@ -1191,9 +1208,9 @@ function renderQualityCalendarPage(identity: Identity): Response {
   const initialMonday = formatISODate(getStartOfWeek(new Date()));
   return htmlResponse(
     pageShell("Quality Calendar", `
-    <main class="dashboard-shell">
+    <main id="qc-main" class="dashboard-shell" data-user-id="${escapeHtml(identity.user!.id)}" data-user-role="${escapeHtml(identity.user!.role)}">
       ${renderSidebar(identity, "quality-calendar")}
-      <section class="content">
+      <section class="content" id="qc-content">
         ${renderTopbar(identity, "Quality Calendar")}
         <section class="panel qc-panel">
           <div class="qc-toolbar">
@@ -1242,7 +1259,22 @@ function renderQualityCalendarPage(identity: Identity): Response {
           </div>
           <div class="qc-form-row">
             <label class="qc-checkbox"><input type="checkbox" id="qc-weekends"> Include Weekends?</label>
-            <label>Colour<input type="color" id="qc-color" value="#00C4DF"></label>
+            <div class="qc-color-field">
+              <label>Colour</label>
+              <div class="qc-color-picker">
+                <div class="qc-color-current" id="qc-color-current">
+                  <div class="qc-color-swatch" id="qc-color-swatch"></div>
+                  <input type="color" id="qc-color" value="#00C4DF" class="qc-color-native">
+                </div>
+                <div class="qc-color-presets" id="qc-color-presets">
+                  <div class="qc-preset-label">Standard</div>
+                  <div class="qc-preset-row" id="qc-preset-row"></div>
+                  <div class="qc-preset-label">Custom</div>
+                  <div class="qc-preset-row" id="qc-custom-row"></div>
+                </div>
+                <button type="button" class="qc-copy-color" id="qc-copy-color" title="Copy this colour to custom palette">Copy colour to palette</button>
+              </div>
+            </div>
           </div>
           <div class="qc-form-field" id="qc-parent-field" style="display:none">
             <label>Parent Banner<select id="qc-parent"></select></label>
@@ -1254,7 +1286,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
           </div>
           <div class="qc-modal-actions">
             <button type="button" id="qc-delete" class="qc-delete-btn" style="display:none">Delete</button>
-            <button type="submit" class="qc-primary-btn">Save</button>
+            <button type="submit" id="qc-save" class="qc-primary-btn">Save</button>
           </div>
         </form>
       </div>
@@ -1271,13 +1303,21 @@ function renderQualityCalendarPage(identity: Identity): Response {
       </div>
     </div>
 
+    <div id="qc-tooltip" class="qc-tooltip" style="display:none"></div>
+    <div id="qc-context-menu" class="qc-context-menu" style="display:none"></div>
+
     <script>
       (function() {
+        const currentUser = { id: "${escapeHtml(identity.user!.id)}", role: "${escapeHtml(identity.user!.role)}" };
+        const COLOR_PRESETS = ["#0f172a", "#1e293b", "#334155", "#475569", "#7f1d1d", "#9a3412", "#ca8a04", "#15803d", "#0369a1", "#7e22ce"];
         const state = {
           monday: new Date("${initialMonday}" + "T00:00:00"),
           days: 5,
           events: [],
-          banners: []
+          banners: [],
+          userId: currentUser.id,
+          userRole: currentUser.role,
+          customColors: JSON.parse(localStorage.getItem("qc_custom_colors") || "[]").slice(0, 5)
         };
 
         function getMonday(d) {
@@ -1293,6 +1333,166 @@ function renderQualityCalendarPage(identity: Identity): Response {
         function formatDisplay(d) { return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); }
         function dayMatches(d, dateStr) { return formatISO(d) === dateStr; }
 
+        function isEditable(event) {
+          if (state.userRole === "superuser") return true;
+          if (state.userRole === "admin") return event.created_by === state.userId;
+          return false;
+        }
+
+        function saveCustomColor(color) {
+          const list = state.customColors.filter(c => c !== color);
+          list.unshift(color);
+          state.customColors = list.slice(0, 5);
+          localStorage.setItem("qc_custom_colors", JSON.stringify(state.customColors));
+          renderColorPresets();
+        }
+
+        function renderColorPresets() {
+          const presetRow = document.getElementById("qc-preset-row");
+          const customRow = document.getElementById("qc-custom-row");
+          presetRow.innerHTML = "";
+          customRow.innerHTML = "";
+          COLOR_PRESETS.forEach(c => {
+            const square = document.createElement("button");
+            square.type = "button";
+            square.className = "qc-color-square";
+            square.style.backgroundColor = c;
+            square.title = c;
+            square.onclick = () => setColor(c);
+            presetRow.appendChild(square);
+          });
+          state.customColors.forEach(c => {
+            const square = document.createElement("button");
+            square.type = "button";
+            square.className = "qc-color-square";
+            square.style.backgroundColor = c;
+            square.title = c;
+            square.onclick = () => setColor(c);
+            customRow.appendChild(square);
+          });
+        }
+
+        function setColor(color) {
+          const input = document.getElementById("qc-color");
+          if (input.disabled) return;
+          input.value = color;
+          updateColorSwatch();
+        }
+
+        function updateColorSwatch() {
+          const color = document.getElementById("qc-color").value;
+          const swatch = document.getElementById("qc-color-swatch");
+          swatch.style.backgroundColor = color;
+          swatch.textContent = color;
+        }
+
+        function showTooltip(el, html) {
+          const tip = document.getElementById("qc-tooltip");
+          tip.innerHTML = html;
+          tip.style.display = "block";
+          const rect = el.getBoundingClientRect();
+          const tipRect = tip.getBoundingClientRect();
+          let top = rect.bottom + 8;
+          let left = rect.left + rect.width / 2 - tipRect.width / 2;
+          if (left < 8) left = 8;
+          if (left + tipRect.width > window.innerWidth - 8) left = window.innerWidth - tipRect.width - 8;
+          if (top + tipRect.height > window.innerHeight - 8) top = rect.top - tipRect.height - 8;
+          tip.style.top = top + "px";
+          tip.style.left = left + "px";
+        }
+
+        function hideTooltip() {
+          document.getElementById("qc-tooltip").style.display = "none";
+        }
+
+        function showContextMenu(e, event) {
+          e.preventDefault();
+          const menu = document.getElementById("qc-context-menu");
+          menu.innerHTML = "";
+          const canEdit = isEditable(event);
+          if (canEdit) {
+            const editBtn = document.createElement("button");
+            editBtn.textContent = "Edit";
+            editBtn.onclick = () => { closeContextMenu(); openModal(event.id); };
+            menu.appendChild(editBtn);
+
+            const copyColorBtn = document.createElement("button");
+            copyColorBtn.textContent = "Copy colour";
+            copyColorBtn.onclick = () => { closeContextMenu(); navigator.clipboard.writeText(event.color_hex); saveCustomColor(event.color_hex); };
+            menu.appendChild(copyColorBtn);
+
+            const colorLabel = document.createElement("div");
+            colorLabel.className = "qc-context-label";
+            colorLabel.textContent = "Set colour";
+            menu.appendChild(colorLabel);
+
+            const palette = document.createElement("div");
+            palette.className = "qc-context-palette";
+            COLOR_PRESETS.forEach(c => {
+              const square = document.createElement("button");
+              square.type = "button";
+              square.className = "qc-color-square";
+              square.style.backgroundColor = c;
+              square.onclick = () => { closeContextMenu(); updateEventColor(event.id, c); };
+              palette.appendChild(square);
+            });
+            menu.appendChild(palette);
+
+            const delBtn = document.createElement("button");
+            delBtn.textContent = "Delete";
+            delBtn.className = "qc-context-delete";
+            delBtn.onclick = () => { closeContextMenu(); deleteEventById(event.id); };
+            menu.appendChild(delBtn);
+          } else {
+            const viewBtn = document.createElement("button");
+            viewBtn.textContent = "View details";
+            viewBtn.onclick = () => { closeContextMenu(); openModal(event.id); };
+            menu.appendChild(viewBtn);
+
+            const copyColorBtn = document.createElement("button");
+            copyColorBtn.textContent = "Copy colour";
+            copyColorBtn.onclick = () => { closeContextMenu(); navigator.clipboard.writeText(event.color_hex); saveCustomColor(event.color_hex); };
+            menu.appendChild(copyColorBtn);
+          }
+
+          menu.style.display = "block";
+          menu.style.top = e.clientY + "px";
+          menu.style.left = e.clientX + "px";
+        }
+
+        function closeContextMenu() {
+          document.getElementById("qc-context-menu").style.display = "none";
+        }
+
+        async function updateEventColor(eventId, color) {
+          const ev = state.events.find(e => e.id === eventId);
+          if (!ev || !isEditable(ev)) return;
+          try {
+            const body = { ...ev, color_hex: color };
+            const res = await fetch("/api/calendar/events/" + eventId, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            const data = await res.json();
+            if (!res.ok || data.error) throw new Error(data.error || "Failed");
+            saveCustomColor(color);
+            await loadEvents();
+          } catch (err) {
+            alert(err.message);
+          }
+        }
+
+        async function deleteEventById(eventId) {
+          const ev = state.events.find(e => e.id === eventId);
+          if (!ev || !isEditable(ev)) return;
+          if (!confirm("Delete this event?")) return;
+          try {
+            const res = await fetch("/api/calendar/events/" + eventId, { method: "DELETE" });
+            const data = await res.json();
+            if (!res.ok || data.error) throw new Error(data.error || "Delete failed");
+            await loadEvents();
+          } catch (err) {
+            alert(err.message);
+          }
+        }
+
         function getWeekDates() {
           const dates = [];
           for (let i = 0; i < state.days; i++) dates.push(addDays(state.monday, i));
@@ -1300,6 +1500,16 @@ function renderQualityCalendarPage(identity: Identity): Response {
         }
 
         function getRangeEnd() { return addDays(state.monday, state.days - 1); }
+
+        function eventTooltipHtml(event) {
+          const dates = event.start_date !== event.end_date ? event.start_date + " to " + event.end_date : event.start_date;
+          const owner = event.created_by === state.userId ? "You" : (state.userRole === "superuser" ? "Another user" : "");
+          return \`<strong>\${escapeHtml(event.title)}</strong><br><em>\${dates}</em>\${event.description ? "<br>" + escapeHtml(event.description) : ""}\${owner ? "<br>Created by: " + owner : ""}\`;
+        }
+
+        function escapeHtml(s) {
+          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
 
         function buildHeader() {
           const row = document.getElementById("qc-header-row");
@@ -1394,13 +1604,15 @@ function renderQualityCalendarPage(identity: Identity): Response {
 
           const row = getBannerRow(banner);
           const tile = document.createElement("div");
-          tile.className = "qc-banner-tile";
+          tile.className = "qc-banner-tile" + (isEditable(banner) ? "" : " qc-readonly");
           tile.style.backgroundColor = banner.color_hex + "20";
           tile.style.borderLeft = "4px solid " + banner.color_hex;
           tile.style.color = banner.color_hex;
           tile.style.gridColumn = (startIdx + 1) + " / span " + colSpan;
           tile.textContent = banner.title;
-          tile.title = banner.title + "\\n" + (banner.description || "") + "\\n" + banner.start_date + " to " + banner.end_date;
+          tile.onmouseenter = (e) => showTooltip(tile, eventTooltipHtml(banner));
+          tile.onmouseleave = hideTooltip;
+          tile.oncontextmenu = (e) => showContextMenu(e, banner);
           tile.onclick = () => openModal(banner.id);
           row.appendChild(tile);
         }
@@ -1414,13 +1626,15 @@ function renderQualityCalendarPage(identity: Identity): Response {
 
           const row = getSingleRow(event.parent_banner_id || "");
           const tile = document.createElement("div");
-          tile.className = "qc-single-tile" + (event.parent_banner_id ? " qc-child-tile" : " qc-standalone-tile");
+          tile.className = "qc-single-tile" + (event.parent_banner_id ? " qc-child-tile" : " qc-standalone-tile") + (isEditable(event) ? "" : " qc-readonly");
           tile.style.backgroundColor = (event.color_hex || "#00C4DF") + "20";
           tile.style.borderLeft = "4px solid " + (event.color_hex || "#00C4DF");
-          tile.style.color = "#0f172a";
+          tile.style.color = event.color_hex || "#00C4DF";
           tile.style.gridColumn = (startIdx + 1) + " / span " + Math.max(1, endIdx - startIdx + 1);
           tile.textContent = event.title;
-          tile.title = event.title + "\\n" + (event.description || "") + "\\n" + event.start_date + (event.start_date !== event.end_date ? " to " + event.end_date : "");
+          tile.onmouseenter = (e) => showTooltip(tile, eventTooltipHtml(event));
+          tile.onmouseleave = hideTooltip;
+          tile.oncontextmenu = (e) => showContextMenu(e, event);
           tile.onclick = () => openModal(event.id);
           row.appendChild(tile);
         }
@@ -1473,35 +1687,63 @@ function renderQualityCalendarPage(identity: Identity): Response {
           document.getElementById("qc-event-id").value = "";
           document.getElementById("qc-subs-list").innerHTML = "";
           document.getElementById("qc-delete").style.display = "none";
+          document.getElementById("qc-save").style.display = "inline-block";
           document.getElementById("qc-modal-title").textContent = "New Event";
 
           if (eventId) {
             const ev = state.events.find(e => e.id === eventId);
             if (ev) {
+              const editable = isEditable(ev);
               document.getElementById("qc-event-id").value = ev.id;
               document.getElementById("qc-title").value = ev.title;
+              document.getElementById("qc-title").readOnly = !editable;
               document.getElementById("qc-description").value = ev.description || "";
+              document.getElementById("qc-description").readOnly = !editable;
               document.getElementById("qc-start").value = ev.start_date;
+              document.getElementById("qc-start").readOnly = !editable;
               document.getElementById("qc-end").value = ev.end_date;
+              document.getElementById("qc-end").readOnly = !editable;
               document.getElementById("qc-weekends").checked = !!ev.include_weekends;
+              document.getElementById("qc-weekends").disabled = !editable;
               document.getElementById("qc-color").value = ev.color_hex || "#00C4DF";
+              document.getElementById("qc-color").disabled = !editable;
+              document.getElementById("qc-color-presets").style.pointerEvents = editable ? "auto" : "none";
+              document.getElementById("qc-color-presets").style.opacity = editable ? "1" : "0.5";
+              document.getElementById("qc-copy-color").style.display = editable ? "inline-block" : "none";
               setType(ev.type);
               document.getElementById("qc-parent").value = ev.parent_banner_id || "";
-              document.getElementById("qc-modal-title").textContent = "Edit Event";
-              document.getElementById("qc-delete").style.display = "inline-block";
+              document.getElementById("qc-parent").disabled = !editable;
+              document.getElementById("qc-type-banner").disabled = !editable;
+              document.getElementById("qc-type-single").disabled = !editable;
+              document.getElementById("qc-add-sub").style.display = editable ? "block" : "none";
+              document.getElementById("qc-modal-title").textContent = editable ? "Edit Event" : "View Event";
+              if (editable) document.getElementById("qc-delete").style.display = "inline-block";
+              if (!editable) document.getElementById("qc-save").style.display = "none";
+
+              if (ev.type === "banner" && Array.isArray(ev.sub_events)) {
+                ev.sub_events.forEach(addSubEventRow);
+              }
             }
           } else {
-            if (prefillDate) {
-              document.getElementById("qc-start").value = prefillDate;
-              document.getElementById("qc-end").value = prefillDate;
-            } else {
-              const today = formatISO(new Date());
-              document.getElementById("qc-start").value = today;
-              document.getElementById("qc-end").value = today;
-            }
+            const defaultStart = prefillDate || formatISO(new Date());
+            document.getElementById("qc-start").value = defaultStart;
+            document.getElementById("qc-end").value = defaultStart;
+            document.getElementById("qc-title").readOnly = false;
+            document.getElementById("qc-description").readOnly = false;
+            document.getElementById("qc-start").readOnly = false;
+            document.getElementById("qc-end").readOnly = false;
+            document.getElementById("qc-weekends").disabled = false;
+            document.getElementById("qc-color").disabled = false;
+            document.getElementById("qc-parent").disabled = false;
+            document.getElementById("qc-type-banner").disabled = false;
+            document.getElementById("qc-type-single").disabled = false;
+            document.getElementById("qc-add-sub").style.display = "block";
             setType("banner");
           }
 
+          setColor(document.getElementById("qc-color").value);
+          updateColorSwatch();
+          renderColorPresets();
           updateParentOptions();
           updateSubsVisibility();
           modal.style.display = "flex";
@@ -1536,15 +1778,19 @@ function renderQualityCalendarPage(identity: Identity): Response {
 
         function addSubEventRow(values) {
           const list = document.getElementById("qc-subs-list");
+          const defaultDate = document.getElementById("qc-start").value || formatISO(new Date());
           const row = document.createElement("div");
           row.className = "qc-sub-row";
           row.innerHTML = \`
             <input type="text" class="qc-sub-title" placeholder="Sub-event title" required value="\${values?.title || ''}">
             <input type="text" class="qc-sub-desc" placeholder="Description" value="\${values?.description || ''}">
-            <input type="date" class="qc-sub-start" required value="\${values?.start_date || ''}">
-            <input type="date" class="qc-sub-end" required value="\${values?.end_date || ''}">
+            <input type="date" class="qc-sub-start" required value="\${values?.start_date || defaultDate}">
+            <input type="date" class="qc-sub-end" required value="\${values?.end_date || defaultDate}">
             <button type="button" class="qc-remove-sub" title="Remove">&times;</button>
           \`;
+          const startInput = row.querySelector(".qc-sub-start");
+          const endInput = row.querySelector(".qc-sub-end");
+          startInput.onchange = () => { if (!endInput.value || endInput.value < startInput.value) endInput.value = startInput.value; };
           row.querySelector(".qc-remove-sub").onclick = () => row.remove();
           list.appendChild(row);
         }
@@ -1552,6 +1798,10 @@ function renderQualityCalendarPage(identity: Identity): Response {
         async function saveEvent(e) {
           e.preventDefault();
           const id = document.getElementById("qc-event-id").value;
+          if (id) {
+            const ev = state.events.find(e => e.id === id);
+            if (ev && !isEditable(ev)) { alert("You can only edit your own events"); return; }
+          }
           const type = document.getElementById("qc-type-banner").classList.contains("active") ? "banner" : "single";
           const body = {
             title: document.getElementById("qc-title").value,
@@ -1595,7 +1845,10 @@ function renderQualityCalendarPage(identity: Identity): Response {
 
         async function deleteEvent() {
           const id = document.getElementById("qc-event-id").value;
-          if (!id || !confirm("Delete this event?")) return;
+          if (!id) return;
+          const ev = state.events.find(e => e.id === id);
+          if (ev && !isEditable(ev)) { alert("You can only delete your own events"); return; }
+          if (!confirm("Delete this event?")) return;
           const res = await fetch("/api/calendar/events/" + id, { method: "DELETE" });
           const data = await res.json();
           if (!res.ok || data.error) { alert(data.error || "Delete failed"); return; }
@@ -1658,6 +1911,28 @@ function renderQualityCalendarPage(identity: Identity): Response {
         document.getElementById("qc-modal-close").onclick = closeModal;
         document.getElementById("qc-form").onsubmit = saveEvent;
         document.getElementById("qc-delete").onclick = deleteEvent;
+
+        const qcStart = document.getElementById("qc-start");
+        const qcEnd = document.getElementById("qc-end");
+        qcStart.onchange = () => { if (!qcEnd.value || qcEnd.value < qcStart.value) qcEnd.value = qcStart.value; };
+
+        document.getElementById("qc-color").addEventListener("input", updateColorSwatch);
+        document.getElementById("qc-color").addEventListener("change", () => { saveCustomColor(document.getElementById("qc-color").value); });
+        document.getElementById("qc-color-swatch").onclick = () => document.getElementById("qc-color").click();
+        document.getElementById("qc-copy-color").onclick = () => {
+          const color = document.getElementById("qc-color").value;
+          navigator.clipboard.writeText(color);
+          saveCustomColor(color);
+        };
+
+        document.getElementById("qc-add-sub").onclick = () => addSubEventRow(null);
+
+        document.addEventListener("click", (e) => {
+          const menu = document.getElementById("qc-context-menu");
+          if (menu.style.display === "block" && !menu.contains(e.target)) closeContextMenu();
+        });
+
+        renderColorPresets();
         document.getElementById("qc-type-banner").onclick = () => { setType("banner"); };
         document.getElementById("qc-type-single").onclick = () => { setType("single"); };
         document.getElementById("qc-add-sub").onclick = () => addSubEventRow();
@@ -6015,6 +6290,9 @@ function pageShell(title: string, body: string) {
     .brand-highlight .teacher-name{font-weight:700}
     .reports-table .brand-highlight .empty-cell{color:#cbd5e1}
     /* Quality Calendar */
+    #qc-main .content{background:var(--secondary);padding:2rem;min-height:100vh}
+    #qc-main .topbar{border-bottom-color:#334155}
+    #qc-main .topbar h1,#qc-main .topbar .eyebrow{color:#fff}
     .qc-panel{position:relative}
     .qc-toolbar{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:space-between;margin-bottom:1.25rem;padding:1rem;background:#fff;border-radius:12px;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,.04)}
     .qc-nav-group{display:flex;gap:.5rem;align-items:center}
@@ -6030,18 +6308,20 @@ function pageShell(title: string, body: string) {
     .qc-secondary-btn{background:#fff;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:.65rem 1.25rem;font-weight:600;cursor:pointer;font-size:.9375rem;transition:all .15s}
     .qc-secondary-btn:hover{border-color:var(--primary);color:var(--primary)}
     .qc-calendar{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.04);position:relative}
-    .qc-header-row{display:grid;grid-template-columns:repeat(5,1fr);background:#f8fafc;border-bottom:1px solid var(--border);position:relative;z-index:2}
+    .qc-header-row{display:grid;grid-template-columns:repeat(5,1fr);background:var(--secondary);border-bottom:2px solid #334155;position:relative;z-index:2}
     .qc-seven-day .qc-header-row{grid-template-columns:repeat(7,1fr)}
-    .qc-header-cell{padding:1rem .75rem;text-align:center;position:relative;border-right:1px solid var(--border)}
+    .qc-header-cell{padding:1rem .75rem;text-align:center;position:relative;border-right:1px solid #475569;color:#fff}
     .qc-header-cell:last-child{border-right:none}
-    .qc-header-cell.qc-weekend{background:#f1f5f9}
+    .qc-header-cell.qc-weekend{background:#334155}
+    .qc-header-cell .qc-day-name{color:#cbd5e1}
+    .qc-header-cell .qc-day-date{color:#fff}
     .qc-day-name{font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
     .qc-day-date{font-size:1rem;font-weight:600;color:var(--text);margin:.25rem 0}
     .qc-day-add{position:absolute;top:.5rem;right:.5rem;width:1.5rem;height:1.5rem;border-radius:50%;background:var(--primary);color:#fff;border:none;font-size:1rem;line-height:1;cursor:pointer;display:grid;place-items:center;opacity:0;transition:opacity .15s}
     .qc-header-cell:hover .qc-day-add{opacity:1}
     .qc-grid{display:grid;grid-template-columns:repeat(5,1fr);grid-auto-rows:min-content;position:relative;min-height:24rem}
     .qc-seven-day .qc-grid{grid-template-columns:repeat(7,1fr)}
-    .qc-grid-col{position:absolute;top:0;bottom:0;border-right:1px solid #e2e8f0;z-index:0}
+    .qc-grid-col{position:absolute;top:0;bottom:0;border-right:1px solid #94a3b8;z-index:0}
     .qc-grid-col:last-child{border-right:none}
     .qc-grid-col.qc-weekend{background:#f8fafc}
     .qc-banner-row,.qc-single-row{display:grid;grid-template-columns:repeat(5,1fr);grid-auto-rows:min-content;gap:.5rem;padding:.5rem;position:relative;z-index:1}
@@ -6050,6 +6330,7 @@ function pageShell(title: string, body: string) {
     .qc-banner-tile:hover,.qc-single-tile:hover{transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,.1)}
     .qc-banner-tile{font-size:.9rem;font-weight:700}
     .qc-standalone-tile{border-left:4px solid #0f172a}
+    .qc-readonly{opacity:.7;cursor:default}
     .qc-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);z-index:1000;display:flex;justify-content:center;align-items:center;padding:1rem}
     .qc-modal{background:#fff;border-radius:16px;width:100%;max-width:720px;max-height:calc(100vh - 2rem);overflow-y:auto;box-shadow:0 16px 64px rgba(0,0,0,.18)}
     .qc-modal-sm{max-width:520px}
@@ -6060,13 +6341,28 @@ function pageShell(title: string, body: string) {
     .qc-form{padding:1.5rem;display:flex;flex-direction:column;gap:1rem}
     .qc-form label{display:flex;flex-direction:column;gap:.35rem;font-size:.875rem;font-weight:600;color:var(--text)}
     .qc-form input,.qc-form textarea,.qc-form select{width:100%;border:1px solid var(--border);border-radius:8px;padding:.65rem .875rem;font:inherit;color:var(--text)}
+    .qc-form input:read-only,.qc-form input:disabled,.qc-form textarea:read-only,.qc-form select:disabled{background:#f1f5f9;color:var(--muted);cursor:not-allowed}
     .qc-form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
     .qc-type-toggle{display:flex;gap:.5rem;margin-bottom:.5rem}
     .qc-type-btn{flex:1;padding:.65rem 1rem;background:#f1f5f9;color:var(--muted);border:1px solid var(--border);border-radius:8px;font-weight:600;cursor:pointer;font-size:.9375rem;transition:all .15s}
+    .qc-type-btn:disabled{opacity:.7;cursor:not-allowed}
     .qc-type-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
     .qc-type-btn.qc-type-active{background:var(--primary);color:#fff;border-color:var(--primary)}
     .qc-checkbox{flex-direction:row!important;align-items:center;gap:.5rem!important;cursor:pointer}
     .qc-checkbox input{width:auto}
+    .qc-color-field{grid-column:span 2}
+    .qc-color-picker{display:flex;flex-direction:column;gap:.75rem;margin-top:.25rem}
+    .qc-color-current{position:relative;width:100%;height:3rem;border-radius:10px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.12);cursor:pointer}
+    .qc-color-swatch{position:absolute;inset:0;display:grid;place-items:center;font-family:monospace;font-size:1rem;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4);pointer-events:none}
+    .qc-color-native{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:none;padding:0;margin:0}
+    .qc-color-presets{display:flex;flex-direction:column;gap:.5rem}
+    .qc-preset-label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    .qc-preset-row{display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem}
+    .qc-color-square{width:100%;aspect-ratio:1;border-radius:8px;border:2px solid #e2e8f0;cursor:pointer;transition:transform .1s,border-color .1s}
+    .qc-color-square:hover{transform:scale(1.08);border-color:#0f172a}
+    .qc-color-custom .qc-preset-row{grid-template-columns:repeat(5,1fr)}
+    .qc-copy-color{background:#f1f5f9;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:.45rem .9rem;font-weight:600;cursor:pointer;font-size:.875rem;transition:all .15s}
+    .qc-copy-color:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
     .qc-subs-section{display:none;border:1px dashed var(--border);border-radius:10px;padding:1rem;background:#f8fafc}
     .qc-subs-section h3{margin:0 0 .75rem;font-size:1rem;color:var(--text)}
     .qc-sub-row{display:grid;grid-template-columns:1.5fr 1fr 120px 120px 2rem;gap:.5rem;align-items:center;margin-bottom:.5rem}
@@ -6079,7 +6375,16 @@ function pageShell(title: string, body: string) {
     .qc-delete-btn:hover{background:#fecaca}
     .qc-modal-hint{color:var(--muted);font-size:.875rem;padding:0 1.5rem .75rem}
     .qc-modal-hint code{background:#f1f5f9;padding:.125rem .375rem;border-radius:4px}
-    @media(max-width:768px){.qc-toolbar{flex-direction:column;align-items:stretch}.qc-form-row,.qc-sub-row{grid-template-columns:1fr}.qc-header-row,.qc-grid,.qc-banner-row,.qc-single-row{grid-template-columns:repeat(5,1fr)}.qc-seven-day .qc-header-row,.qc-seven-day .qc-grid,.qc-seven-day .qc-banner-row,.qc-seven-day .qc-single-row{grid-template-columns:repeat(7,1fr)}}
+    .qc-tooltip{position:fixed;z-index:2000;max-width:320px;padding:1rem 1.25rem;background:#1e293b;color:#fff;border-radius:10px;font-size:1.125rem;line-height:1.5;box-shadow:0 8px 24px rgba(0,0,0,.25);pointer-events:none}
+    .qc-tooltip strong{font-size:1.25rem;color:#fff;display:block;margin-bottom:.35rem}
+    .qc-tooltip em{color:#94a3b8;font-style:normal}
+    .qc-context-menu{position:fixed;z-index:2001;min-width:180px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);display:flex;flex-direction:column;padding:.5rem;gap:.25rem}
+    .qc-context-menu button{background:none;border:none;padding:.6rem .9rem;text-align:left;border-radius:6px;font-size:.9375rem;font-weight:600;color:var(--text);cursor:pointer;transition:background .1s}
+    .qc-context-menu button:hover{background:#f1f5f9}
+    .qc-context-delete{color:#dc2626!important}
+    .qc-context-label{font-size:.75rem;color:var(--muted);padding:.4rem .75rem 0;text-transform:uppercase;letter-spacing:.05em}
+    .qc-context-palette{display:grid;grid-template-columns:repeat(5,1fr);gap:.4rem;padding:.4rem .75rem}
+    @media(max-width:768px){.qc-toolbar{flex-direction:column;align-items:stretch}.qc-form-row,.qc-sub-row{grid-template-columns:1fr}.qc-color-field{grid-column:span 1}.qc-header-row,.qc-grid,.qc-banner-row,.qc-single-row{grid-template-columns:repeat(5,1fr)}.qc-seven-day .qc-header-row,.qc-seven-day .qc-grid,.qc-seven-day .qc-banner-row,.qc-seven-day .qc-single-row{grid-template-columns:repeat(7,1fr)}}
   </style></head><body>${body}</body></html>`;
 }
 
