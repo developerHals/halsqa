@@ -1263,8 +1263,11 @@ function renderQualityCalendarPage(identity: Identity): Response {
               <label>Colour</label>
               <div class="qc-color-picker">
                 <div class="qc-color-current" id="qc-color-current">
-                  <div class="qc-color-swatch" id="qc-color-swatch"></div>
-                  <input type="color" id="qc-color" value="#00C4DF" class="qc-color-native">
+                  <div class="qc-color-swatch-wrap">
+                    <div class="qc-color-swatch" id="qc-color-swatch"></div>
+                    <input type="color" id="qc-color" value="#00C4DF" class="qc-color-native">
+                  </div>
+                  <button type="button" class="qc-copy-color" id="qc-copy-color" title="Copy this colour to custom palette">Add to palette</button>
                 </div>
                 <div class="qc-color-presets" id="qc-color-presets">
                   <div class="qc-preset-label">Standard</div>
@@ -1272,7 +1275,6 @@ function renderQualityCalendarPage(identity: Identity): Response {
                   <div class="qc-preset-label">Custom</div>
                   <div class="qc-preset-row" id="qc-custom-row"></div>
                 </div>
-                <button type="button" class="qc-copy-color" id="qc-copy-color" title="Copy this colour to custom palette">Copy colour to palette</button>
               </div>
             </div>
           </div>
@@ -1309,7 +1311,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
     <script>
       (function() {
         const currentUser = { id: "${escapeHtml(identity.user!.id)}", role: "${escapeHtml(identity.user!.role)}" };
-        const COLOR_PRESETS = ["#0f172a", "#1e293b", "#334155", "#475569", "#7f1d1d", "#9a3412", "#ca8a04", "#15803d", "#0369a1", "#7e22ce"];
+        const COLOR_PRESETS = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e", "#06b6d4", "#3b82f6", "#6366f1", "#a855f7", "#ec4899"];
         const state = {
           monday: new Date("${initialMonday}" + "T00:00:00"),
           days: 5,
@@ -1347,6 +1349,12 @@ function renderQualityCalendarPage(identity: Identity): Response {
           renderColorPresets();
         }
 
+        function removeCustomColor(index) {
+          state.customColors.splice(index, 1);
+          localStorage.setItem("qc_custom_colors", JSON.stringify(state.customColors));
+          renderColorPresets();
+        }
+
         function renderColorPresets() {
           const presetRow = document.getElementById("qc-preset-row");
           const customRow = document.getElementById("qc-custom-row");
@@ -1361,13 +1369,14 @@ function renderQualityCalendarPage(identity: Identity): Response {
             square.onclick = () => setColor(c);
             presetRow.appendChild(square);
           });
-          state.customColors.forEach(c => {
+          state.customColors.forEach((c, i) => {
             const square = document.createElement("button");
             square.type = "button";
             square.className = "qc-color-square";
             square.style.backgroundColor = c;
-            square.title = c;
+            square.title = "Double-click to remove";
             square.onclick = () => setColor(c);
+            square.ondblclick = (e) => { e.preventDefault(); e.stopPropagation(); removeCustomColor(i); };
             customRow.appendChild(square);
           });
         }
@@ -1918,7 +1927,6 @@ function renderQualityCalendarPage(identity: Identity): Response {
 
         document.getElementById("qc-color").addEventListener("input", updateColorSwatch);
         document.getElementById("qc-color").addEventListener("change", () => { saveCustomColor(document.getElementById("qc-color").value); });
-        document.getElementById("qc-color-swatch").onclick = () => document.getElementById("qc-color").click();
         document.getElementById("qc-copy-color").onclick = () => {
           const color = document.getElementById("qc-color").value;
           navigator.clipboard.writeText(color);
@@ -6290,9 +6298,6 @@ function pageShell(title: string, body: string) {
     .brand-highlight .teacher-name{font-weight:700}
     .reports-table .brand-highlight .empty-cell{color:#cbd5e1}
     /* Quality Calendar */
-    #qc-main .content{background:var(--secondary);padding:2rem;min-height:100vh}
-    #qc-main .topbar{border-bottom-color:#334155}
-    #qc-main .topbar h1,#qc-main .topbar .eyebrow{color:#fff}
     .qc-panel{position:relative}
     .qc-toolbar{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:space-between;margin-bottom:1.25rem;padding:1rem;background:#fff;border-radius:12px;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,.04)}
     .qc-nav-group{display:flex;gap:.5rem;align-items:center}
@@ -6332,7 +6337,7 @@ function pageShell(title: string, body: string) {
     .qc-standalone-tile{border-left:4px solid #0f172a}
     .qc-readonly{opacity:.7;cursor:default}
     .qc-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);z-index:1000;display:flex;justify-content:center;align-items:center;padding:1rem}
-    .qc-modal{background:#fff;border-radius:16px;width:100%;max-width:720px;max-height:calc(100vh - 2rem);overflow-y:auto;box-shadow:0 16px 64px rgba(0,0,0,.18)}
+    .qc-modal{background:#fff;border-radius:16px;width:100%;max-width:1400px;max-height:calc(100vh - 2rem);overflow-y:auto;box-shadow:0 16px 64px rgba(0,0,0,.18)}
     .qc-modal-sm{max-width:520px}
     .qc-modal-header{display:flex;justify-content:space-between;align-items:center;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border)}
     .qc-modal-header h2{margin:0;font-size:1.25rem;font-weight:700;color:var(--text)}
@@ -6352,16 +6357,17 @@ function pageShell(title: string, body: string) {
     .qc-checkbox input{width:auto}
     .qc-color-field{grid-column:span 2}
     .qc-color-picker{display:flex;flex-direction:column;gap:.75rem;margin-top:.25rem}
-    .qc-color-current{position:relative;width:100%;height:3rem;border-radius:10px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.12);cursor:pointer}
-    .qc-color-swatch{position:absolute;inset:0;display:grid;place-items:center;font-family:monospace;font-size:1rem;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4);pointer-events:none}
+    .qc-color-current{display:flex;gap:.5rem;align-items:stretch;height:3rem}
+    .qc-color-swatch-wrap{position:relative;flex:1;border-radius:10px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+    .qc-color-swatch{position:absolute;inset:0;display:grid;place-items:center;font-family:monospace;font-size:.9375rem;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4);pointer-events:none}
     .qc-color-native{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:none;padding:0;margin:0}
     .qc-color-presets{display:flex;flex-direction:column;gap:.5rem}
     .qc-preset-label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-    .qc-preset-row{display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem}
-    .qc-color-square{width:100%;aspect-ratio:1;border-radius:8px;border:2px solid #e2e8f0;cursor:pointer;transition:transform .1s,border-color .1s}
+    .qc-preset-row{display:flex;flex-wrap:wrap;gap:.35rem}
+    .qc-color-square{width:2.5rem;height:2.5rem;border-radius:6px;border:2px solid #e2e8f0;cursor:pointer;transition:transform .1s,border-color .1s;flex:0 0 2.5rem}
     .qc-color-square:hover{transform:scale(1.08);border-color:#0f172a}
-    .qc-color-custom .qc-preset-row{grid-template-columns:repeat(5,1fr)}
-    .qc-copy-color{background:#f1f5f9;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:.45rem .9rem;font-weight:600;cursor:pointer;font-size:.875rem;transition:all .15s}
+    .qc-color-custom .qc-preset-row{gap:.35rem}
+    .qc-copy-color{background:#f1f5f9;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:0 .9rem;font-weight:600;cursor:pointer;font-size:.8125rem;transition:all .15s;white-space:nowrap;display:flex;align-items:center}
     .qc-copy-color:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
     .qc-subs-section{display:none;border:1px dashed var(--border);border-radius:10px;padding:1rem;background:#f8fafc}
     .qc-subs-section h3{margin:0 0 .75rem;font-size:1rem;color:var(--text)}
@@ -6378,12 +6384,12 @@ function pageShell(title: string, body: string) {
     .qc-tooltip{position:fixed;z-index:2000;max-width:320px;padding:1rem 1.25rem;background:#1e293b;color:#fff;border-radius:10px;font-size:1.125rem;line-height:1.5;box-shadow:0 8px 24px rgba(0,0,0,.25);pointer-events:none}
     .qc-tooltip strong{font-size:1.25rem;color:#fff;display:block;margin-bottom:.35rem}
     .qc-tooltip em{color:#94a3b8;font-style:normal}
-    .qc-context-menu{position:fixed;z-index:2001;min-width:180px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);display:flex;flex-direction:column;padding:.5rem;gap:.25rem}
+    .qc-context-menu{position:fixed;z-index:2001;min-width:15rem;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);display:flex;flex-direction:column;padding:.5rem;gap:.25rem}
     .qc-context-menu button{background:none;border:none;padding:.6rem .9rem;text-align:left;border-radius:6px;font-size:.9375rem;font-weight:600;color:var(--text);cursor:pointer;transition:background .1s}
     .qc-context-menu button:hover{background:#f1f5f9}
     .qc-context-delete{color:#dc2626!important}
     .qc-context-label{font-size:.75rem;color:var(--muted);padding:.4rem .75rem 0;text-transform:uppercase;letter-spacing:.05em}
-    .qc-context-palette{display:grid;grid-template-columns:repeat(5,1fr);gap:.4rem;padding:.4rem .75rem}
+    .qc-context-palette{display:grid;grid-template-columns:repeat(5,1fr);gap:.35rem;padding:.4rem .75rem}
     @media(max-width:768px){.qc-toolbar{flex-direction:column;align-items:stretch}.qc-form-row,.qc-sub-row{grid-template-columns:1fr}.qc-color-field{grid-column:span 1}.qc-header-row,.qc-grid,.qc-banner-row,.qc-single-row{grid-template-columns:repeat(5,1fr)}.qc-seven-day .qc-header-row,.qc-seven-day .qc-grid,.qc-seven-day .qc-banner-row,.qc-seven-day .qc-single-row{grid-template-columns:repeat(7,1fr)}}
   </style></head><body>${body}</body></html>`;
 }
