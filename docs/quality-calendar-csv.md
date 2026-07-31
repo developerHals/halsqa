@@ -15,6 +15,12 @@ The importer expects a plain text CSV file:
 ### Required header
 
 ```csv
+title,start_date,end_date
+```
+
+You can also include any of the optional columns exported by the Quality Calendar:
+
+```csv
 event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex
 ```
 
@@ -22,7 +28,7 @@ event_type,title,description,start_date,end_date,include_weekends,parent_title,c
 
 | Column | Required? | Accepted values | Notes |
 |---|---|---|---|
-| `event_type` | Yes | `banner` or `single` | `banner` creates a multi-day banner; `single` creates a one-day or standalone event. |
+| `event_type` | No | `banner` or `single` | Defaults to `single`. `banner` creates a multi-day banner; `single` creates a one-day or standalone event. |
 | `title` | Yes | any text | Used as the event title. Banner titles are used to link child `single` events. |
 | `description` | No | any text | Optional details shown in the calendar modal. |
 | `start_date` | Yes | `YYYY-MM-DD` | Start date in ISO format, e.g. `2026-09-01`. |
@@ -49,18 +55,26 @@ If a `single` row has a `parent_title` that does not match any banner in the CSV
 3. Add one row per event.
 4. Save the file as **CSV** (`.csv`).
 5. In the Quality Calendar page, open the **Import CSV** modal.
-6. Copy and paste the CSV contents into the text box and confirm the import.
+6. Click **Download template** to get a starter file with the correct headers, or upload your CSV file, or paste the CSV contents into the text box.
+7. Click **Import** to confirm.
 
 ## Examples
 
-### Example 1: a single one-day event
+### Example 1: a single one-day event (minimum required columns)
+
+```csv
+title,start_date,end_date
+Assessment deadline,2026-09-15,2026-09-15
+```
+
+### Example 2: a single one-day event with all optional columns
 
 ```csv
 event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex
 single,Assessment deadline,All portfolios due,2026-09-15,2026-09-15,0,#00C4DF
 ```
 
-### Example 2: a multi-day banner without weekends
+### Example 3: a multi-day banner without weekends
 
 ```csv
 event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex
@@ -69,7 +83,7 @@ banner,Induction week,Welcome and onboarding,2026-09-21,2026-09-25,0,#00C4DF
 
 This banner will display Monday to Friday. It will not visually cover Saturday and Sunday when the calendar is in 7-day view.
 
-### Example 3: a banner that spans the weekend
+### Example 4: a banner that spans the weekend
 
 ```csv
 event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex
@@ -78,7 +92,7 @@ banner,Cross-campus review,Quality review week,2026-09-21,2026-09-27,1,#F59E0B
 
 Because `include_weekends` is `1`, the banner will cover every day from Monday through Sunday.
 
-### Example 4: banner with child single events
+### Example 5: banner with child single events
 
 ```csv
 event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex
@@ -90,7 +104,7 @@ single,Day 5 - Review,End-of-week review,2026-09-25,2026-09-25,0,Induction week,
 
 The `parent_title` for each `single` row matches the `title` of the banner. Those single events will appear as children of the `Induction week` banner.
 
-### Example 5: values that contain commas
+### Example 6: values that contain commas
 
 ```csv
 event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex

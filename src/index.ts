@@ -1088,6 +1088,18 @@ async function deleteCalendarEvent(request: Request, env: Env, identity: Identit
   }
 }
 
+function normalizeImportDate(value: string): string {
+  const v = value.trim();
+  if (!v) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const ukMatch = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ukMatch) {
+    const [, d, m, y] = ukMatch;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  return v;
+}
+
 async function importCalendarCSV(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!calendarAccessAllowed(identity.user!)) return json({ error: "Forbidden" }, 403);
   try {
@@ -1107,22 +1119,22 @@ async function importCalendarCSV(request: Request, env: Env, identity: Identity)
     const parentIdx = headers.indexOf("parent_title");
     const colorIdx = headers.indexOf("color_hex");
 
-    if (typeIdx === -1 || titleIdx === -1 || startIdx === -1 || endIdx === -1) {
-      return json({ error: "CSV must contain event_type, title, start_date, end_date columns" }, 400);
+    if (titleIdx === -1 || startIdx === -1 || endIdx === -1) {
+      return json({ error: "CSV must contain title, start_date, end_date columns" }, 400);
     }
 
     const rows: { type: string; title: string; description: string; start: string; end: string; includeWeekends: number; parent: string; color: string }[] = [];
     for (let i = 1; i < lines.length; i++) {
       const values = parseCSVLine(lines[i]);
-      const type = values[typeIdx]?.trim().toLowerCase();
+      const type = typeIdx !== -1 ? values[typeIdx]?.trim().toLowerCase() || "single" : "single";
       const title = values[titleIdx]?.trim();
-      if (!type || !title) continue;
+      if (!title) continue;
       rows.push({
         type,
         title,
         description: values[descIdx]?.trim() || "",
-        start: values[startIdx]?.trim() || "",
-        end: values[endIdx]?.trim() || values[startIdx]?.trim() || "",
+        start: normalizeImportDate(values[startIdx] || ""),
+        end: normalizeImportDate(values[endIdx] || "") || normalizeImportDate(values[startIdx] || ""),
         includeWeekends: values[weekendIdx]?.trim() === "1" ? 1 : 0,
         parent: values[parentIdx]?.trim() || "",
         color: values[colorIdx]?.trim() || "#00C4DF",
@@ -1297,8 +1309,16 @@ function renderQualityCalendarPage(identity: Identity): Response {
     <div id="qc-import-modal" class="qc-modal-overlay" style="display:none">
       <div class="qc-modal qc-modal-sm">
         <div class="qc-modal-header"><h2>Import CSV</h2><button type="button" id="qc-import-close" class="qc-modal-close">&times;</button></div>
-        <p class="qc-modal-hint">Columns: <code>event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex</code></p>
-        <textarea id="qc-import-text" rows="10" placeholder="Paste CSV here..."></textarea>
+        <p class="qc-modal-hint">Required columns: <code>title, start_date, end_date</code>. Optional columns (same format as Export CSV): <code>event_type, description, include_weekends, parent_title, color_hex</code></p>
+        <div class="qc-import-options">
+          <label class="qc-file-label">
+            <span>Upload CSV file</span>
+            <input type="file" id="qc-import-file" accept=".csv,text/csv">
+            <small>Or paste the contents below</small>
+          </label>
+          <button type="button" id="qc-download-template" class="qc-secondary-btn">Download template</button>
+        </div>
+        <textarea id="qc-import-text" rows="10" placeholder="Or paste CSV here..."></textarea>
         <div class="qc-modal-actions">
           <button type="button" id="qc-import-submit" class="qc-primary-btn">Import</button>
         </div>
@@ -1311,7 +1331,8 @@ function renderQualityCalendarPage(identity: Identity): Response {
     <script>
       (function() {
         const currentUser = { id: "${escapeHtml(identity.user!.id)}", role: "${escapeHtml(identity.user!.role)}" };
-        const COLOR_PRESETS = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e", "#06b6d4", "#3b82f6", "#6366f1", "#a855f7", "#ec4899"];
+        const COLOR_PRESETS = ["#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#22c55e", "#10b981", "#14b8a6", "#06b6d4", "#0ea5e9", "#3b82f6", "#6366f1", "#8b5cf6", "#a855f7", "#d946ef", "#ec4899", "#f43f5e", "#78716c", "#1e293b", "#0f172a"];
+        const MAX_CUSTOM_COLORS = 20;
         const state = {
           monday: new Date("${initialMonday}" + "T00:00:00"),
           days: 5,
@@ -1319,7 +1340,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
           banners: [],
           userId: currentUser.id,
           userRole: currentUser.role,
-          customColors: JSON.parse(localStorage.getItem("qc_custom_colors") || "[]").slice(0, 5)
+          customColors: JSON.parse(localStorage.getItem("qc_custom_colors") || "[]").slice(0, MAX_CUSTOM_COLORS)
         };
 
         function getMonday(d) {
@@ -1330,7 +1351,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
         }
 
         function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
-        function formatISO(d) { return d.toISOString().slice(0, 10); }
+        function formatISO(d) { const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, "0"); const day = String(d.getDate()).padStart(2, "0"); return y + "-" + m + "-" + day; }
         function isWeekend(d) { const day = d.getDay(); return day === 0 || day === 6; }
         function formatDisplay(d) { return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); }
         function dayMatches(d, dateStr) { return formatISO(d) === dateStr; }
@@ -1344,7 +1365,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
         function saveCustomColor(color) {
           const list = state.customColors.filter(c => c !== color);
           list.unshift(color);
-          state.customColors = list.slice(0, 5);
+          state.customColors = list.slice(0, MAX_CUSTOM_COLORS);
           localStorage.setItem("qc_custom_colors", JSON.stringify(state.customColors));
           renderColorPresets();
         }
@@ -1386,6 +1407,15 @@ function renderQualityCalendarPage(identity: Identity): Response {
           if (input.disabled) return;
           input.value = color;
           updateColorSwatch();
+        }
+
+        function tileTextColor(hex) {
+          const clean = (hex || "#00C4DF").replace("#", "");
+          const r = parseInt(clean.substring(0, 2), 16);
+          const g = parseInt(clean.substring(2, 4), 16);
+          const b = parseInt(clean.substring(4, 6), 16);
+          const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+          return brightness > 140 ? "#0f172a" : "#ffffff";
         }
 
         function updateColorSwatch() {
@@ -1614,9 +1644,8 @@ function renderQualityCalendarPage(identity: Identity): Response {
           const row = getBannerRow(banner);
           const tile = document.createElement("div");
           tile.className = "qc-banner-tile" + (isEditable(banner) ? "" : " qc-readonly");
-          tile.style.backgroundColor = banner.color_hex + "20";
-          tile.style.borderLeft = "4px solid " + banner.color_hex;
-          tile.style.color = banner.color_hex;
+          tile.style.backgroundColor = banner.color_hex;
+          tile.style.color = tileTextColor(banner.color_hex);
           tile.style.gridColumn = (startIdx + 1) + " / span " + colSpan;
           tile.textContent = banner.title;
           tile.onmouseenter = (e) => showTooltip(tile, eventTooltipHtml(banner));
@@ -1636,9 +1665,8 @@ function renderQualityCalendarPage(identity: Identity): Response {
           const row = getSingleRow(event.parent_banner_id || "");
           const tile = document.createElement("div");
           tile.className = "qc-single-tile" + (event.parent_banner_id ? " qc-child-tile" : " qc-standalone-tile") + (isEditable(event) ? "" : " qc-readonly");
-          tile.style.backgroundColor = (event.color_hex || "#00C4DF") + "20";
-          tile.style.borderLeft = "4px solid " + (event.color_hex || "#00C4DF");
-          tile.style.color = event.color_hex || "#00C4DF";
+          tile.style.backgroundColor = event.color_hex || "#00C4DF";
+          tile.style.color = tileTextColor(event.color_hex);
           tile.style.gridColumn = (startIdx + 1) + " / span " + Math.max(1, endIdx - startIdx + 1);
           tile.textContent = event.title;
           tile.onmouseenter = (e) => showTooltip(tile, eventTooltipHtml(event));
@@ -1876,6 +1904,26 @@ function renderQualityCalendarPage(identity: Identity): Response {
         function closeImportModal() {
           document.getElementById("qc-import-modal").style.display = "none";
           document.getElementById("qc-import-text").value = "";
+          document.getElementById("qc-import-file").value = "";
+        }
+
+        function handleImportFile(e) {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => { document.getElementById("qc-import-text").value = reader.result; };
+          reader.readAsText(file);
+        }
+
+        function downloadTemplate() {
+          const template = "event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex\nsingle,Example event,Optional description,2026-09-01,2026-09-01,0,#00C4DF\n";
+          const blob = new Blob([template], { type: "text/csv;charset=utf-8;" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "quality-calendar-template.csv";
+          a.click();
+          URL.revokeObjectURL(url);
         }
 
         async function submitImport() {
@@ -1906,7 +1954,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
         document.getElementById("qc-prev").onclick = () => setMonday(addDays(state.monday, -7));
         document.getElementById("qc-next").onclick = () => setMonday(addDays(state.monday, 7));
         document.getElementById("qc-today").onclick = () => setMonday(new Date());
-        document.getElementById("qc-date-picker").onchange = e => setMonday(new Date(e.target.value));
+        document.getElementById("qc-date-picker").onchange = e => setMonday(new Date(e.target.value + "T00:00:00"));
         document.querySelectorAll(".qc-view-btn").forEach(btn => {
           btn.onclick = () => {
             document.querySelectorAll(".qc-view-btn").forEach(b => b.classList.remove("active"));
@@ -1947,6 +1995,8 @@ function renderQualityCalendarPage(identity: Identity): Response {
         document.getElementById("qc-import").onclick = showImportModal;
         document.getElementById("qc-import-close").onclick = closeImportModal;
         document.getElementById("qc-import-submit").onclick = submitImport;
+        document.getElementById("qc-import-file").onchange = handleImportFile;
+        document.getElementById("qc-download-template").onclick = downloadTemplate;
         document.getElementById("qc-export").onclick = exportCSV;
 
         document.getElementById("qc-modal").onclick = e => { if (e.target.id === "qc-modal") closeModal(); };
@@ -6334,7 +6384,6 @@ function pageShell(title: string, body: string) {
     .qc-banner-tile,.qc-single-tile{padding:.65rem .75rem;border-radius:8px;font-size:.875rem;font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:transform .1s,box-shadow .1s}
     .qc-banner-tile:hover,.qc-single-tile:hover{transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,0,0,.1)}
     .qc-banner-tile{font-size:.9rem;font-weight:700}
-    .qc-standalone-tile{border-left:4px solid #0f172a}
     .qc-readonly{opacity:.7;cursor:default}
     .qc-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);z-index:1000;display:flex;justify-content:center;align-items:center;padding:1rem}
     .qc-modal{background:#fff;border-radius:16px;width:100%;max-width:1400px;max-height:calc(100vh - 2rem);overflow-y:auto;box-shadow:0 16px 64px rgba(0,0,0,.18)}
@@ -6381,6 +6430,11 @@ function pageShell(title: string, body: string) {
     .qc-delete-btn:hover{background:#fecaca}
     .qc-modal-hint{color:var(--muted);font-size:.875rem;padding:0 1.5rem .75rem}
     .qc-modal-hint code{background:#f1f5f9;padding:.125rem .375rem;border-radius:4px}
+    .qc-import-options{display:flex;gap:1rem;align-items:flex-start;padding:0 1.5rem 1rem;flex-wrap:wrap}
+    .qc-file-label{flex:1;min-width:200px;cursor:pointer;display:flex;flex-direction:column;gap:.35rem;font-size:.875rem;font-weight:600;color:var(--text)}
+    .qc-file-label input[type=file]{width:100%;border:1px dashed var(--border);border-radius:8px;padding:.65rem .875rem;cursor:pointer;font:inherit;color:var(--text);background:#fafafa}
+    .qc-file-label small{color:var(--muted);font-size:.8125rem;font-weight:400}
+    .qc-file-label input[type=file]:hover{border-color:var(--primary);background:#f0f9ff}
     .qc-tooltip{position:fixed;z-index:2000;max-width:320px;padding:1rem 1.25rem;background:#1e293b;color:#fff;border-radius:10px;font-size:1.125rem;line-height:1.5;box-shadow:0 8px 24px rgba(0,0,0,.25);pointer-events:none}
     .qc-tooltip strong{font-size:1.25rem;color:#fff;display:block;margin-bottom:.35rem}
     .qc-tooltip em{color:#94a3b8;font-style:normal}
