@@ -1916,7 +1916,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
         }
 
         function downloadTemplate() {
-          const template = "event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex\nsingle,Example event,Optional description,2026-09-01,2026-09-01,0,#00C4DF\n";
+          const template = "event_type,title,description,start_date,end_date,include_weekends,parent_title,color_hex\\nsingle,Example event,Optional description,2026-09-01,2026-09-01,0,#00C4DF\\n";
           const blob = new Blob([template], { type: "text/csv;charset=utf-8;" });
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
