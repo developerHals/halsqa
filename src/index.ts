@@ -7249,19 +7249,19 @@ function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTem
       const div = document.createElement('div');
       div.className = 'q-row';
       div.id = 'q-row-' + idx;
-      div.innerHTML = `
+      div.innerHTML = \`
         <div class="q-row-header">
-          <span class="meta-chip">#` + (idx+1) + `</span>
-          <input type="text" class="form-input" id="q-text-` + idx + `" placeholder="Question text" style="flex:1">
-          <div class="q-pts-wrap"${tmplType !== 'quiz' ? ' style="display:none"' : ''}>
-            <input type="number" class="form-input q-pts-input" id="q-pts-` + idx + `" placeholder="Pts" min="0" value="1">
+          <span class="meta-chip">#\${idx+1}</span>
+          <input type="text" class="form-input" id="q-text-\${idx}" placeholder="Question text" style="flex:1">
+          <div class="q-pts-wrap"\${tmplType !== 'quiz' ? ' style="display:none"' : ''}>
+            <input type="number" class="form-input q-pts-input" id="q-pts-\${idx}" placeholder="Pts" min="0" value="1">
           </div>
-          <button class="btn btn-secondary" style="padding:.3rem .7rem" onclick="removeQ(` + idx + `)">✕</button>
+          <button class="btn btn-secondary" style="padding:.3rem .7rem" onclick="removeQ(\${idx})">✕</button>
         </div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Type</label>
-            <select class="form-input" id="q-type-` + idx + `" onchange="renderQOptions(` + idx + `)">
+            <select class="form-input" id="q-type-\${idx}" onchange="renderQOptions(\${idx})">
               <option value="text">Text (short)</option>
               <option value="textarea">Text (long)</option>
               <option value="single_choice">Single Choice</option>
@@ -7271,8 +7271,8 @@ function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTem
             </select>
           </div>
         </div>
-        <div id="q-options-` + idx + `"></div>
-      `;
+        <div id="q-options-\${idx}"></div>
+      \`;
       document.getElementById('tmplQuestions').appendChild(div);
     }
     function removeQ(idx) { const el = document.getElementById('q-row-' + idx); if (el) el.remove(); }
