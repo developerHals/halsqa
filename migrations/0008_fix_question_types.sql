@@ -28,7 +28,8 @@ CREATE TABLE lw_template_questions_new (
     has_text_entry INTEGER DEFAULT 0 CHECK (has_text_entry IN (0, 1)),
     text_entry_label TEXT,
     is_required INTEGER DEFAULT 0 CHECK (is_required IN (0, 1)),
-    sort_order INTEGER DEFAULT 0
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 INSERT INTO lw_template_questions_new SELECT * FROM lw_template_questions;
