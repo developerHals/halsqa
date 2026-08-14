@@ -16,10 +16,123 @@ interface Env {
   MICROSOFT_TENANT_ID?: string;
   SESSION_SECRET?: string;
   "LearnerTrack.API"?: string;
+  LT_USER_NAME?: string;
   ASSETS?: { fetch(request: Request): Promise<Response> };
 }
 
-type Role = "superuser" | "admin" | "assessor" | "iqa" | "eqa" | "assessor_iqa";
+type Role = "superuser" | "admin" | "assessor" | "iqa" | "eqa" | "assessor_iqa" | "student";
+
+// ── Student Enrolment (synced from LearnerTrack) ──────────────────────────────
+type StudentEnrolment = {
+  id: string;
+  learner_id: string;
+  student_label: string;
+  course_code: string;
+  course_instance_id: string;
+  course_title: string;
+  course_type_category: string | null;
+  academic_year: number | null;
+  learn_start_date: string | null;
+  learn_plan_end_date: string | null;
+  comp_status: string | null;
+  out_grade: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ── Assessment / Tracker Template ─────────────────────────────────────────────
+type AssessmentTemplate = {
+  id: string;
+  title: string;
+  description: string | null;
+  template_type: "quiz" | "tracker";
+  category: string;
+  max_points: number;
+  pass_percentage: number;
+  is_active: number;
+  created_by: string | null;
+  created_at: string;
+};
+
+type AssessmentTemplateQuestion = {
+  id: string;
+  template_id: string;
+  question_text: string;
+  question_type: string;
+  options: string | null;  // JSON
+  points: number;
+  correct_answer: string | null;
+  has_text_entry: number;
+  text_entry_label: string | null;
+  is_required: number;
+  sort_order: number;
+};
+
+// ── Assessment Entry (completed quiz submission) ───────────────────────────────
+type AssessmentEntry = {
+  id: string;
+  template_id: string;
+  enrolment_id: string;
+  learner_id: string;
+  course_instance_id: string;
+  status: "pending" | "completed";
+  score_earned: number;
+  max_score: number;
+  percentage: number;
+  answers_json: string | null;
+  completed_at: string | null;
+  created_at: string;
+};
+
+// ── Student Tracker / ILP ─────────────────────────────────────────────────────
+type StudentTracker = {
+  id: string;
+  enrolment_id: string;
+  learner_id: string;
+  course_instance_id: string;
+  tailored_purpose: string | null;
+  smart_goals: string | null;
+  tailored_outcomes: string | null;
+  initial_assessment_level: string | null;
+  initial_assessment_rag: "green" | "amber" | "red" | null;
+  initial_assessment_notes: string | null;
+  initial_assessment_date: string | null;
+  initial_assessment_by: string | null;
+  term1_grade: string | null;
+  term1_rag: "green" | "amber" | "red" | null;
+  term1_comments: string | null;
+  term1_date: string | null;
+  term1_by: string | null;
+  term2_grade: string | null;
+  term2_rag: "green" | "amber" | "red" | null;
+  term2_comments: string | null;
+  term2_date: string | null;
+  term2_by: string | null;
+  term3_grade: string | null;
+  term3_rag: "green" | "amber" | "red" | null;
+  term3_comments: string | null;
+  term3_date: string | null;
+  term3_by: string | null;
+  destination_type: string | null;
+  destination_notes: string | null;
+  destination_date: string | null;
+  destination_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ── Assessment / Tracker Comment ──────────────────────────────────────────────
+type AssessmentComment = {
+  id: string;
+  entity_type: "assessment_entry" | "tracker";
+  entity_id: string;
+  author_id: string | null;
+  author_email: string;
+  author_name: string;
+  author_role: string;
+  comment: string;
+  created_at: string;
+};
 type Stage = "assess" | "iqa" | "eqa";
 type EntryStatus = "assessment" | "iqa" | "eqa" | "complete";
 
@@ -463,8 +576,9 @@ export default {
     if (!identity) return wantsJson(request) ? json({ error: "Not authenticated" }, 401) : Response.redirect(`${url.origin}/login`, 302);
     if (!identity.user) return htmlResponse(renderAccessPendingPage(identity), 403);
 
-    if (url.pathname === "/dashboard") return Response.redirect(`${url.origin}/learning-walks`, 302);
+    if (url.pathname === "/dashboard") return Response.redirect(`${url.origin}/${identity.user.role === "student" ? "assessments" : "learning-walks"}`, 302);
     if (url.pathname === "/users") return renderUsersPage(request, env, identity);
+
 
     if (url.pathname === "/courses") return renderCoursesPageHandler(request, env, identity);
     if (url.pathname === "/api/courses/learnertrack" && request.method === "GET") return fetchLearnerTrackCourses(request, env, identity);
@@ -473,7 +587,31 @@ export default {
     if (url.pathname === "/students") return renderStudentsPageHandler(request, env, identity);
     if (url.pathname === "/api/enrolment/student" && request.method === "GET") return fetchStudentEnrolments(request, env, identity);
 
-    if (url.pathname === "/assessments") return htmlResponse(renderAssessmentsPage(identity));
+    if (url.pathname === "/assessments") return renderAssessmentsPageHandler(request, env, identity);
+    if (url.pathname === "/tracker") return renderTrackerPageHandler(request, env, identity);
+
+    // Assessment Templates API
+    if (url.pathname === "/api/assessment/templates" && request.method === "GET") return listAssessmentTemplates(request, env, identity);
+    if (url.pathname === "/api/assessment/templates" && request.method === "POST") return saveAssessmentTemplate(request, env, identity);
+    if (url.pathname.match(/^\/api\/assessment\/templates\/[^/]+$/) && request.method === "POST") return updateAssessmentTemplate(request, env, identity, url.pathname.split("/")[4]);
+    if (url.pathname.match(/^\/api\/assessment\/templates\/[^/]+\/delete$/) && request.method === "POST") return deleteAssessmentTemplate(request, env, identity, url.pathname.split("/")[4]);
+
+    // Assessment Enrolments / Sync
+    if (url.pathname === "/api/assessment/sync" && request.method === "POST") return syncClassEnrolmentsHandler(request, env, identity);
+    if (url.pathname === "/api/assessment/enrolments" && request.method === "GET") return listEnrolments(request, env, identity);
+
+    // Assessment Entries API
+    if (url.pathname === "/api/assessment/entries" && request.method === "POST") return submitAssessmentEntry(request, env, identity);
+    if (url.pathname === "/api/assessment/entries" && request.method === "GET") return listAssessmentEntries(request, env, identity);
+
+    // Tracker API
+    if (url.pathname === "/api/tracker/record" && request.method === "POST") return saveTrackerRecord(request, env, identity);
+    if (url.pathname.match(/^\/api\/tracker\/[^/]+$/) && request.method === "GET") return getTrackerRecord(request, env, identity, url.pathname.split("/")[3]);
+
+    // Comments API (shared between entries and tracker)
+    if (url.pathname.match(/^\/api\/assessment\/comments\/[^/]+$/) && request.method === "POST") return addAssessmentComment(request, env, identity, url.pathname.split("/")[4]);
+    if (url.pathname.match(/^\/api\/assessment\/comments\/[^/]+$/) && request.method === "GET") return listAssessmentComments(request, env, identity, url.pathname.split("/")[4]);
+
 
     if (url.pathname === "/reports") return renderReportsPage(request, env, identity);
     if (url.pathname === "/quality-calendar" && canViewReports(identity.user!)) return renderQualityCalendarPage(identity);
@@ -6450,12 +6588,23 @@ function pageShell(title: string, body: string) {
 
 function renderSidebar(identity: Identity, active: string) {
   const user = identity.user!;
+  const isStudent = user.role === "student";
+  if (isStudent) {
+    return `<aside class="sidebar">
+    <div class="sidebar-brand"><div class="brand-mark"><img src="/favicon.svg" width="36" height="36" style="object-fit:contain;display:block"></div><div><strong>HALSQ</strong><span>Student Portal</span></div></div>
+    <nav class="sidebar-nav">
+      ${navLink("/assessments", "Assessments", active === "assessments")}
+      ${navLink("/tracker", "My Tracker", active === "tracker")}
+    </nav>
+  </aside>`;
+  }
   return `<aside class="sidebar">
     <div class="sidebar-brand"><div class="brand-mark"><img src="/favicon.svg" width="36" height="36" style="object-fit:contain;display:block"></div><div><strong>HALSQ</strong><span>${escapeHtml(user.role === "assessor_iqa" ? "Assessor / IQA" : user.role)}</span></div></div>
     <nav class="sidebar-nav">
       ${navLink("/learning-walks", "Learning Walks", active === "learning-walks")}
       ${navLink("/iqa-forms", "IQA Forms", active === "iqa-forms")}
       ${navLink("/assessments", "Assessments", active === "assessments")}
+      ${navLink("/tracker", "Progress Tracker", active === "tracker")}
       ${navLink("/courses", "Our Courses", active === "courses")}
       ${navLink("/my-class", "My Class", active === "my-class")}
       ${navLink("/students", "Students", active === "students")}
@@ -6471,3 +6620,1170 @@ function renderTopbar(identity: Identity, title: string) {
 }
 
 function escapeHtml(value: string | null | undefined) { if (value == null) return ""; return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function generateId(): string {
+  return crypto.randomUUID();
+}
+
+function isStaffRole(role: Role): boolean {
+  return ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa"].includes(role);
+}
+
+function ragBadge(rag: string | null): string {
+  if (!rag) return `<span class="rag-badge rag-grey">Not Set</span>`;
+  const labels: Record<string, string> = { green: "On Track", amber: "Working Towards", red: "Behind Target" };
+  return `<span class="rag-badge rag-${rag}">${labels[rag] ?? rag}</span>`;
+}
+
+function scoreBadge(entry: AssessmentEntry): string {
+  if (entry.status !== "completed") return `<span class="score-badge score-pending">Not Started</span>`;
+  const pct = entry.percentage;
+  const cls = pct >= 70 ? "score-pass" : "score-fail";
+  return `<span class="score-badge ${cls}">${entry.score_earned}/${entry.max_score} (${pct}%)</span>`;
+}
+
+// ============================================================
+// LEARNERTRACK SYNC ENGINE
+// ============================================================
+
+async function syncClassEnrolments(courseInstanceId: string, env: Env): Promise<{ upserted: number; error: string | null }> {
+  const apiKey = env["LearnerTrack.API"];
+  const username = env.LT_USER_NAME ?? "GiuseppeA";
+  if (!apiKey) return { upserted: 0, error: "LearnerTrack API key not configured" };
+  const apiUrl = `https://betaapi.learnertrack.net/api/Enrolment?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}&courseinstanceid=${encodeURIComponent(courseInstanceId)}`;
+  try {
+    const r = await fetch(apiUrl, { headers: { "Accept": "application/json" } });
+    if (!r.ok) return { upserted: 0, error: `LearnerTrack API returned ${r.status}` };
+    const data = await r.json() as LearnerTrackEnrolment[];
+    if (!Array.isArray(data)) return { upserted: 0, error: "Unexpected API response" };
+    let upserted = 0;
+    for (const e of data) {
+      if (!e.LearnerID) continue;
+      const id = `${e.LearnerID}_${courseInstanceId}`;
+      const learnerId = String(e.LearnerID);
+      await env.esol_marking_db.prepare(`
+        INSERT INTO student_enrolments (id, learner_id, student_label, course_code, course_instance_id, course_title, course_type_category, academic_year, learn_start_date, comp_status, out_grade, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(learner_id, course_instance_id) DO UPDATE SET
+          student_label=excluded.student_label, course_title=excluded.course_title,
+          comp_status=excluded.comp_status, out_grade=excluded.out_grade, updated_at=CURRENT_TIMESTAMP
+      `).bind(id, learnerId, e.StudentLabel ?? "", e.CourseCode ?? "", courseInstanceId, e.CourseTitle ?? "", e.CourseTypeCategory ?? null, e.AcademicYear ?? null, e.LearnStartDate ?? null, e.CourseStatus ?? null, null).run();
+      // Ensure tracker record exists
+      await env.esol_marking_db.prepare(`
+        INSERT OR IGNORE INTO student_trackers (id, enrolment_id, learner_id, course_instance_id)
+        VALUES (?, ?, ?, ?)
+      `).bind(generateId(), id, learnerId, courseInstanceId).run();
+      upserted++;
+    }
+    return { upserted, error: null };
+  } catch (err: any) {
+    return { upserted: 0, error: err?.message ?? String(err) };
+  }
+}
+
+async function syncClassEnrolmentsHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user || !isStaffRole(identity.user.role)) return json({ error: "Forbidden" }, 403);
+  const body = await request.json() as { courseInstanceId?: string };
+  const courseInstanceId = body.courseInstanceId?.trim();
+  if (!courseInstanceId) return json({ error: "courseInstanceId required" }, 400);
+  const result = await syncClassEnrolments(courseInstanceId, env);
+  if (result.error) return json({ error: result.error }, 500);
+  return json({ success: true, upserted: result.upserted });
+}
+
+async function listEnrolments(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return json({ error: "Forbidden" }, 403);
+  const url = new URL(request.url);
+  const courseInstanceId = url.searchParams.get("courseInstanceId");
+  const learnerId = url.searchParams.get("learnerId");
+  let q = "SELECT * FROM student_enrolments WHERE 1=1";
+  const params: string[] = [];
+  if (courseInstanceId) { q += " AND course_instance_id=?"; params.push(courseInstanceId); }
+  if (learnerId) { q += " AND learner_id=?"; params.push(learnerId); }
+  q += " ORDER BY student_label ASC";
+  const { results } = await env.esol_marking_db.prepare(q).bind(...params).all<StudentEnrolment>();
+  return json(results);
+}
+
+// ============================================================
+// ASSESSMENT TEMPLATES
+// ============================================================
+
+async function listAssessmentTemplates(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return json({ error: "Forbidden" }, 403);
+  const url = new URL(request.url);
+  const type = url.searchParams.get("type"); // "quiz" | "tracker" | null
+  let q = "SELECT * FROM assessment_templates WHERE is_active=1";
+  const params: (string | number)[] = [];
+  if (type) { q += " AND template_type=?"; params.push(type); }
+  q += " ORDER BY created_at DESC";
+  const { results } = await env.esol_marking_db.prepare(q).bind(...params).all<AssessmentTemplate>();
+  return json(results);
+}
+
+async function saveAssessmentTemplate(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user || !isStaffRole(identity.user.role)) return json({ error: "Forbidden" }, 403);
+  const body = await request.json() as {
+    title?: string; description?: string; template_type?: string;
+    category?: string; pass_percentage?: number;
+    questions?: Array<{ question_text: string; question_type: string; options?: unknown; points?: number; correct_answer?: string; has_text_entry?: boolean; text_entry_label?: string; is_required?: boolean; sort_order?: number }>;
+  };
+  if (!body.title?.trim()) return json({ error: "title required" }, 400);
+  const type = (body.template_type === "tracker") ? "tracker" : "quiz";
+  const tmplId = generateId();
+  let maxPoints = 0;
+  const questions = body.questions ?? [];
+  for (const q of questions) maxPoints += (q.points ?? 0);
+  await env.esol_marking_db.prepare(`
+    INSERT INTO assessment_templates (id, title, description, template_type, category, max_points, pass_percentage, is_active, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+  `).bind(tmplId, body.title.trim(), body.description?.trim() ?? null, type, body.category?.trim() ?? "general", maxPoints, body.pass_percentage ?? 70, identity.user.id).run();
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    await env.esol_marking_db.prepare(`
+      INSERT INTO assessment_template_questions (id, template_id, question_text, question_type, options, points, correct_answer, has_text_entry, text_entry_label, is_required, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(generateId(), tmplId, q.question_text, q.question_type ?? "text", q.options ? JSON.stringify(q.options) : null, q.points ?? 0, q.correct_answer ?? null, q.has_text_entry ? 1 : 0, q.text_entry_label ?? null, q.is_required ? 1 : 0, q.sort_order ?? i).run();
+  }
+  return json({ success: true, id: tmplId });
+}
+
+async function updateAssessmentTemplate(request: Request, env: Env, identity: Identity, id: string): Promise<Response> {
+  if (!identity.user || !isStaffRole(identity.user.role)) return json({ error: "Forbidden" }, 403);
+  const body = await request.json() as { title?: string; description?: string; category?: string; pass_percentage?: number; is_active?: number };
+  await env.esol_marking_db.prepare(`
+    UPDATE assessment_templates SET title=COALESCE(?,title), description=COALESCE(?,description), category=COALESCE(?,category), pass_percentage=COALESCE(?,pass_percentage), is_active=COALESCE(?,is_active), updated_at=CURRENT_TIMESTAMP WHERE id=?
+  `).bind(body.title ?? null, body.description ?? null, body.category ?? null, body.pass_percentage ?? null, body.is_active ?? null, id).run();
+  return json({ success: true });
+}
+
+async function deleteAssessmentTemplate(request: Request, env: Env, identity: Identity, id: string): Promise<Response> {
+  if (!identity.user || !isStaffRole(identity.user.role)) return json({ error: "Forbidden" }, 403);
+  await env.esol_marking_db.prepare("UPDATE assessment_templates SET is_active=0 WHERE id=?").bind(id).run();
+  return json({ success: true });
+}
+
+// ============================================================
+// ASSESSMENT ENTRIES
+// ============================================================
+
+async function submitAssessmentEntry(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return json({ error: "Forbidden" }, 403);
+  const body = await request.json() as {
+    template_id?: string;
+    enrolment_id?: string;
+    answers?: Record<string, string>;
+  };
+  if (!body.template_id || !body.enrolment_id) return json({ error: "template_id and enrolment_id required" }, 400);
+
+  const enrolment = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE id=?").bind(body.enrolment_id).first<StudentEnrolment>();
+  if (!enrolment) return json({ error: "Enrolment not found" }, 404);
+
+  const tmpl = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE id=?").bind(body.template_id).first<AssessmentTemplate>();
+  if (!tmpl) return json({ error: "Template not found" }, 404);
+
+  const { results: questions } = await env.esol_marking_db.prepare("SELECT * FROM assessment_template_questions WHERE template_id=? ORDER BY sort_order").bind(body.template_id).all<AssessmentTemplateQuestion>();
+
+  const answers = body.answers ?? {};
+  let earned = 0;
+  let maxScore = 0;
+  for (const q of questions) {
+    maxScore += q.points;
+    if (q.correct_answer && answers[q.id] === q.correct_answer) earned += q.points;
+    else if (!q.correct_answer && q.points > 0 && answers[q.id]) earned += q.points; // manual score later
+  }
+  const percentage = maxScore > 0 ? Math.round((earned / maxScore) * 100) : 0;
+
+  // Upsert entry
+  const existing = await env.esol_marking_db.prepare("SELECT id FROM assessment_entries WHERE template_id=? AND enrolment_id=?").bind(body.template_id, body.enrolment_id).first<{ id: string }>();
+  const entryId = existing?.id ?? generateId();
+  const now = new Date().toISOString();
+
+  await env.esol_marking_db.prepare(`
+    INSERT INTO assessment_entries (id, template_id, enrolment_id, learner_id, course_instance_id, status, score_earned, max_score, percentage, answers_json, completed_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(template_id, enrolment_id) DO UPDATE SET
+      status='completed', score_earned=excluded.score_earned, max_score=excluded.max_score,
+      percentage=excluded.percentage, answers_json=excluded.answers_json, completed_at=excluded.completed_at, updated_at=CURRENT_TIMESTAMP
+  `).bind(entryId, body.template_id, body.enrolment_id, enrolment.learner_id, enrolment.course_instance_id, earned, maxScore, percentage, JSON.stringify(answers), now).run();
+
+  return json({ success: true, id: entryId, score_earned: earned, max_score: maxScore, percentage });
+}
+
+async function listAssessmentEntries(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return json({ error: "Forbidden" }, 403);
+  const url = new URL(request.url);
+  const enrolmentId = url.searchParams.get("enrolment_id");
+  const courseInstanceId = url.searchParams.get("course_instance_id");
+  const learnerId = url.searchParams.get("learner_id");
+  let q = "SELECT ae.*, at.title, at.template_type, at.max_points, at.pass_percentage FROM assessment_entries ae JOIN assessment_templates at ON at.id=ae.template_id WHERE 1=1";
+  const params: string[] = [];
+  if (enrolmentId) { q += " AND ae.enrolment_id=?"; params.push(enrolmentId); }
+  if (courseInstanceId) { q += " AND ae.course_instance_id=?"; params.push(courseInstanceId); }
+  if (learnerId) { q += " AND ae.learner_id=?"; params.push(learnerId); }
+  q += " ORDER BY ae.created_at DESC";
+  const { results } = await env.esol_marking_db.prepare(q).bind(...params).all();
+  return json(results);
+}
+
+// ============================================================
+// TRACKER / ILP
+// ============================================================
+
+async function getTrackerRecord(request: Request, env: Env, identity: Identity, enrolmentId: string): Promise<Response> {
+  if (!identity.user) return json({ error: "Forbidden" }, 403);
+  const tracker = await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(enrolmentId).first<StudentTracker>();
+  return json(tracker ?? null);
+}
+
+async function saveTrackerRecord(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return json({ error: "Forbidden" }, 403);
+  const isStaff = isStaffRole(identity.user.role);
+  const isStudent = identity.user.role === "student";
+  const body = await request.json() as Partial<StudentTracker> & { enrolment_id?: string };
+  if (!body.enrolment_id) return json({ error: "enrolment_id required" }, 400);
+
+  const existing = await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(body.enrolment_id).first<StudentTracker>();
+  if (!existing) return json({ error: "Tracker record not found. Sync class first." }, 404);
+
+  if (isStudent) {
+    // Students can only update their own goals
+    await env.esol_marking_db.prepare(`
+      UPDATE student_trackers SET
+        tailored_purpose=COALESCE(?,tailored_purpose),
+        smart_goals=COALESCE(?,smart_goals),
+        tailored_outcomes=COALESCE(?,tailored_outcomes),
+        updated_at=CURRENT_TIMESTAMP
+      WHERE enrolment_id=?
+    `).bind(body.tailored_purpose ?? null, body.smart_goals ?? null, body.tailored_outcomes ?? null, body.enrolment_id).run();
+  } else if (isStaff) {
+    // Staff can update everything
+    await env.esol_marking_db.prepare(`
+      UPDATE student_trackers SET
+        tailored_purpose=COALESCE(?,tailored_purpose),
+        smart_goals=COALESCE(?,smart_goals),
+        tailored_outcomes=COALESCE(?,tailored_outcomes),
+        initial_assessment_level=COALESCE(?,initial_assessment_level),
+        initial_assessment_rag=COALESCE(?,initial_assessment_rag),
+        initial_assessment_notes=COALESCE(?,initial_assessment_notes),
+        initial_assessment_date=COALESCE(?,initial_assessment_date),
+        initial_assessment_by=COALESCE(?,initial_assessment_by),
+        term1_grade=COALESCE(?,term1_grade), term1_rag=COALESCE(?,term1_rag), term1_comments=COALESCE(?,term1_comments), term1_date=COALESCE(?,term1_date), term1_by=COALESCE(?,term1_by),
+        term2_grade=COALESCE(?,term2_grade), term2_rag=COALESCE(?,term2_rag), term2_comments=COALESCE(?,term2_comments), term2_date=COALESCE(?,term2_date), term2_by=COALESCE(?,term2_by),
+        term3_grade=COALESCE(?,term3_grade), term3_rag=COALESCE(?,term3_rag), term3_comments=COALESCE(?,term3_comments), term3_date=COALESCE(?,term3_date), term3_by=COALESCE(?,term3_by),
+        destination_type=COALESCE(?,destination_type), destination_notes=COALESCE(?,destination_notes), destination_date=COALESCE(?,destination_date), destination_by=COALESCE(?,destination_by),
+        updated_at=CURRENT_TIMESTAMP
+      WHERE enrolment_id=?
+    `).bind(
+      body.tailored_purpose ?? null, body.smart_goals ?? null, body.tailored_outcomes ?? null,
+      body.initial_assessment_level ?? null, body.initial_assessment_rag ?? null, body.initial_assessment_notes ?? null, body.initial_assessment_date ?? null, identity.user.id,
+      body.term1_grade ?? null, body.term1_rag ?? null, body.term1_comments ?? null, body.term1_date ?? null, identity.user.id,
+      body.term2_grade ?? null, body.term2_rag ?? null, body.term2_comments ?? null, body.term2_date ?? null, identity.user.id,
+      body.term3_grade ?? null, body.term3_rag ?? null, body.term3_comments ?? null, body.term3_date ?? null, identity.user.id,
+      body.destination_type ?? null, body.destination_notes ?? null, body.destination_date ?? null, identity.user.id,
+      body.enrolment_id
+    ).run();
+  } else {
+    return json({ error: "Forbidden" }, 403);
+  }
+  return json({ success: true });
+}
+
+// ============================================================
+// COMMENTS
+// ============================================================
+
+async function addAssessmentComment(request: Request, env: Env, identity: Identity, entityId: string): Promise<Response> {
+  if (!identity.user) return json({ error: "Forbidden" }, 403);
+  const body = await request.json() as { comment?: string; entity_type?: string };
+  if (!body.comment?.trim()) return json({ error: "comment required" }, 400);
+  const entityType = body.entity_type === "tracker" ? "tracker" : "assessment_entry";
+  await env.esol_marking_db.prepare(`
+    INSERT INTO assessment_comments (id, entity_type, entity_id, author_id, author_email, author_name, author_role, comment)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(generateId(), entityType, entityId, identity.user.id, identity.email, identity.name ?? identity.email, identity.user.role, body.comment.trim()).run();
+  return json({ success: true });
+}
+
+async function listAssessmentComments(request: Request, env: Env, identity: Identity, entityId: string): Promise<Response> {
+  if (!identity.user) return json({ error: "Forbidden" }, 403);
+  const { results } = await env.esol_marking_db.prepare("SELECT * FROM assessment_comments WHERE entity_id=? ORDER BY created_at ASC").bind(entityId).all<AssessmentComment>();
+  return json(results);
+}
+
+// ============================================================
+// ASSESSMENTS PAGE
+// ============================================================
+
+async function renderAssessmentsPageHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return htmlResponse(renderAccessPendingPage(identity), 403);
+  const user = identity.user;
+  const isStudent = user.role === "student";
+  const url = new URL(request.url);
+
+  // Fetch all active quiz templates
+  const { results: templates } = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE is_active=1 AND template_type='quiz' ORDER BY created_at DESC").all<AssessmentTemplate>();
+
+  if (isStudent) {
+    // Extract learner ID from email (e.g. 45345@haringeylearns.ac.uk → "45345")
+    const learnerId = identity.email.split("@")[0].replace(/[^0-9]/g, "");
+    let enrolments: StudentEnrolment[] = [];
+    let entries: AssessmentEntry[] = [];
+    if (learnerId) {
+      const r1 = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE learner_id=?").bind(learnerId).all<StudentEnrolment>();
+      enrolments = r1.results;
+      if (enrolments.length > 0) {
+        const r2 = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE learner_id=?").bind(learnerId).all<AssessmentEntry>();
+        entries = r2.results;
+      }
+    }
+    return htmlResponse(renderStudentAssessmentsPage(identity, templates, enrolments, entries, learnerId));
+  } else {
+    // Teacher / staff view
+    const courseInstanceId = url.searchParams.get("courseId") ?? "";
+    let enrolments: StudentEnrolment[] = [];
+    let entries: AssessmentEntry[] = [];
+    let syncMsg = "";
+    if (courseInstanceId) {
+      const r1 = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE course_instance_id=? ORDER BY student_label ASC").bind(courseInstanceId).all<StudentEnrolment>();
+      enrolments = r1.results;
+      const r2 = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE course_instance_id=?").bind(courseInstanceId).all<AssessmentEntry>();
+      entries = r2.results;
+    }
+    return htmlResponse(renderStaffAssessmentsPage(identity, templates, enrolments, entries, courseInstanceId, syncMsg));
+  }
+}
+
+function renderStudentAssessmentsPage(identity: Identity, templates: AssessmentTemplate[], enrolments: StudentEnrolment[], entries: AssessmentEntry[], learnerId: string): string {
+  const entryMap = new Map(entries.map(e => [e.template_id + "_" + e.enrolment_id, e]));
+  const courseOptions = enrolments.map(en => `<option value="${escapeHtml(en.id)}">${escapeHtml(en.course_title)} (${escapeHtml(en.course_code)})</option>`).join("");
+  const tilesHtml = templates.map(t => {
+    const enrolmentId = enrolments[0]?.id ?? ""; // default to first enrolment
+    const key = t.id + "_" + enrolmentId;
+    const entry = entryMap.get(key);
+    const done = entry?.status === "completed";
+    const pct = entry?.percentage ?? 0;
+    const scoreText = done ? `${entry!.score_earned}/${entry!.max_score} (${pct}%)` : "Not started";
+    return `
+    <div class="assess-tile ${done ? "assess-tile--done" : ""}" data-template-id="${escapeHtml(t.id)}" data-enrolment-id="${escapeHtml(enrolmentId)}" onclick="openQuizModal('${escapeHtml(t.id)}','${escapeHtml(enrolmentId)}','${escapeHtml(t.title)}',${done ? 1 : 0})">
+      <div class="assess-tile-icon">${done ? "✅" : "📝"}</div>
+      <div class="assess-tile-body">
+        <h3>${escapeHtml(t.title)}</h3>
+        <p>${escapeHtml(t.description ?? "")}</p>
+        <div class="assess-tile-meta">
+          <span class="meta-chip">${t.max_points} pts</span>
+          ${done ? `<span class="meta-chip chip-green">${escapeHtml(scoreText)}</span>` : `<span class="meta-chip chip-grey">${escapeHtml(scoreText)}</span>`}
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+
+  return pageShell("My Assessments", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "assessments")}
+      <div class="shell-content">
+        ${renderTopbar(identity, "My Assessments")}
+        <section class="page-section">
+          ${learnerId ? "" : `<div class="alert alert-warn">Your student ID could not be extracted from your email address. Please contact your tutor.</div>`}
+          ${enrolments.length === 0 && learnerId ? `<div class="alert alert-info">No enrolments found for learner ID <strong>${escapeHtml(learnerId)}</strong>. Please check with your tutor.</div>` : ""}
+          ${enrolments.length > 1 ? `<div class="enrol-selector"><label>Viewing for course: <select onchange="location.href='/assessments?enrolId='+this.value">${courseOptions}</select></label></div>` : ""}
+          <div class="assess-tiles">
+            ${tilesHtml || "<p class='muted-text'>No assessments available yet.</p>"}
+          </div>
+        </section>
+      </div>
+    </main>
+    <div class="modal-overlay" id="quizModal" style="display:none">
+      <div class="modal-box modal-large">
+        <div class="modal-header">
+          <h2 id="quizModalTitle">Quiz</h2>
+          <button class="modal-close" onclick="closeQuizModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="quizModalBody"></div>
+        <div class="modal-footer" id="quizModalFooter"></div>
+      </div>
+    </div>
+    <style>
+      .assess-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.25rem;padding:1.5rem}
+      .assess-tile{background:#fff;border:2px solid #e2e8f0;border-radius:14px;padding:1.25rem;cursor:pointer;transition:all .2s;display:flex;gap:1rem;align-items:flex-start}
+      .assess-tile:hover{border-color:var(--primary);box-shadow:0 4px 16px rgba(0,0,0,.1);transform:translateY(-2px)}
+      .assess-tile--done{border-color:#22c55e;background:#f0fdf4}
+      .assess-tile-icon{font-size:1.75rem;flex-shrink:0}
+      .assess-tile-body h3{margin:0 0 .25rem;font-size:1rem;font-weight:700;color:var(--text)}
+      .assess-tile-body p{margin:0 0 .5rem;font-size:.875rem;color:var(--muted)}
+      .assess-tile-meta{display:flex;flex-wrap:wrap;gap:.35rem}
+      .meta-chip{font-size:.75rem;font-weight:600;padding:.2rem .6rem;border-radius:20px;background:#f1f5f9;color:#475569}
+      .chip-green{background:#dcfce7;color:#166534}
+      .chip-grey{background:#f1f5f9;color:#64748b}
+      .enrol-selector{padding:1rem 1.5rem;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+      .enrol-selector select{margin-left:.5rem;padding:.35rem .75rem;border:1px solid #d1d5db;border-radius:6px}
+      .alert{padding:.875rem 1.25rem;border-radius:10px;margin:1rem 1.5rem;font-size:.9375rem}
+      .alert-warn{background:#fffbeb;border:1px solid #fcd34d;color:#92400e}
+      .alert-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+      .quiz-question{margin-bottom:1.5rem;padding-bottom:1.5rem;border-bottom:1px solid #e2e8f0}
+      .quiz-question:last-child{border-bottom:none}
+      .quiz-question-text{font-weight:600;margin-bottom:.75rem}
+      .quiz-pts{font-size:.8rem;color:#7c3aed;background:#f5f3ff;padding:.15rem .45rem;border-radius:10px;margin-left:.5rem}
+      .quiz-options label{display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border-radius:8px;cursor:pointer;transition:background .1s}
+      .quiz-options label:hover{background:#f8fafc}
+      .quiz-options input{accent-color:var(--primary)}
+      .score-result{text-align:center;padding:2rem}
+      .score-circle{width:120px;height:120px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.75rem;font-weight:800;margin-bottom:1rem}
+      .score-pass-circle{background:#dcfce7;color:#166534;border:4px solid #22c55e}
+      .score-fail-circle{background:#fee2e2;color:#991b1b;border:4px solid #ef4444}
+      .rag-badge{display:inline-block;padding:.25rem .75rem;border-radius:20px;font-size:.8125rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+      .rag-green{background:#dcfce7;color:#166534}
+      .rag-amber{background:#fffbeb;color:#92400e}
+      .rag-red{background:#fee2e2;color:#991b1b}
+      .rag-grey{background:#f1f5f9;color:#64748b}
+      .score-badge{display:inline-block;padding:.2rem .6rem;border-radius:20px;font-size:.8125rem;font-weight:600}
+      .score-pass{background:#dcfce7;color:#166534}
+      .score-fail{background:#fee2e2;color:#991b1b}
+      .score-pending{background:#f1f5f9;color:#64748b}
+      .modal-large{max-width:700px;width:95vw}
+    </style>
+    <script>
+    function openQuizModal(templateId, enrolmentId, title, isDone) {
+      document.getElementById('quizModalTitle').textContent = title;
+      const body = document.getElementById('quizModalBody');
+      const footer = document.getElementById('quizModalFooter');
+      body.innerHTML = '<div class="loading-spinner"></div>';
+      footer.innerHTML = '';
+      document.getElementById('quizModal').style.display = 'flex';
+      fetch('/api/assessment/templates?type=quiz')
+        .then(r => r.json())
+        .then(() => {
+          // Load questions for this template
+          return fetch('/api/assessment/templates/' + encodeURIComponent(templateId) + '?questions=1');
+        })
+        .catch(() => loadQuestionsDirectly(templateId, enrolmentId, title, isDone));
+      loadQuestionsDirectly(templateId, enrolmentId, title, isDone);
+    }
+    function loadQuestionsDirectly(templateId, enrolmentId, title, isDone) {
+      // For now show a placeholder - full quiz player loaded server-side via redirect
+      const body = document.getElementById('quizModalBody');
+      const footer = document.getElementById('quizModalFooter');
+      if (isDone) {
+        body.innerHTML = '<div class="score-result"><p>You have already completed this assessment.</p><p>Contact your tutor to review your results.</p></div>';
+        footer.innerHTML = '<button class="btn btn-secondary" onclick="closeQuizModal()">Close</button>';
+      } else {
+        window.location.href = '/assessments/quiz/' + encodeURIComponent(templateId) + '?enrolmentId=' + encodeURIComponent(enrolmentId);
+      }
+    }
+    function closeQuizModal() {
+      document.getElementById('quizModal').style.display = 'none';
+    }
+    document.getElementById('quizModal').addEventListener('click', function(e) {
+      if (e.target === this) closeQuizModal();
+    });
+    </script>
+  `);
+}
+
+function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTemplate[], enrolments: StudentEnrolment[], entries: AssessmentEntry[], courseInstanceId: string, syncMsg: string): string {
+  const isAdmin = isStaffRole(identity.user!.role);
+  // Build entry map: template_id + enrolment_id -> entry
+  const entryMap = new Map(entries.map(e => [e.template_id + "_" + e.enrolment_id, e]));
+
+  const rosterHtml = enrolments.length === 0 ? "" : `
+    <div class="roster-table-wrap">
+      <table class="data-table">
+        <thead><tr>
+          <th>Student</th>
+          <th>Learner ID</th>
+          <th>Course</th>
+          ${templates.map(t => `<th title="${escapeHtml(t.title)}">${escapeHtml(t.title.length > 18 ? t.title.slice(0, 18) + "…" : t.title)}</th>`).join("")}
+        </tr></thead>
+        <tbody>
+          ${enrolments.map(en => {
+            const cols = templates.map(t => {
+              const entry = entryMap.get(t.id + "_" + en.id);
+              if (!entry) return `<td><span class="meta-chip chip-grey">—</span></td>`;
+              const pct = entry.percentage;
+              const cls = pct >= (t.pass_percentage ?? 70) ? "chip-green" : "chip-amber";
+              return `<td><span class="meta-chip ${cls}">${entry.score_earned}/${entry.max_score}</span></td>`;
+            }).join("");
+            return `<tr>
+              <td><strong>${escapeHtml(en.student_label)}</strong></td>
+              <td>${escapeHtml(en.learner_id)}</td>
+              <td>${escapeHtml(en.course_title)}</td>
+              ${cols}
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>`;
+
+  return pageShell("Assessments", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "assessments")}
+      <div class="shell-content">
+        ${renderTopbar(identity, "Assessments")}
+        <section class="page-section">
+          <div class="assess-toolbar">
+            <form method="GET" action="/assessments" class="assess-search-form">
+              <input class="form-input" name="courseId" placeholder="Course Instance ID…" value="${escapeHtml(courseInstanceId)}">
+              <button class="btn btn-primary" type="submit">🔍 Search</button>
+              ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncClass()">🔄 Sync Class</button>` : ""}
+            </form>
+            ${isAdmin ? `<button class="btn btn-pink" onclick="openTemplateBuilder()">+ New Template</button>` : ""}
+          </div>
+          ${syncMsg ? `<div class="alert alert-info">${escapeHtml(syncMsg)}</div>` : ""}
+          ${courseInstanceId && enrolments.length === 0 ? `<div class="alert alert-warn">No enrolments found for course ID <strong>${escapeHtml(courseInstanceId)}</strong>. Try syncing first.</div>` : ""}
+
+          <!-- Quiz Template Tiles -->
+          <div class="section-header"><h2>Assessment Templates</h2></div>
+          <div class="assess-tiles">
+            ${templates.length === 0 ? "<p class='muted-text' style='padding:1rem'>No quiz templates yet. Create one with + New Template.</p>" : templates.map(t => `
+            <div class="assess-tile">
+              <div class="assess-tile-icon">📝</div>
+              <div class="assess-tile-body">
+                <h3>${escapeHtml(t.title)}</h3>
+                <p>${escapeHtml(t.description ?? "")}</p>
+                <div class="assess-tile-meta">
+                  <span class="meta-chip">${t.max_points} pts total</span>
+                  <span class="meta-chip chip-grey">Pass: ${t.pass_percentage}%</span>
+                </div>
+              </div>
+            </div>`).join("")}
+          </div>
+
+          ${rosterHtml ? `<div class="section-header" style="margin-top:2rem"><h2>Class Roster — ${escapeHtml(courseInstanceId)}</h2></div>${rosterHtml}` : ""}
+        </section>
+      </div>
+    </main>
+
+    <!-- Template Builder Modal -->
+    <div class="modal-overlay" id="templateBuilderModal" style="display:none">
+      <div class="modal-box modal-large">
+        <div class="modal-header">
+          <h2>New Assessment Template</h2>
+          <button class="modal-close" onclick="closeTemplateBuilder()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Template Type</label>
+            <div style="display:flex;gap:.75rem">
+              <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="radio" name="tmplType" value="quiz" checked onchange="updateTmplType(this.value)"> <strong>Assessment / Quiz</strong> (with points)</label>
+              <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="radio" name="tmplType" value="tracker" onchange="updateTmplType(this.value)"> <strong>Tracker Form</strong> (no points)</label>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Title *</label>
+              <input class="form-input" id="tmplTitle" placeholder="e.g. Diagnostic Assessment Term 1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Category</label>
+              <select class="form-input" id="tmplCategory">
+                <option value="diagnostic">Diagnostic</option>
+                <option value="quiz">Quiz / Unit Test</option>
+                <option value="milestone">Milestone</option>
+                <option value="final">Final Assessment</option>
+                <option value="reflection">Reflection</option>
+                <option value="general">General</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea class="form-input" id="tmplDesc" rows="2" placeholder="Brief description"></textarea>
+          </div>
+          <div class="form-group" id="tmplPassGroup">
+            <label class="form-label">Pass Percentage (%)</label>
+            <input class="form-input" id="tmplPass" type="number" value="70" min="0" max="100">
+          </div>
+          <div class="section-header" style="margin-top:1.5rem"><h3>Questions</h3></div>
+          <div id="tmplQuestions"></div>
+          <button class="btn btn-secondary" style="margin:.75rem 0" onclick="addQuestion()">+ Add Question</button>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeTemplateBuilder()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveTemplate()">Save Template</button>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .assess-toolbar{display:flex;align-items:center;gap:1rem;padding:1rem 1.5rem;background:#f8fafc;border-bottom:1px solid #e2e8f0;flex-wrap:wrap}
+      .assess-search-form{display:flex;gap:.5rem;flex:1;min-width:280px}
+      .btn-pink{background:#e91e8c;color:#fff;border:none;padding:.55rem 1.1rem;border-radius:8px;font-weight:700;cursor:pointer;font-size:.9375rem;transition:background .2s}
+      .btn-pink:hover{background:#c0157a}
+      .assess-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;padding:1rem 1.5rem}
+      .assess-tile{background:#fff;border:2px solid #e2e8f0;border-radius:12px;padding:1.1rem;display:flex;gap:.85rem;align-items:flex-start}
+      .assess-tile-icon{font-size:1.5rem;flex-shrink:0}
+      .assess-tile-body h3{margin:0 0 .2rem;font-size:.9375rem;font-weight:700}
+      .assess-tile-body p{margin:0 0 .4rem;font-size:.8125rem;color:var(--muted)}
+      .assess-tile-meta{display:flex;flex-wrap:wrap;gap:.3rem}
+      .section-header{padding:.75rem 1.5rem 0}
+      .section-header h2,.section-header h3{margin:0;font-size:1.125rem;font-weight:700;color:var(--text)}
+      .roster-table-wrap{overflow-x:auto;padding:0 1.5rem 1.5rem}
+      .data-table{width:100%;border-collapse:collapse;font-size:.875rem}
+      .data-table th,.data-table td{padding:.6rem .85rem;border-bottom:1px solid #e2e8f0;text-align:left}
+      .data-table th{background:#f8fafc;font-weight:700;color:#374151}
+      .data-table tr:hover td{background:#f8fafc}
+      .meta-chip{font-size:.75rem;font-weight:600;padding:.2rem .5rem;border-radius:12px;background:#f1f5f9;color:#475569;white-space:nowrap}
+      .chip-green{background:#dcfce7!important;color:#166534!important}
+      .chip-amber{background:#fffbeb!important;color:#92400e!important}
+      .chip-grey{background:#f1f5f9!important;color:#64748b!important}
+      .q-row{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:1rem;margin-bottom:.75rem}
+      .q-row-header{display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem}
+      .q-row-header input[type=text]{flex:1}
+      .q-pts-input{width:80px!important}
+    </style>
+    <script>
+    let tmplType = 'quiz';
+    let questionIdx = 0;
+    function updateTmplType(t) {
+      tmplType = t;
+      document.getElementById('tmplPassGroup').style.display = t === 'quiz' ? '' : 'none';
+      // update existing point inputs
+      document.querySelectorAll('.q-pts-wrap').forEach(el => { el.style.display = t === 'quiz' ? '' : 'none'; });
+    }
+    function addQuestion() {
+      const idx = questionIdx++;
+      const div = document.createElement('div');
+      div.className = 'q-row';
+      div.id = 'q-row-' + idx;
+      div.innerHTML = `
+        <div class="q-row-header">
+          <span class="meta-chip">#` + (idx+1) + `</span>
+          <input type="text" class="form-input" id="q-text-` + idx + `" placeholder="Question text" style="flex:1">
+          <div class="q-pts-wrap"${tmplType !== 'quiz' ? ' style="display:none"' : ''}>
+            <input type="number" class="form-input q-pts-input" id="q-pts-` + idx + `" placeholder="Pts" min="0" value="1">
+          </div>
+          <button class="btn btn-secondary" style="padding:.3rem .7rem" onclick="removeQ(` + idx + `)">✕</button>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Type</label>
+            <select class="form-input" id="q-type-` + idx + `" onchange="renderQOptions(` + idx + `)">
+              <option value="text">Text (short)</option>
+              <option value="textarea">Text (long)</option>
+              <option value="single_choice">Single Choice</option>
+              <option value="multiple_choice">Multiple Choice</option>
+              <option value="number">Number</option>
+              <option value="rating">Rating (1-5)</option>
+            </select>
+          </div>
+        </div>
+        <div id="q-options-` + idx + `"></div>
+      `;
+      document.getElementById('tmplQuestions').appendChild(div);
+    }
+    function removeQ(idx) { const el = document.getElementById('q-row-' + idx); if (el) el.remove(); }
+    function renderQOptions(idx) {
+      const type = document.getElementById('q-type-' + idx).value;
+      const wrap = document.getElementById('q-options-' + idx);
+      if (type === 'single_choice' || type === 'multiple_choice') {
+        wrap.innerHTML = '<div class="form-group"><label class="form-label">Options (one per line, prefix correct with *)</label><textarea class="form-input" id="q-opts-'+idx+'" rows="3" placeholder="*Option A (correct)&#10;Option B&#10;Option C"></textarea></div>';
+      } else { wrap.innerHTML = ''; }
+    }
+    function collectQuestions() {
+      const rows = document.querySelectorAll('.q-row');
+      const qs = [];
+      rows.forEach((row, i) => {
+        const idxMatch = row.id.match(/q-row-(\d+)/);
+        if (!idxMatch) return;
+        const idx = idxMatch[1];
+        const text = document.getElementById('q-text-' + idx)?.value?.trim();
+        if (!text) return;
+        const type = document.getElementById('q-type-' + idx)?.value ?? 'text';
+        const ptsEl = document.getElementById('q-pts-' + idx);
+        const pts = ptsEl ? parseInt(ptsEl.value) || 0 : 0;
+        let options = null, correctAnswer = null;
+        const optsEl = document.getElementById('q-opts-' + idx);
+        if (optsEl) {
+          const lines = optsEl.value.split('\\n').map(l => l.trim()).filter(Boolean);
+          options = lines.map(l => { const isCorrect = l.startsWith('*'); const label = l.replace(/^\\*/, '').trim(); return { label, value: label.toLowerCase().replace(/\\s+/g,'_'), correct: isCorrect }; });
+          const correct = options.find(o => o.correct);
+          if (correct) correctAnswer = correct.value;
+        }
+        qs.push({ question_text: text, question_type: type, options, points: pts, correct_answer: correctAnswer, sort_order: i, is_required: 1 });
+      });
+      return qs;
+    }
+    async function saveTemplate() {
+      const title = document.getElementById('tmplTitle').value.trim();
+      if (!title) { alert('Please enter a title'); return; }
+      const questions = collectQuestions();
+      const payload = {
+        title,
+        description: document.getElementById('tmplDesc').value.trim() || null,
+        template_type: tmplType,
+        category: document.getElementById('tmplCategory').value,
+        pass_percentage: parseInt(document.getElementById('tmplPass')?.value) || 70,
+        questions
+      };
+      const r = await fetch('/api/assessment/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const d = await r.json();
+      if (d.success) { closeTemplateBuilder(); location.reload(); }
+      else alert('Error: ' + (d.error || 'Unknown error'));
+    }
+    function openTemplateBuilder() { document.getElementById('templateBuilderModal').style.display = 'flex'; }
+    function closeTemplateBuilder() { document.getElementById('templateBuilderModal').style.display = 'none'; }
+    async function syncClass() {
+      const courseId = new URLSearchParams(location.search).get('courseId');
+      if (!courseId) return;
+      const r = await fetch('/api/assessment/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ courseInstanceId: courseId }) });
+      const d = await r.json();
+      alert(d.error ? 'Error: ' + d.error : 'Synced ' + d.upserted + ' enrolment(s)');
+      if (!d.error) location.reload();
+    }
+    </script>
+  `);
+}
+
+// ============================================================
+// TRACKER PAGE
+// ============================================================
+
+async function renderTrackerPageHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return htmlResponse(renderAccessPendingPage(identity), 403);
+  const user = identity.user;
+  const isStudent = user.role === "student";
+  const url = new URL(request.url);
+
+  if (isStudent) {
+    const learnerId = identity.email.split("@")[0].replace(/[^0-9]/g, "");
+    let enrolments: StudentEnrolment[] = [];
+    let tracker: StudentTracker | null = null;
+    let comments: AssessmentComment[] = [];
+    if (learnerId) {
+      const r1 = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE learner_id=?").bind(learnerId).all<StudentEnrolment>();
+      enrolments = r1.results;
+      if (enrolments.length > 0) {
+        const enrolmentId = url.searchParams.get("enrolId") ?? enrolments[0].id;
+        tracker = await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(enrolmentId).first<StudentTracker>();
+        const r3 = await env.esol_marking_db.prepare("SELECT * FROM assessment_comments WHERE entity_id=? AND entity_type='tracker' ORDER BY created_at ASC").bind(enrolmentId).all<AssessmentComment>();
+        comments = r3.results;
+      }
+    }
+    return htmlResponse(renderStudentTrackerPage(identity, enrolments, tracker, comments, learnerId));
+  } else {
+    // Staff view
+    const courseInstanceId = url.searchParams.get("courseId") ?? "";
+    const studentEnrolId = url.searchParams.get("enrolId") ?? "";
+    let enrolments: StudentEnrolment[] = [];
+    let selectedTracker: StudentTracker | null = null;
+    let selectedEnrolment: StudentEnrolment | null = null;
+    let comments: AssessmentComment[] = [];
+    if (courseInstanceId) {
+      const r1 = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE course_instance_id=? ORDER BY student_label ASC").bind(courseInstanceId).all<StudentEnrolment>();
+      enrolments = r1.results;
+    }
+    if (studentEnrolId) {
+      selectedTracker = await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(studentEnrolId).first<StudentTracker>();
+      selectedEnrolment = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE id=?").bind(studentEnrolId).first<StudentEnrolment>();
+      const r3 = await env.esol_marking_db.prepare("SELECT * FROM assessment_comments WHERE entity_id=? AND entity_type='tracker' ORDER BY created_at ASC").bind(studentEnrolId).all<AssessmentComment>();
+      comments = r3.results;
+    }
+    return htmlResponse(renderStaffTrackerPage(identity, enrolments, courseInstanceId, selectedEnrolment, selectedTracker, comments));
+  }
+}
+
+function renderTrackerTile(id: string, emoji: string, title: string, content: string, editable: boolean, editAction: string): string {
+  const hasContent = content.trim().length > 0;
+  return `
+  <div class="tracker-tile ${hasContent ? "tracker-tile--done" : ""}" id="tile-${escapeHtml(id)}">
+    <div class="tracker-tile-header">
+      <span class="tracker-tile-emoji">${emoji}</span>
+      <h3>${escapeHtml(title)}</h3>
+      ${hasContent ? "<span class='rag-badge rag-green' style='margin-left:auto'>Completed</span>" : "<span class='rag-badge rag-grey' style='margin-left:auto'>Pending</span>"}
+    </div>
+    <div class="tracker-tile-body">${content || `<p class="muted-text">Not filled in yet.</p>`}</div>
+    ${editable ? `<div class="tracker-tile-footer"><button class="btn btn-secondary" onclick="${editAction}">✏️ Edit</button></div>` : ""}
+  </div>`;
+}
+
+function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string): string {
+  const enrolment = enrolments[0] ?? null;
+
+  const purposeTile = renderTrackerTile("purpose", "🎯", "Tailored Learning Purpose",
+    tracker?.tailored_purpose ? `<p>${escapeHtml(tracker.tailored_purpose)}</p>` : "",
+    true, "openStudentEdit('purpose')");
+
+  const goalsTile = renderTrackerTile("goals", "📋", "SMART Goals",
+    tracker?.smart_goals ? `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(tracker.smart_goals)}</pre>` : "",
+    true, "openStudentEdit('goals')");
+
+  const outcomesTile = renderTrackerTile("outcomes", "✨", "Tailored Learning Outcomes",
+    tracker?.tailored_outcomes ? `<p>${escapeHtml(tracker.tailored_outcomes)}</p>` : "",
+    true, "openStudentEdit('outcomes')");
+
+  const diagnosticTile = renderTrackerTile("diagnostic", "🔍", "Initial Assessment & Diagnostic",
+    tracker?.initial_assessment_level ? `
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem">
+        <strong>Level:</strong> ${escapeHtml(tracker.initial_assessment_level)}
+        ${ragBadge(tracker.initial_assessment_rag)}
+      </div>
+      <p>${escapeHtml(tracker.initial_assessment_notes ?? "")}</p>` : "",
+    false, "");
+
+  function termTile(n: 1 | 2 | 3) {
+    const grade = tracker?.[`term${n}_grade` as keyof StudentTracker] as string | null;
+    const rag = tracker?.[`term${n}_rag` as keyof StudentTracker] as string | null;
+    const comments = tracker?.[`term${n}_comments` as keyof StudentTracker] as string | null;
+    return renderTrackerTile(`term${n}`, "📊", `Term ${n} Progress & Grade`,
+      grade ? `<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem"><strong>${escapeHtml(grade)}</strong>${ragBadge(rag)}</div><p>${escapeHtml(comments ?? "")}</p>` : "",
+      false, "");
+  }
+
+  const destinationTile = renderTrackerTile("destination", "🚀", "Destination & Progression",
+    tracker?.destination_type ? `<p><strong>${escapeHtml(tracker.destination_type)}</strong></p><p>${escapeHtml(tracker.destination_notes ?? "")}</p>` : "",
+    false, "");
+
+  const commentsHtml = comments.map(c => `
+    <div class="comment-row comment-${escapeHtml(c.author_role)}">
+      <div class="comment-meta"><strong>${escapeHtml(c.author_name)}</strong> <span class="meta-chip">${escapeHtml(c.author_role)}</span> <span class="muted-text">${escapeHtml(c.created_at.slice(0,10))}</span></div>
+      <p>${escapeHtml(c.comment)}</p>
+    </div>`).join("");
+
+  return pageShell("My Progress Tracker", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "tracker")}
+      <div class="shell-content">
+        ${renderTopbar(identity, "My Progress Tracker")}
+        <section class="page-section">
+          ${!learnerId ? `<div class="alert alert-warn">Could not determine your learner ID from your email.</div>` : ""}
+          ${enrolment ? `<div class="tracker-course-banner"><strong>${escapeHtml(enrolment.course_title)}</strong> <span class="meta-chip">${escapeHtml(enrolment.course_code)}</span></div>` : ""}
+          <div class="tracker-tiles">
+            ${purposeTile}${goalsTile}${outcomesTile}${diagnosticTile}${termTile(1)}${termTile(2)}${termTile(3)}${destinationTile}
+          </div>
+          ${tracker ? `
+          <div class="tracker-comments">
+            <h3>Discussion Thread</h3>
+            <div class="comments-list">${commentsHtml || "<p class='muted-text'>No comments yet.</p>"}</div>
+            <div class="comment-form">
+              <textarea class="form-input" id="newComment" rows="2" placeholder="Add a comment…"></textarea>
+              <button class="btn btn-primary" onclick="postComment('${escapeHtml(tracker?.enrolment_id ?? "")}','tracker')">Post Comment</button>
+            </div>
+          </div>` : ""}
+        </section>
+      </div>
+    </main>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" id="studentEditModal" style="display:none">
+      <div class="modal-box">
+        <div class="modal-header"><h2 id="editModalTitle">Edit</h2><button class="modal-close" onclick="closeStudentEdit()">&times;</button></div>
+        <div class="modal-body">
+          <textarea class="form-input" id="editModalValue" rows="6" style="width:100%"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeStudentEdit()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveStudentEdit()">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .tracker-course-banner{padding:.75rem 1.5rem;background:#f0f9ff;border-bottom:1px solid #bfdbfe;font-size:.9375rem}
+      .tracker-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.25rem;padding:1.5rem}
+      .tracker-tile{background:#fff;border:2px solid #e2e8f0;border-radius:14px;overflow:hidden;transition:border-color .2s}
+      .tracker-tile--done{border-color:#22c55e}
+      .tracker-tile-header{display:flex;align-items:center;gap:.75rem;padding:1rem 1.25rem;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+      .tracker-tile-emoji{font-size:1.5rem}
+      .tracker-tile-header h3{margin:0;font-size:1rem;font-weight:700;flex:1}
+      .tracker-tile-body{padding:1rem 1.25rem;font-size:.9375rem;color:var(--text)}
+      .tracker-tile-footer{padding:.75rem 1.25rem;border-top:1px solid #e2e8f0;background:#fafafa}
+      .tracker-comments{padding:1.5rem;border-top:2px solid #e2e8f0;margin-top:1rem}
+      .tracker-comments h3{font-size:1.125rem;font-weight:700;margin-bottom:1rem}
+      .comment-row{padding:.75rem 1rem;border-radius:10px;margin-bottom:.75rem}
+      .comment-student{background:#eff6ff;border-left:3px solid #3b82f6}
+      .comment-teacher,.comment-assessor,.comment-admin,.comment-superuser{background:#f0fdf4;border-left:3px solid #22c55e}
+      .comment-meta{font-size:.8125rem;margin-bottom:.35rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+      .comment-form{display:flex;gap:.75rem;margin-top:1rem;align-items:flex-start}
+      .muted-text{color:var(--muted);font-size:.9rem}
+    </style>
+    <script>
+    let editField = '';
+    const enrolmentId = '${escapeHtml(tracker?.enrolment_id ?? "")}'; 
+    const fieldMap = { purpose: ['tailored_purpose','Tailored Learning Purpose'], goals: ['smart_goals','SMART Goals'], outcomes: ['tailored_outcomes','Tailored Learning Outcomes'] };
+    const currentValues = ${JSON.stringify({ tailored_purpose: tracker?.tailored_purpose ?? "", smart_goals: tracker?.smart_goals ?? "", tailored_outcomes: tracker?.tailored_outcomes ?? "" })};
+    function openStudentEdit(field) {
+      editField = field;
+      const [key, title] = fieldMap[field];
+      document.getElementById('editModalTitle').textContent = 'Edit: ' + title;
+      document.getElementById('editModalValue').value = currentValues[key] || '';
+      document.getElementById('studentEditModal').style.display = 'flex';
+    }
+    function closeStudentEdit() { document.getElementById('studentEditModal').style.display = 'none'; }
+    async function saveStudentEdit() {
+      const [key] = fieldMap[editField];
+      const value = document.getElementById('editModalValue').value.trim();
+      const payload = { enrolment_id: enrolmentId };
+      payload[key] = value;
+      const r = await fetch('/api/tracker/record', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      const d = await r.json();
+      if (d.success) { closeStudentEdit(); location.reload(); }
+      else alert('Error: ' + (d.error || 'Unknown'));
+    }
+    async function postComment(entityId, entityType) {
+      const comment = document.getElementById('newComment').value.trim();
+      if (!comment) return;
+      const r = await fetch('/api/assessment/comments/' + encodeURIComponent(entityId), {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ comment, entity_type: entityType })
+      });
+      const d = await r.json();
+      if (d.success) location.reload();
+      else alert('Error: ' + (d.error || 'Unknown'));
+    }
+    </script>
+  `);
+}
+
+function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment[], courseInstanceId: string, selectedEnrolment: StudentEnrolment | null, tracker: StudentTracker | null, comments: AssessmentComment[]): string {
+  const rosterHtml = enrolments.map(en => {
+    const isSelected = selectedEnrolment?.id === en.id;
+    return `<a href="/tracker?courseId=${encodeURIComponent(courseInstanceId)}&enrolId=${encodeURIComponent(en.id)}" class="roster-item ${isSelected ? "roster-item--active" : ""}">
+      <span class="roster-avatar">${escapeHtml((en.student_label || "?").charAt(0))}</span>
+      <span class="roster-name">${escapeHtml(en.student_label)}</span>
+      <span class="roster-id">${escapeHtml(en.learner_id)}</span>
+    </a>`;
+  }).join("");
+
+  const ragSelector = (field: string, current: string | null) => `
+    <div class="rag-selector" data-field="${field}">
+      <button class="rag-btn ${current === 'green' ? 'rag-btn--active-green' : ""}" onclick="setRag('${field}','green')">🟢 On Track</button>
+      <button class="rag-btn ${current === 'amber' ? 'rag-btn--active-amber' : ""}" onclick="setRag('${field}','amber')">🟡 Working Towards</button>
+      <button class="rag-btn ${current === 'red' ? 'rag-btn--active-red' : ""}" onclick="setRag('${field}','red')">🔴 Behind Target</button>
+    </div>`;
+
+  const detailHtml = !tracker || !selectedEnrolment ? "<p class='muted-text' style='padding:2rem'>Select a student from the roster to view their tracker.</p>" : `
+    <div class="tracker-detail">
+      <div class="tracker-detail-header">
+        <h2>${escapeHtml(selectedEnrolment.student_label)}</h2>
+        <span class="meta-chip">${escapeHtml(selectedEnrolment.course_title)}</span>
+        <span class="meta-chip">${escapeHtml(selectedEnrolment.learner_id)}</span>
+      </div>
+
+      <!-- Student Goals (Read-only for staff) -->
+      <div class="tracker-section">
+        <h3>🎯 Tailored Learning Purpose</h3>
+        <p>${tracker.tailored_purpose ? escapeHtml(tracker.tailored_purpose) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
+      </div>
+      <div class="tracker-section">
+        <h3>📋 SMART Goals</h3>
+        <pre style="white-space:pre-wrap;font-family:inherit;margin:0">${tracker.smart_goals ? escapeHtml(tracker.smart_goals) : "<em class='muted-text'>Not filled in by student yet.</em>"}</pre>
+      </div>
+      <div class="tracker-section">
+        <h3>✨ Tailored Learning Outcomes</h3>
+        <p>${tracker.tailored_outcomes ? escapeHtml(tracker.tailored_outcomes) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
+      </div>
+
+      <!-- Initial Assessment -->
+      <div class="tracker-section">
+        <h3>🔍 Initial Assessment & Diagnostic</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Assessment Level</label>
+            <input class="form-input" id="f-ia-level" value="${escapeHtml(tracker.initial_assessment_level ?? "")}" placeholder="e.g. Entry 1.2">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date</label>
+            <input class="form-input" id="f-ia-date" type="date" value="${escapeHtml(tracker.initial_assessment_date ?? "")}">
+          </div>
+        </div>
+        ${ragSelector("initial_assessment_rag", tracker.initial_assessment_rag)}
+        <div class="form-group" style="margin-top:.75rem">
+          <label class="form-label">Diagnostic Notes</label>
+          <textarea class="form-input" id="f-ia-notes" rows="3">${escapeHtml(tracker.initial_assessment_notes ?? "")}</textarea>
+        </div>
+      </div>
+
+      <!-- Term Reviews -->
+      ${[1, 2, 3].map(n => `
+      <div class="tracker-section">
+        <h3>📊 Term ${n} Review</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Grade</label>
+            <input class="form-input" id="f-t${n}-grade" value="${escapeHtml((tracker as any)["term" + n + "_grade"] ?? "")}" placeholder="e.g. Merit / Pass / 85%">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Review Date</label>
+            <input class="form-input" id="f-t${n}-date" type="date" value="${escapeHtml((tracker as any)["term" + n + "_date"] ?? "")}">
+          </div>
+        </div>
+        ${ragSelector("term" + n + "_rag", (tracker as any)["term" + n + "_rag"])}
+        <div class="form-group" style="margin-top:.75rem">
+          <label class="form-label">Feedback Comments</label>
+          <textarea class="form-input" id="f-t${n}-comments" rows="3">${escapeHtml((tracker as any)["term" + n + "_comments"] ?? "")}</textarea>
+        </div>
+      </div>
+      `).join("")}
+
+      <!-- Destination -->
+      <div class="tracker-section">
+        <h3>🚀 Destination & Progression</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Destination</label>
+            <select class="form-input" id="f-dest-type">
+              <option value="">Select…</option>
+              ${["Employment", "Next Level ESOL", "Further Education", "Volunteering", "Digital Skills", "Other"].map(o => `<option value="${o}" ${tracker.destination_type === o ? "selected" : ""}>${o}</option>`).join("")}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date</label>
+            <input class="form-input" id="f-dest-date" type="date" value="${escapeHtml(tracker.destination_date ?? "")}">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea class="form-input" id="f-dest-notes" rows="2">${escapeHtml(tracker.destination_notes ?? "")}</textarea>
+        </div>
+      </div>
+
+      <div style="padding:1rem 0;text-align:right">
+        <button class="btn btn-primary" onclick="saveTrackerRecord()">💾 Save All Changes</button>
+      </div>
+
+      <!-- Comments Thread -->
+      <div class="tracker-section">
+        <h3>💬 Discussion Thread</h3>
+        <div class="comments-list">
+          ${comments.map(c => `
+          <div class="comment-row comment-${escapeHtml(c.author_role)}">
+            <div class="comment-meta"><strong>${escapeHtml(c.author_name)}</strong> <span class="meta-chip">${escapeHtml(c.author_role)}</span> <span class="muted-text">${escapeHtml(c.created_at.slice(0,10))}</span></div>
+            <p>${escapeHtml(c.comment)}</p>
+          </div>`).join("") || "<p class='muted-text'>No comments yet.</p>"}
+        </div>
+        <div class="comment-form">
+          <textarea class="form-input" id="newComment" rows="2" placeholder="Add a comment…"></textarea>
+          <button class="btn btn-primary" onclick="postComment('${escapeHtml(selectedEnrolment?.id ?? "")}','tracker')">Post</button>
+        </div>
+      </div>
+    </div>`;
+
+  return pageShell("Progress Tracker", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "tracker")}
+      <div class="shell-content">
+        ${renderTopbar(identity, "Progress Tracker")}
+        <section class="page-section">
+          <div class="tracker-toolbar">
+            <form method="GET" action="/tracker" class="assess-search-form">
+              <input class="form-input" name="courseId" placeholder="Course Instance ID…" value="${escapeHtml(courseInstanceId)}">
+              <button class="btn btn-primary" type="submit">🔍 Search</button>
+              ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncCourse()">🔄 Sync Class</button>` : ""}
+            </form>
+            <button class="btn btn-pink" onclick="openTrackerTemplateBuilder()">+ New Template</button>
+          </div>
+          <div class="tracker-layout">
+            ${enrolments.length > 0 ? `
+            <div class="tracker-roster">
+              <div class="roster-header">Students (${enrolments.length})</div>
+              ${rosterHtml}
+            </div>` : ""}
+            <div class="tracker-main">${detailHtml}</div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <style>
+      .tracker-toolbar{display:flex;align-items:center;gap:1rem;padding:1rem 1.5rem;background:#f8fafc;border-bottom:1px solid #e2e8f0;flex-wrap:wrap}
+      .tracker-layout{display:flex;min-height:calc(100vh - 130px)}
+      .tracker-roster{width:240px;flex-shrink:0;border-right:1px solid #e2e8f0;overflow-y:auto}
+      .roster-header{padding:.65rem 1rem;font-size:.8125rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+      .roster-item{display:flex;align-items:center;gap:.75rem;padding:.7rem 1rem;border-bottom:1px solid #f1f5f9;text-decoration:none;color:var(--text);transition:background .1s}
+      .roster-item:hover{background:#f8fafc}
+      .roster-item--active{background:#fdf2f8;border-left:3px solid #e91e8c}
+      .roster-avatar{width:32px;height:32px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.875rem;flex-shrink:0}
+      .roster-name{flex:1;font-size:.875rem;font-weight:600}
+      .roster-id{font-size:.75rem;color:var(--muted)}
+      .tracker-main{flex:1;overflow-y:auto}
+      .tracker-detail{padding:1.5rem;max-width:860px}
+      .tracker-detail-header{display:flex;align-items:center;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap}
+      .tracker-detail-header h2{margin:0;font-size:1.375rem;font-weight:800}
+      .tracker-section{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.25rem;margin-bottom:1.25rem}
+      .tracker-section h3{margin:0 0 1rem;font-size:1rem;font-weight:700}
+      .rag-selector{display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0}
+      .rag-btn{padding:.4rem .9rem;border-radius:20px;border:2px solid #e2e8f0;background:#fff;cursor:pointer;font-size:.8125rem;font-weight:600;transition:all .15s}
+      .rag-btn:hover{border-color:var(--primary)}
+      .rag-btn--active-green{background:#dcfce7;border-color:#22c55e;color:#166534}
+      .rag-btn--active-amber{background:#fffbeb;border-color:#f59e0b;color:#92400e}
+      .rag-btn--active-red{background:#fee2e2;border-color:#ef4444;color:#991b1b}
+      .comment-row{padding:.75rem 1rem;border-radius:10px;margin-bottom:.75rem}
+      .comment-student{background:#eff6ff;border-left:3px solid #3b82f6}
+      .comment-teacher,.comment-assessor,.comment-admin,.comment-superuser{background:#f0fdf4;border-left:3px solid #22c55e}
+      .comment-meta{font-size:.8125rem;margin-bottom:.35rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+      .comment-form{display:flex;gap:.75rem;margin-top:1rem;align-items:flex-start}
+      .assess-search-form{display:flex;gap:.5rem;flex:1;min-width:280px}
+      .btn-pink{background:#e91e8c;color:#fff;border:none;padding:.55rem 1.1rem;border-radius:8px;font-weight:700;cursor:pointer;font-size:.9375rem;transition:background .2s}
+      .btn-pink:hover{background:#c0157a}
+    </style>
+    <script>
+    const ragState = {};
+    function setRag(field, value) {
+      ragState[field] = value;
+      const sel = document.querySelector('[data-field="'+field+'"]');
+      if (!sel) return;
+      sel.querySelectorAll('.rag-btn').forEach(btn => {
+        btn.className = 'rag-btn';
+        if (btn.textContent.toLowerCase().includes(value === 'green' ? 'on track' : value === 'amber' ? 'working' : 'behind')) {
+          btn.className = 'rag-btn rag-btn--active-' + value;
+        }
+      });
+    }
+    async function saveTrackerRecord() {
+      const enrolId = '${escapeHtml(selectedEnrolment?.id ?? "")}'; 
+      if (!enrolId) { alert('No student selected'); return; }
+      const payload = {
+        enrolment_id: enrolId,
+        initial_assessment_level: document.getElementById('f-ia-level')?.value?.trim() || null,
+        initial_assessment_date: document.getElementById('f-ia-date')?.value || null,
+        initial_assessment_notes: document.getElementById('f-ia-notes')?.value?.trim() || null,
+        initial_assessment_rag: ragState['initial_assessment_rag'] || '${escapeHtml(tracker?.initial_assessment_rag ?? "")}' || null,
+        term1_grade: document.getElementById('f-t1-grade')?.value?.trim() || null,
+        term1_date: document.getElementById('f-t1-date')?.value || null,
+        term1_comments: document.getElementById('f-t1-comments')?.value?.trim() || null,
+        term1_rag: ragState['term1_rag'] || '${escapeHtml((tracker as any)?.term1_rag ?? "")}' || null,
+        term2_grade: document.getElementById('f-t2-grade')?.value?.trim() || null,
+        term2_date: document.getElementById('f-t2-date')?.value || null,
+        term2_comments: document.getElementById('f-t2-comments')?.value?.trim() || null,
+        term2_rag: ragState['term2_rag'] || '${escapeHtml((tracker as any)?.term2_rag ?? "")}' || null,
+        term3_grade: document.getElementById('f-t3-grade')?.value?.trim() || null,
+        term3_date: document.getElementById('f-t3-date')?.value || null,
+        term3_comments: document.getElementById('f-t3-comments')?.value?.trim() || null,
+        term3_rag: ragState['term3_rag'] || '${escapeHtml((tracker as any)?.term3_rag ?? "")}' || null,
+        destination_type: document.getElementById('f-dest-type')?.value || null,
+        destination_date: document.getElementById('f-dest-date')?.value || null,
+        destination_notes: document.getElementById('f-dest-notes')?.value?.trim() || null
+      };
+      const r = await fetch('/api/tracker/record', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      const d = await r.json();
+      if (d.success) { location.reload(); }
+      else alert('Error saving: ' + (d.error || 'Unknown error'));
+    }
+    async function postComment(entityId, entityType) {
+      const comment = document.getElementById('newComment').value.trim();
+      if (!comment) return;
+      const r = await fetch('/api/assessment/comments/' + encodeURIComponent(entityId), {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ comment, entity_type: entityType })
+      });
+      const d = await r.json();
+      if (d.success) location.reload();
+      else alert('Error: ' + (d.error || 'Unknown'));
+    }
+    async function syncCourse() {
+      const courseId = new URLSearchParams(location.search).get('courseId');
+      if (!courseId) return;
+      const r = await fetch('/api/assessment/sync', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ courseInstanceId: courseId }) });
+      const d = await r.json();
+      alert(d.error ? 'Error: ' + d.error : 'Synced ' + d.upserted + ' student(s)');
+      if (!d.error) location.reload();
+    }
+    function openTrackerTemplateBuilder() { alert('Tracker template builder — coming soon as part of the unified builder.'); }
+    </script>
+  `);
+}
+
