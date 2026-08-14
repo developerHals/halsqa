@@ -1,9 +1,9 @@
-name = "esolqa"
+name = "esolqa-v2"
 main = "src/index.ts"
 compatibility_date = "2026-05-30"
 assets = { directory = "./public" }
 
 [[d1_databases]]
 binding = "esol_marking_db"
-database_name = "esol-marking-db"
-database_id = "a815fe83-e17c-4d4e-a36b-7460765010a8"
+database_name = "esol-marking-db-v2"
+database_id = "964d953b-08fb-4d88-837c-74e336902a38"
