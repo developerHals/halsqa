@@ -608,6 +608,7 @@ export default {
 
     // Tracker API
     if (url.pathname === "/api/tracker/record" && request.method === "POST") return saveTrackerRecord(request, env, identity);
+    if (url.pathname === "/api/tracker/batch" && request.method === "POST") return saveTrackerBatch(request, env, identity);
     if (url.pathname.match(/^\/api\/tracker\/[^/]+$/) && request.method === "GET") return getTrackerRecord(request, env, identity, url.pathname.split("/")[3]);
 
     // Comments API (shared between entries and tracker)
@@ -7500,6 +7501,9 @@ async function renderTrackerPageHandler(request: Request, env: Env, identity: Id
     return htmlResponse(renderStudentTrackerPage(identity, enrolments, tracker, comments, learnerId, requestedEnrolId));
   } else {
     // Staff view
+
+    const rCourses = await env.esol_marking_db.prepare("SELECT DISTINCT course_instance_id, course_title FROM student_enrolments WHERE course_instance_id IS NOT NULL AND course_instance_id != '' ORDER BY course_title ASC").all<{course_instance_id: string, course_title: string}>();
+    const allCourses = rCourses.results;
     const courseInstanceId = url.searchParams.get("courseId") ?? "";
     const studentEnrolId = url.searchParams.get("enrolId") ?? "";
     let enrolments: StudentEnrolment[] = [];
@@ -7519,7 +7523,7 @@ async function renderTrackerPageHandler(request: Request, env: Env, identity: Id
       const r3 = await env.esol_marking_db.prepare("SELECT * FROM assessment_comments WHERE entity_id=? AND entity_type='tracker' ORDER BY created_at ASC").bind(studentEnrolId).all<AssessmentComment>();
       comments = r3.results;
     }
-    return htmlResponse(renderStaffTrackerPage(identity, enrolments, trackers, courseInstanceId, selectedEnrolment, selectedTracker, comments));
+    return htmlResponse(renderStaffTrackerPage(identity, enrolments, trackers, courseInstanceId, selectedEnrolment, selectedTracker, comments, allCourses));
   }
 }
 
@@ -7536,6 +7540,7 @@ function renderTrackerTile(id: string, emoji: string, title: string, content: st
     ${editable ? `<div class="tracker-tile-footer"><button class="btn btn-secondary" onclick="${editAction}">✏️ Edit</button></div>` : ""}
   </div>`;
 }
+
 
 function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string, activeEnrolmentId: string): string {
   const enrolment = enrolments.find(e => e.id === activeEnrolmentId) ?? enrolments[0] ?? null;
@@ -7562,11 +7567,14 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
     false, "");
 
   function termTile(n: 1 | 2 | 3) {
-    const grade = tracker?.[`term${n}_grade` as keyof StudentTracker] as string | null;
     const rag = tracker?.[`term${n}_rag` as keyof StudentTracker] as string | null;
-    const comments = tracker?.[`term${n}_comments` as keyof StudentTracker] as string | null;
-    return renderTrackerTile(`term${n}`, "📊", `Term ${n} Progress & Grade`,
-      grade ? `<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem"><strong>${escapeHtml(grade)}</strong>${ragBadge(rag)}</div><p>${escapeHtml(comments ?? "")}</p>` : "",
+    const tComments = tracker?.[`term${n}_comments` as keyof StudentTracker] as string | null;
+    const tDate = tracker?.[`term${n}_date` as keyof StudentTracker] as string | null;
+    const tileContent = rag
+      ? `<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem">${ragBadge(rag)}${tDate ? `<span style="color:var(--muted);font-size:.875rem">Updated: ${escapeHtml(tDate)}</span>` : ""}</div>${tComments ? `<p>${escapeHtml(tComments)}</p>` : ""}`
+      : "";
+    return renderTrackerTile(`term${n}`, "📊", `Term ${n} Review`,
+      tileContent,
       false, "");
   }
 
@@ -7675,7 +7683,7 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
   `);
 }
 
-function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment[], trackers: StudentTracker[], courseInstanceId: string, selectedEnrolment: StudentEnrolment | null, tracker: StudentTracker | null, comments: AssessmentComment[]): string {
+function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment[], trackers: StudentTracker[], courseInstanceId: string, selectedEnrolment: StudentEnrolment | null, tracker: StudentTracker | null, comments: AssessmentComment[], allCourses: {course_instance_id: string, course_title: string}[]): string {
   const rosterHtml = enrolments.map(en => {
     const isSelected = selectedEnrolment?.id === en.id;
     return `<a href="/tracker?courseId=${encodeURIComponent(courseInstanceId)}&enrolId=${encodeURIComponent(en.id)}" class="roster-item ${isSelected ? "roster-item--active" : ""}">
@@ -7738,17 +7746,8 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       ${[1, 2, 3].map(n => `
       <div class="tracker-section">
         <h3>📊 Term ${n} Review</h3>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Grade</label>
-            <input class="form-input" id="f-t${n}-grade" value="${escapeHtml((tracker as any)["term" + n + "_grade"] ?? "")}" placeholder="e.g. Merit / Pass / 85%">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Review Date</label>
-            <input class="form-input" id="f-t${n}-date" type="date" value="${escapeHtml((tracker as any)["term" + n + "_date"] ?? "")}">
-          </div>
-        </div>
-        ${ragSelector("term" + n + "_rag", (tracker as any)["term" + n + "_rag"])}
+        <p class="form-hint">Select a RAG status — the date is recorded automatically when you save.</p>
+                ${ragSelector("term" + n + "_rag", (tracker as any)["term" + n + "_rag"])}
         <div class="form-group" style="margin-top:.75rem">
           <label class="form-label">Feedback Comments</label>
           <textarea class="form-input" id="f-t${n}-comments" rows="3">${escapeHtml((tracker as any)["term" + n + "_comments"] ?? "")}</textarea>
@@ -7799,6 +7798,64 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       </div>
     </div>`;
 
+
+  // Build Bulk View Table
+  const bulkCols = [
+    { key: 'initial_assessment_rag', label: 'Induction' },
+    { key: 'term1_rag', label: 'Term 1' },
+    { key: 'term2_rag', label: 'Term 2' },
+    { key: 'term3_rag', label: 'Term 3' },
+  ];
+  const trackerMap = new Map(trackers.map(t => [t.enrolment_id, t]));
+  const bulkRowsHtml = enrolments.map(en => {
+    const t = trackerMap.get(en.id);
+    const cells = bulkCols.map(col => {
+      const val = t ? (t)[col.key] : null;
+      const dateKey = col.key.replace('_rag','_date');
+      const dateVal = t ? (t)[dateKey] : null;
+      return `<td class="bulk-rag-cell" data-enrol="${escapeHtml(en.id)}" data-field="${col.key}">
+          <div class="bulk-rag-btns">
+            <button class="bulk-rag-btn ${val==='green'?'bulk-active-green':''}" onclick="setBulkRag('${escapeHtml(en.id)}','${col.key}','green',this)">🟢</button>
+            <button class="bulk-rag-btn ${val==='amber'?'bulk-active-amber':''}" onclick="setBulkRag('${escapeHtml(en.id)}','${col.key}','amber',this)">🟡</button>
+            <button class="bulk-rag-btn ${val==='red'?'bulk-active-red':''}" onclick="setBulkRag('${escapeHtml(en.id)}','${col.key}','red',this)">🔴</button>
+          </div>
+          ${dateVal ? `<div class="bulk-date">${escapeHtml(dateVal)}</div>` : ''}
+        </td>`;
+    }).join('');
+    return `<tr>
+      <td class="bulk-name-cell"><a href="/tracker?courseId=${encodeURIComponent(courseInstanceId)}&enrolId=${encodeURIComponent(en.id)}" class="bulk-student-link">${escapeHtml(en.student_label)}</a><br><span class="bulk-id">${escapeHtml(en.learner_id)}</span></td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  const bulkColHeaders = bulkCols.map(col => `<th class="bulk-col-th">
+                <div class="bulk-col-title">${col.label}</div>
+                <div class="bulk-apply-btns">
+                  <button class="bulk-apply-btn bulk-apply-green" onclick="applyColToAll('${col.key}','green')">🟢 All Green</button>
+                  <button class="bulk-apply-btn bulk-apply-amber" onclick="applyColToAll('${col.key}','amber')">🟡 All Amber</button>
+                  <button class="bulk-apply-btn bulk-apply-red" onclick="applyColToAll('${col.key}','red')">🔴 All Red</button>
+                </div>
+              </th>`).join('');
+
+  const bulkViewHtml = enrolments.length === 0 ? '' : `
+    <div id="bulkView" style="display:none">
+      <div class="bulk-toolbar">
+        <span class="bulk-toolbar-title">📋 Bulk Class View — click column buttons to set all students at once</span>
+        <button class="btn btn-primary" onclick="saveBulkChanges()">💾 Save Bulk Changes</button>
+      </div>
+      <div class="bulk-table-wrapper">
+        <table class="bulk-table">
+          <thead>
+            <tr>
+              <th class="bulk-name-th">Student</th>
+              ${bulkColHeaders}
+            </tr>
+          </thead>
+          <tbody>${bulkRowsHtml}</tbody>
+        </table>
+      </div>
+    </div>`;
+
   return pageShell("Progress Tracker", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "tracker")}
@@ -7806,22 +7863,27 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         ${renderTopbar(identity, "Progress Tracker")}
         <section class="page-section">
           <div class="tracker-toolbar">
-            <form method="GET" action="/tracker" class="assess-search-form">
-              <input class="form-input" name="courseId" placeholder="Course Instance ID…" value="${escapeHtml(courseInstanceId)}">
-              <button class="btn btn-primary" type="submit">Search</button>
+            <form method="GET" action="/tracker" class="assess-search-form" style="display:flex;align-items:center;gap:0.75rem;">
+              <label style="font-weight:600;white-space:nowrap;">My classes</label>
+              <select class="form-input" name="courseId" onchange="this.form.submit()">
+                <option value="">-- Select a class --</option>
+                ${allCourses.map(c => `<option value="${escapeHtml(c.course_instance_id)}" ${c.course_instance_id === courseInstanceId ? "selected" : ""}>${escapeHtml(c.course_title)} (${escapeHtml(c.course_instance_id)})</option>`).join("")}
+              </select>
               ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncCourse()">Sync Class</button>` : ""}
             </form>
-            <button class="btn btn-pink" onclick="openTrackerTemplateBuilder()">+ New Template</button>
+            ${enrolments.length > 0 ? `<button class="btn btn-toggle" id="bulkToggle" onclick="toggleBulkView()">📋 Bulk Class View</button>` : ""}
           </div>
-          <div class="tracker-layout">
-            ${enrolments.length > 0 ? `
-            <div class="tracker-roster">
-              <div class="roster-header">Students (${enrolments.length})</div>
-              ${rosterHtml}
-            </div>` : ""}
-            <div class="tracker-main">${detailHtml}</div>
-          </div>
-        </section>
+          ${bulkViewHtml}
+          <div id="individualView">
+            <div class="tracker-layout">
+              ${enrolments.length > 0 ? `
+              <div class="tracker-roster">
+                <div class="roster-header">Students (${enrolments.length})</div>
+                ${rosterHtml}
+              </div>` : ""}
+              <div class="tracker-main">${detailHtml}</div>
+            </div>
+          </div></section>
       </div>
     </main>
 
@@ -7841,10 +7903,12 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       .tracker-detail-header{display:flex;align-items:center;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap}
       .tracker-detail-header h2{margin:0;font-size:1.375rem;font-weight:800}
       .tracker-section{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.25rem;margin-bottom:1.25rem}
-      .tracker-section h3{margin:0 0 1rem;font-size:1rem;font-weight:700}
+      .tracker-section h3{margin:0 0 .5rem;font-size:1rem;font-weight:700}
+      .form-hint{color:var(--muted);font-size:.8125rem;margin:0 0 .75rem}
+      .rag-date-display{color:#4f46e5;font-size:.8125rem;margin:.4rem 0 0;font-weight:500}
       .rag-selector{display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0}
-      .rag-btn{padding:.4rem .9rem;border-radius:20px;border:2px solid #e2e8f0;background:#fff;cursor:pointer;font-size:.8125rem;font-weight:600;transition:all .15s}
-      .rag-btn:hover{border-color:var(--primary)}
+      .rag-btn{padding:.45rem 1rem;border-radius:20px;border:2px solid #e2e8f0;background:#fff;cursor:pointer;font-size:.875rem;font-weight:600;transition:all .15s}
+      .rag-btn:hover{border-color:var(--primary);transform:scale(1.03)}
       .rag-btn--active-green{background:#dcfce7;border-color:#22c55e;color:#166534}
       .rag-btn--active-amber{background:#fffbeb;border-color:#f59e0b;color:#92400e}
       .rag-btn--active-red{background:#fee2e2;border-color:#ef4444;color:#991b1b}
@@ -7854,43 +7918,84 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       .comment-meta{font-size:.8125rem;margin-bottom:.35rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
       .comment-form{display:flex;gap:.75rem;margin-top:1rem;align-items:flex-start}
       .assess-search-form{display:flex;gap:.5rem;flex:1;min-width:280px}
-      .btn-pink{background:#e91e8c;color:#fff;border:none;padding:.55rem 1.1rem;border-radius:8px;font-weight:700;cursor:pointer;font-size:.9375rem;transition:background .2s}
-      .btn-pink:hover{background:#c0157a}
+      .btn-toggle{background:#6366f1;color:#fff;border:none;padding:.55rem 1.1rem;border-radius:8px;font-weight:700;cursor:pointer;font-size:.875rem;transition:all .2s}
+      .btn-toggle:hover{background:#4f46e5}
+      .btn-toggle.active{background:#4f46e5;box-shadow:0 0 0 3px rgba(99,102,241,.3)}
+      /* Bulk View */
+      .bulk-toolbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.75rem 1.5rem;background:#eef2ff;border-bottom:1px solid #c7d2fe;flex-wrap:wrap}
+      .bulk-toolbar-title{font-size:.875rem;font-weight:600;color:#3730a3}
+      .bulk-table-wrapper{overflow-x:auto;padding:1rem 1.5rem}
+      .bulk-table{width:100%;border-collapse:collapse;font-size:.875rem}
+      .bulk-table th,.bulk-table td{border:1px solid #e2e8f0;padding:.5rem .75rem;vertical-align:middle}
+      .bulk-table thead th{background:#f8fafc;font-weight:700;text-align:center}
+      .bulk-name-th{text-align:left;min-width:160px}
+      .bulk-col-th{min-width:180px}
+      .bulk-col-title{font-size:.75rem;margin-bottom:.4rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+      .bulk-apply-btns{display:flex;gap:.3rem;justify-content:center;flex-wrap:wrap;margin-top:.25rem}
+      .bulk-apply-btn{padding:.3rem .6rem;border:none;border-radius:8px;cursor:pointer;font-size:.75rem;font-weight:700;transition:all .15s}
+      .bulk-apply-btn:hover{transform:scale(1.08)}
+      .bulk-apply-green{background:#dcfce7;color:#166534}
+      .bulk-apply-amber{background:#fffbeb;color:#92400e}
+      .bulk-apply-red{background:#fee2e2;color:#991b1b}
+      .bulk-name-cell{font-weight:600;min-width:160px}
+      .bulk-student-link{color:var(--primary);text-decoration:none;font-weight:600}
+      .bulk-student-link:hover{text-decoration:underline}
+      .bulk-id{font-size:.75rem;color:var(--muted);font-weight:400}
+      .bulk-rag-cell{text-align:center}
+      .bulk-rag-btns{display:flex;gap:.35rem;justify-content:center}
+      .bulk-rag-btn{width:2.2rem;height:2.2rem;border:2px solid #e2e8f0;border-radius:50%;background:#fff;cursor:pointer;font-size:1.1rem;display:flex;align-items:center;justify-content:center;transition:all .15s;padding:0;line-height:1}
+      .bulk-rag-btn:hover{border-color:#6366f1;transform:scale(1.2)}
+      .bulk-active-green{border-color:#22c55e;background:#dcfce7}
+      .bulk-active-amber{border-color:#f59e0b;background:#fffbeb}
+      .bulk-active-red{border-color:#ef4444;background:#fee2e2}
+      .bulk-date{font-size:.7rem;color:var(--muted);margin-top:.25rem}
     </style>
     <script>
+    // --- Individual View ---
     const ragState = {};
+    const todayStr = new Date().toISOString().slice(0, 10);
     function setRag(field, value) {
       ragState[field] = value;
       const sel = document.querySelector('[data-field="'+field+'"]');
       if (!sel) return;
       sel.querySelectorAll('.rag-btn').forEach(btn => {
         btn.className = 'rag-btn';
-        if (btn.textContent.toLowerCase().includes(value === 'green' ? 'on track' : value === 'amber' ? 'working' : 'behind')) {
+        const t = btn.textContent.toLowerCase();
+        if ((value === 'green' && t.includes('on track')) ||
+            (value === 'amber' && t.includes('working')) ||
+            (value === 'red' && t.includes('behind'))) {
           btn.className = 'rag-btn rag-btn--active-' + value;
         }
       });
+      const parent = sel.closest('.tracker-section');
+      if (parent) {
+        let dateEl = parent.querySelector('.rag-date-display');
+        if (!dateEl) {
+          dateEl = document.createElement('p');
+          dateEl.className = 'rag-date-display';
+          sel.insertAdjacentElement('afterend', dateEl);
+        }
+        dateEl.innerHTML = 'Will be saved as: <strong>' + todayStr + '</strong>';
+      }
     }
     async function saveTrackerRecord() {
-      const enrolId = '${escapeHtml(selectedEnrolment?.id ?? "")}'; 
+      const enrolId = '${escapeHtml(selectedEnrolment?.id ?? "")}';
       if (!enrolId) { alert('No student selected'); return; }
       const payload = {
         enrolment_id: enrolId,
         initial_assessment_level: document.getElementById('f-ia-level')?.value?.trim() || null,
-        initial_assessment_date: document.getElementById('f-ia-date')?.value || null,
+        initial_assessment_date: ragState['initial_assessment_rag'] ? todayStr : ('${escapeHtml(tracker?.initial_assessment_date ?? "")}' || null),
         initial_assessment_notes: document.getElementById('f-ia-notes')?.value?.trim() || null,
         initial_assessment_rag: ragState['initial_assessment_rag'] || '${escapeHtml(tracker?.initial_assessment_rag ?? "")}' || null,
-        term1_grade: document.getElementById('f-t1-grade')?.value?.trim() || null,
-        term1_date: document.getElementById('f-t1-date')?.value || null,
         term1_comments: document.getElementById('f-t1-comments')?.value?.trim() || null,
         term1_rag: ragState['term1_rag'] || '${escapeHtml((tracker as any)?.term1_rag ?? "")}' || null,
-        term2_grade: document.getElementById('f-t2-grade')?.value?.trim() || null,
-        term2_date: document.getElementById('f-t2-date')?.value || null,
+        term1_date: ragState['term1_rag'] ? todayStr : ('${escapeHtml((tracker as any)?.term1_date ?? "")}' || null),
         term2_comments: document.getElementById('f-t2-comments')?.value?.trim() || null,
         term2_rag: ragState['term2_rag'] || '${escapeHtml((tracker as any)?.term2_rag ?? "")}' || null,
-        term3_grade: document.getElementById('f-t3-grade')?.value?.trim() || null,
-        term3_date: document.getElementById('f-t3-date')?.value || null,
+        term2_date: ragState['term2_rag'] ? todayStr : ('${escapeHtml((tracker as any)?.term2_date ?? "")}' || null),
         term3_comments: document.getElementById('f-t3-comments')?.value?.trim() || null,
         term3_rag: ragState['term3_rag'] || '${escapeHtml((tracker as any)?.term3_rag ?? "")}' || null,
+        term3_date: ragState['term3_rag'] ? todayStr : ('${escapeHtml((tracker as any)?.term3_date ?? "")}' || null),
         destination_type: document.getElementById('f-dest-type')?.value || null,
         destination_date: document.getElementById('f-dest-date')?.value || null,
         destination_notes: document.getElementById('f-dest-notes')?.value?.trim() || null
@@ -7900,6 +8005,51 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       if (d.success) { location.reload(); }
       else alert('Error saving: ' + (d.error || 'Unknown error'));
     }
+    // --- Bulk View ---
+    const bulkChanges = {};
+    function setBulkRag(enrolId, field, value, btn) {
+      const key = enrolId + ':' + field;
+      bulkChanges[key] = value;
+      const cell = btn.closest('.bulk-rag-cell');
+      cell.querySelectorAll('.bulk-rag-btn').forEach(b => { b.className = 'bulk-rag-btn'; });
+      btn.className = 'bulk-rag-btn bulk-active-' + value;
+    }
+    function applyColToAll(field, value) {
+      document.querySelectorAll('.bulk-rag-cell[data-field="'+field+'"]').forEach(cell => {
+        const enrolId = cell.getAttribute('data-enrol');
+        const key = enrolId + ':' + field;
+        bulkChanges[key] = value;
+        cell.querySelectorAll('.bulk-rag-btn').forEach(b => { b.className = 'bulk-rag-btn'; });
+        const emoji = value === 'green' ? '🟢' : value === 'amber' ? '🟡' : '🔴';
+        const targetBtn = [...cell.querySelectorAll('.bulk-rag-btn')].find(b => b.textContent.trim() === emoji);
+        if (targetBtn) targetBtn.className = 'bulk-rag-btn bulk-active-' + value;
+      });
+    }
+    async function saveBulkChanges() {
+      const updates = Object.entries(bulkChanges).map(([key, value]) => {
+        const parts = key.split(':');
+        return { enrolment_id: parts[0], field: parts[1], value: value };
+      });
+      if (updates.length === 0) { alert('No changes to save.'); return; }
+      const r = await fetch('/api/tracker/batch', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ updates }) });
+      const d = await r.json();
+      if (d.success) { location.reload(); }
+      else alert('Error saving bulk changes: ' + (d.error || 'Unknown error'));
+    }
+    function toggleBulkView() {
+      const bulk = document.getElementById('bulkView');
+      const indiv = document.getElementById('individualView');
+      const btn = document.getElementById('bulkToggle');
+      const isShowing = bulk && bulk.style.display !== 'none';
+      if (bulk) bulk.style.display = isShowing ? 'none' : 'block';
+      if (indiv) indiv.style.display = isShowing ? 'block' : 'none';
+      if (btn) {
+        btn.classList.toggle('active', !isShowing);
+        btn.textContent = isShowing ? '📋 Bulk Class View' : '👤 Individual View';
+      }
+    }
+
+      
     async function postComment(entityId, entityType) {
       const comment = document.getElementById('newComment').value.trim();
       if (!comment) return;
