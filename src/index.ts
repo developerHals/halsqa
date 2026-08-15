@@ -8,14 +8,13 @@ interface Env {
       };
       first<T>(): Promise<T | null>;
       all<T>(): Promise<{ results: T[] }>;
-      run(): Promise<unknown>;
-    };
-  };
+  esol_marking_db: D1Database;
   MICROSOFT_CLIENT_ID?: string;
   MICROSOFT_CLIENT_SECRET?: string;
   MICROSOFT_TENANT_ID?: string;
-  SESSION_SECRET?: string;
+  SESSION_SECRET: string;
   "LearnerTrack.API"?: string;
+  LT_USER_API?: string;
   LT_USER_NAME?: string;
   ASSETS?: { fetch(request: Request): Promise<Response> };
 }
@@ -738,12 +737,12 @@ async function renderUsersPage(request: Request, env: Env, identity: Identity): 
 }
 
 async function fetchLearnerTrackCourses(request: Request, env: Env, identity: Identity): Promise<Response> {
-  const apiKey = env["LearnerTrack.API"];
+  const apiKey = env.LT_USER_API || env["LearnerTrack.API"];
   if (!apiKey) return json({ error: "LearnerTrack API key not configured" }, 500);
   const url = new URL(request.url);
   const academicYear = url.searchParams.get("academicYear")?.trim();
   const courseInstanceId = url.searchParams.get("courseinstanceid")?.trim();
-  const username = "GiuseppeA";
+  const username = env.LT_USER_NAME ?? "GiuseppeA";
   let apiUrl = `https://api.learnertrack.net/api/CourseInstance?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}`;
   if (academicYear) apiUrl += `&academicYear=${encodeURIComponent(academicYear)}`;
   if (courseInstanceId) apiUrl += `&courseinstanceid=${encodeURIComponent(courseInstanceId)}`;
@@ -766,12 +765,12 @@ async function renderCoursesPageHandler(request: Request, env: Env, identity: Id
 }
 
 async function fetchLearnerTrackEnrolment(request: Request, env: Env, identity: Identity): Promise<Response> {
-  const apiKey = env["LearnerTrack.API"];
+  const apiKey = env.LT_USER_API || env["LearnerTrack.API"];
   if (!apiKey) return json({ error: "LearnerTrack API key not configured" }, 500);
   const url = new URL(request.url);
   const courseInstanceId = url.searchParams.get("courseinstanceid")?.trim();
   if (!courseInstanceId) return json({ error: "courseinstanceid is required" }, 400);
-  const username = "GiuseppeA";
+  const username = env.LT_USER_NAME ?? "GiuseppeA";
   const apiUrl = `https://betaapi.learnertrack.net/api/Enrolment?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}&courseinstanceid=${encodeURIComponent(courseInstanceId)}`;
   try {
     const r = await fetch(apiUrl, { headers: { "Accept": "application/json" } });
@@ -938,12 +937,12 @@ function renderMyClassPage(identity: Identity, courseInstanceId: string, courseT
 }
 
 async function fetchStudentEnrolments(request: Request, env: Env, identity: Identity): Promise<Response> {
-  const apiKey = env["LearnerTrack.API"];
+  const apiKey = env.LT_USER_API || env["LearnerTrack.API"];
   if (!apiKey) return json({ error: "LearnerTrack API key not configured" }, 500);
   const url = new URL(request.url);
   const learnerId = url.searchParams.get("learnerid")?.trim();
   if (!learnerId) return json({ error: "learnerid is required" }, 400);
-  const username = "GiuseppeA";
+  const username = env.LT_USER_NAME ?? "GiuseppeA";
   const apiUrl = `https://betaapi.learnertrack.net/api/Enrolment?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}&learnerid=${encodeURIComponent(learnerId)}`;
   try {
     const r = await fetch(apiUrl, { headers: { "Accept": "application/json" } });
@@ -6651,7 +6650,7 @@ function scoreBadge(entry: AssessmentEntry): string {
 // ============================================================
 
 async function syncClassEnrolments(courseInstanceId: string, env: Env): Promise<{ upserted: number; error: string | null }> {
-  const apiKey = env["LearnerTrack.API"];
+  const apiKey = env.LT_USER_API || env["LearnerTrack.API"];
   const username = env.LT_USER_NAME ?? "GiuseppeA";
   if (!apiKey) return { upserted: 0, error: "LearnerTrack API key not configured" };
   const apiUrl = `https://betaapi.learnertrack.net/api/Enrolment?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}&courseinstanceid=${encodeURIComponent(courseInstanceId)}`;
