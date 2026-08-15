@@ -119,6 +119,8 @@ type StudentTracker = {
   destination_notes: string | null;
   destination_date: string | null;
   destination_by: string | null;
+  course_learning_objectives: string | null;
+  clos_achieved_rag: "green" | "amber" | "red" | "na" | null;
   created_at: string;
   updated_at: string;
 };
@@ -7556,6 +7558,10 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
   const outcomesTile = renderTrackerTile("outcomes", "✨", "Tailored Learning Outcomes",
     tracker?.tailored_outcomes ? `<p>${escapeHtml(tracker.tailored_outcomes)}</p>` : "",
     true, "openStudentEdit('outcomes')");
+  const closTile = renderTrackerTile("clos", "📚", "Course Learning Objectives",
+    tracker?.course_learning_objectives ? `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(tracker.course_learning_objectives)}</pre>` : "",
+    true, "openStudentEdit('clos')");
+
 
   const diagnosticTile = renderTrackerTile("diagnostic", "🔍", "Initial Assessment & Diagnostic",
     tracker?.initial_assessment_level ? `
@@ -7578,7 +7584,11 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
       false, "");
   }
 
-  const destinationTile = renderTrackerTile("destination", "🚀", "Destination & Progression",
+  
+  const closAchievedTile = tracker?.clos_achieved_rag ? renderTrackerTile("clos_achieved", "✅", "CLOs Achieved Confirmation",
+    `<div style="display:flex;align-items:center;gap:.75rem;">${ragBadge(tracker.clos_achieved_rag)}</div>`,
+    false, "") : "";
+const destinationTile = renderTrackerTile("destination", "🚀", "Destination & Progression",
     tracker?.destination_type ? `<p><strong>${escapeHtml(tracker.destination_type)}</strong></p><p>${escapeHtml(tracker.destination_notes ?? "")}</p>` : "",
     false, "");
 
@@ -7648,8 +7658,8 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
     <script>
     let editField = '';
     const enrolmentId = '${escapeHtml(tracker?.enrolment_id ?? "")}'; 
-    const fieldMap = { purpose: ['tailored_purpose','Tailored Learning Purpose'], goals: ['smart_goals','SMART Goals'], outcomes: ['tailored_outcomes','Tailored Learning Outcomes'] };
-    const currentValues = ${JSON.stringify({ tailored_purpose: tracker?.tailored_purpose ?? "", smart_goals: tracker?.smart_goals ?? "", tailored_outcomes: tracker?.tailored_outcomes ?? "" })};
+    const fieldMap = { purpose: ['tailored_purpose','Tailored Learning Purpose'], goals: ['smart_goals','SMART Goals'], outcomes: ['tailored_outcomes','Tailored Learning Outcomes'], clos: ['course_learning_objectives','Course Learning Objectives'] };
+    const currentValues = ${JSON.stringify({ tailored_purpose: tracker?.tailored_purpose ?? "", smart_goals: tracker?.smart_goals ?? "", tailored_outcomes: tracker?.tailored_outcomes ?? "", course_learning_objectives: tracker?.course_learning_objectives ?? "" })};
     function openStudentEdit(field) {
       editField = field;
       const [key, title] = fieldMap[field];
@@ -8009,6 +8019,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         term3_comments: document.getElementById('f-t3-comments')?.value?.trim() || null,
         term3_rag: ragState['term3_rag'] || '${escapeHtml((tracker as any)?.term3_rag ?? "")}' || null,
         term3_date: ragState['term3_rag'] ? todayStr : ('${escapeHtml((tracker as any)?.term3_date ?? "")}' || null),
+        clos_achieved_rag: ragState['clos_achieved_rag'] || '${escapeHtml((tracker as any)?.clos_achieved_rag ?? "")}' || null,
         destination_type: document.getElementById('f-dest-type')?.value || null,
         destination_date: document.getElementById('f-dest-date')?.value || null,
         destination_notes: document.getElementById('f-dest-notes')?.value?.trim() || null
