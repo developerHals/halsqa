@@ -1,4 +1,4 @@
-interface Env {
+﻿interface Env {
   esol_marking_db: {
     prepare(query: string): {
       bind(...values: unknown[]): {
@@ -23,7 +23,7 @@ interface Env {
 
 type Role = "superuser" | "admin" | "assessor" | "iqa" | "eqa" | "assessor_iqa" | "student";
 
-// ── Student Enrolment (synced from LearnerTrack) ──────────────────────────────
+// â”€â”€ Student Enrolment (synced from LearnerTrack) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type StudentEnrolment = {
   id: string;
   learner_id: string;
@@ -41,7 +41,7 @@ type StudentEnrolment = {
   updated_at: string;
 };
 
-// ── Assessment / Tracker Template ─────────────────────────────────────────────
+// â”€â”€ Assessment / Tracker Template â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type AssessmentTemplate = {
   id: string;
   title: string;
@@ -69,7 +69,7 @@ type AssessmentTemplateQuestion = {
   sort_order: number;
 };
 
-// ── Assessment Entry (completed quiz submission) ───────────────────────────────
+// â”€â”€ Assessment Entry (completed quiz submission) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type AssessmentEntry = {
   id: string;
   template_id: string;
@@ -85,7 +85,7 @@ type AssessmentEntry = {
   created_at: string;
 };
 
-// ── Student Tracker / ILP ─────────────────────────────────────────────────────
+// â”€â”€ Student Tracker / ILP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type StudentTracker = {
   id: string;
   enrolment_id: string;
@@ -122,7 +122,7 @@ type StudentTracker = {
   updated_at: string;
 };
 
-// ── Assessment / Tracker Comment ──────────────────────────────────────────────
+// â”€â”€ Assessment / Tracker Comment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type AssessmentComment = {
   id: string;
   entity_type: "assessment_entry" | "tracker";
@@ -2319,9 +2319,9 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
             <h2>Learning Walk Tracker</h2>
           </div>
           <div class="year-nav">
-            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear - 1) })}">← Previous year</a>
+            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear - 1) })}">â† Previous year</a>
             <span class="year-label">${anchorYear}</span>
-            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear + 1) })}">Next year →</a>
+            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear + 1) })}">Next year â†’</a>
           </div>
         </div>
         <div class="reports-table-wrap">
@@ -2348,7 +2348,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                         const obs = list[i];
                         return obs
                           ? `<td><a href="/learning-walks/entries/${obs.id}">${formatReportDate(obs.date)}</a></td>`
-                          : `<td class="empty-cell">—</td>`;
+                          : `<td class="empty-cell">â€”</td>`;
                       });
                     })
                     .join("");
@@ -2371,9 +2371,9 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
             <h2>IQA Forms Tracker</h2>
           </div>
           <div class="year-nav">
-            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear - 1) })}">← Previous year</a>
+            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear - 1) })}">â† Previous year</a>
             <span class="year-label">${anchorYear}</span>
-            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear + 1) })}">Next year →</a>
+            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear + 1) })}">Next year â†’</a>
           </div>
         </div>
         <div class="reports-table-wrap">
@@ -2400,7 +2400,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                         const obs = list[i];
                         return obs
                           ? `<td><a href="/iqa-forms/entries/${obs.id}">${formatReportDate(obs.date)}</a></td>`
-                          : `<td class="empty-cell">—</td>`;
+                          : `<td class="empty-cell">â€”</td>`;
                       });
                     })
                     .join("");
@@ -2863,7 +2863,7 @@ function renderForbiddenPage(identity: Identity) {
   return pageShell("Forbidden", `<main class="dashboard-shell">${renderSidebar(identity, "") }<section class="content">${renderTopbar(identity, "Forbidden")}<section class="panel"><h2>You do not have access to this page.</h2></section></section></main>`);
 }
 
-// ─── Learning Walks: data helpers ────────────────────────────────────────────
+// â”€â”€â”€ Learning Walks: data helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function getLWTemplates(env: Env): Promise<LWTemplateRecord[]> {
   const r = await env.esol_marking_db.prepare("SELECT id, title, description, is_active, created_by, created_at FROM lw_templates WHERE is_active = 1 ORDER BY created_at DESC").all<LWTemplateRecord>();
@@ -2932,7 +2932,7 @@ async function createLWNotification(env: Env, userId: string, entryId: string, m
   await env.esol_marking_db.prepare("INSERT INTO lw_notifications (id, user_id, entry_id, message) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), userId, entryId, message).run();
 }
 
-// ─── Learning Walks: page handlers ───────────────────────────────────────────
+// â”€â”€â”€ Learning Walks: page handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function renderLWDashboard(request: Request, env: Env, identity: Identity): Promise<Response> {
   const url = new URL(request.url);
@@ -2955,7 +2955,7 @@ async function renderLWEntryTemplateSelector(request: Request, env: Env, identit
   return htmlResponse(renderLWEntryTemplateSelectorPage(identity, templates));
 }
 
-// ─── Learning Walks: renderers ─────────────────────────────────────────────────
+// â”€â”€â”€ Learning Walks: renderers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function renderLWStatusBadge(status: LWEntryRecord["status"], dueDate: string | null): string {
   const today = new Date().toISOString().split("T")[0];
@@ -2963,20 +2963,20 @@ function renderLWStatusBadge(status: LWEntryRecord["status"], dueDate: string | 
   const labels: Record<string, string> = { pending: "Pending", iqa_completed: "IQA Completed", assessor_responded: "Assessor Responded", complete: "Complete" };
   const colors: Record<string, string> = { pending: "#fef3c7;color:#92400e", iqa_completed: "#dbeafe;color:#1e40af", assessor_responded: "#dcfce7;color:#166534", complete: "#f1f5f9;color:#475569" };
   const badge = `<span class="lw-status-badge" style="background:${colors[status] ?? "#f1f5f9;color:#475569"}">${labels[status] ?? status}</span>`;
-  return isOverdue ? `${badge} <span class="lw-overdue-badge lw-blink">⚠ OVERDUE</span>` : badge;
+  return isOverdue ? `${badge} <span class="lw-overdue-badge lw-blink">âš  OVERDUE</span>` : badge;
 }
 
 function renderLWNotificationBell(notifications: LWNotification[]): string {
   const count = notifications.length;
-  if (count === 0) return `<div class="lw-bell">🔔</div>`;
+  if (count === 0) return `<div class="lw-bell">ðŸ””</div>`;
   return `<div class="lw-bell lw-bell-active lw-blink" onclick="document.getElementById('lw-notif-panel').classList.toggle('hidden')" title="${count} unread notification(s)">
-    🔔 <span class="lw-bell-count">${count}</span>
+    ðŸ”” <span class="lw-bell-count">${count}</span>
     <div id="lw-notif-panel" class="lw-notif-panel hidden">
       ${notifications.map(n => `
         <div class="lw-notif-item">
           <span>${escapeHtml(n.message)}</span>
           <form method="POST" action="/api/lw/notifications/${n.id}/read" style="display:inline">
-            <button type="submit" class="lw-notif-dismiss">✓</button>
+            <button type="submit" class="lw-notif-dismiss">âœ“</button>
           </form>
         </div>
       `).join("")}
@@ -3016,10 +3016,10 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
                   <span>${escapeHtml(t.description ?? "No description")}</span>
                 </div>
                 <div class="card-actions">
-                  <a href="/learning-walks/templates/${t.id}/build" class="action-btn edit-btn" title="Edit">✏️</a>
+                  <a href="/learning-walks/templates/${t.id}/build" class="action-btn edit-btn" title="Edit">âœï¸</a>
                   <form method="POST" action="/api/lw/templates/${t.id}/delete" class="delete-form" onsubmit="return confirmDelete(this)">
                     <input type="hidden" name="confirm" value="DELETE">
-                    <button type="submit" class="action-btn delete-btn" title="Delete">🗑️</button>
+                    <button type="submit" class="action-btn delete-btn" title="Delete">ðŸ—‘ï¸</button>
                   </form>
                 </div>
               </article>`).join("") : `<p class="hint">No templates yet. Create one to get started.</p>`}
@@ -3051,9 +3051,9 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
               return `<article class="list-card${isOverdue ? " lw-overdue-card" : ""}">
                 <a href="/learning-walks/entries/${e.id}" style="display:block;flex:1">
                   <strong>${escapeHtml(e.template_title)}</strong>
-                  <span>Academic Year: ${escapeHtml(String(e.academic_year))} · Course: ${escapeHtml(e.course_name)} (${escapeHtml(e.course_id)})</span>
-                  <span>Assessor: ${escapeHtml(e.assessor_name)} · IQA: ${escapeHtml(e.iqa_name)}</span>
-                  <span>Planned: ${escapeHtml(e.planned_date)}${e.due_date ? ` · Due: ${escapeHtml(e.due_date)}` : ""}</span>
+                  <span>Academic Year: ${escapeHtml(String(e.academic_year))} Â· Course: ${escapeHtml(e.course_name)} (${escapeHtml(e.course_id)})</span>
+                  <span>Assessor: ${escapeHtml(e.assessor_name)} Â· IQA: ${escapeHtml(e.iqa_name)}</span>
+                  <span>Planned: ${escapeHtml(e.planned_date)}${e.due_date ? ` Â· Due: ${escapeHtml(e.due_date)}` : ""}</span>
                 </a>
                 <div style="display:flex;align-items:center;gap:0.5rem">
                   ${renderLWStatusBadge(e.status, e.due_date)}
@@ -3155,7 +3155,7 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
         this.style.borderColor = "#e5e7eb";
       });
 
-      // ── Download modal ──────────────────────────────────────
+      // â”€â”€ Download modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       let _dlEntryId = null;
 
       function openDownloadModal(entryId, title) {
@@ -3200,19 +3200,19 @@ function renderLWDashboardPage(identity: Identity, entries: LWEntryRecord[], tem
         <p class="lw-dl-modal-sub">Select a format for: <strong id="lw-dl-title"></strong></p>
         <div class="lw-dl-options">
           <button type="button" class="lw-dl-option" onclick="downloadAs('csv')">
-            <span class="lw-dl-icon">📊</span>
+            <span class="lw-dl-icon">ðŸ“Š</span>
             <strong>CSV</strong>
             <span class="lw-dl-desc">Flat data file, opens in Excel or Google Sheets</span>
           </button>
           <button type="button" class="lw-dl-option" onclick="downloadAs('html')">
-            <span class="lw-dl-icon">🌐</span>
+            <span class="lw-dl-icon">ðŸŒ</span>
             <strong>HTML</strong>
             <span class="lw-dl-desc">Formatted page, save or open in browser</span>
           </button>
           <button type="button" class="lw-dl-option" onclick="downloadAs('pdf')">
-            <span class="lw-dl-icon">🖨️</span>
+            <span class="lw-dl-icon">ðŸ–¨ï¸</span>
             <strong>PDF</strong>
-            <span class="lw-dl-desc">Opens print dialog — save as PDF with page breaks</span>
+            <span class="lw-dl-desc">Opens print dialog â€” save as PDF with page breaks</span>
           </button>
         </div>
         <button type="button" class="lw-dl-cancel" onclick="closeDownloadModal()">Cancel</button>
@@ -3309,20 +3309,20 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
   }
 
   const questionTypes = [
-    { value: "yes_no", label: "Yes/No", icon: "✓", desc: "Simple yes or no choice" },
-    { value: "rag", label: "Green/Amber/Red", icon: "●", desc: "RAG status indicator" },
-    { value: "ggaw", label: "Gold/Green/Amber/White", icon: "◆", desc: "Extended GGAW rating" },
-    { value: "single_choice", label: "MCQ (One Answer)", icon: "○", desc: "Multiple choice, single select" },
-    { value: "multiple_choice", label: "Choices (Multiple)", icon: "☑", desc: "Tick multiple options" },
-    { value: "dropdown", label: "Dropdown", icon: "▼", desc: "Select from dropdown" },
+    { value: "yes_no", label: "Yes/No", icon: "âœ“", desc: "Simple yes or no choice" },
+    { value: "rag", label: "Green/Amber/Red", icon: "â—", desc: "RAG status indicator" },
+    { value: "ggaw", label: "Gold/Green/Amber/White", icon: "â—†", desc: "Extended GGAW rating" },
+    { value: "single_choice", label: "MCQ (One Answer)", icon: "â—‹", desc: "Multiple choice, single select" },
+    { value: "multiple_choice", label: "Choices (Multiple)", icon: "â˜‘", desc: "Tick multiple options" },
+    { value: "dropdown", label: "Dropdown", icon: "â–¼", desc: "Select from dropdown" },
     { value: "text", label: "Text", icon: "T", desc: "Short text answer" },
-    { value: "textarea", label: "Long Text", icon: "¶", desc: "Paragraph response" },
-    { value: "date", label: "Date", icon: "📅", desc: "Date picker" },
+    { value: "textarea", label: "Long Text", icon: "Â¶", desc: "Paragraph response" },
+    { value: "date", label: "Date", icon: "ðŸ“…", desc: "Date picker" },
     { value: "number", label: "Number", icon: "#", desc: "Numeric input" },
-    { value: "ranking", label: "Ranking", icon: "⇅", desc: "Order items by drag" },
-    { value: "rating", label: "Rating (0-5)", icon: "★", desc: "Star rating scale" },
-    { value: "time", label: "Time", icon: "🕐", desc: "Hour / Minute / AM·PM" },
-    { value: "section", label: "Section Header", icon: "▬", desc: "Heading & description divider" },
+    { value: "ranking", label: "Ranking", icon: "â‡…", desc: "Order items by drag" },
+    { value: "rating", label: "Rating (0-5)", icon: "â˜…", desc: "Star rating scale" },
+    { value: "time", label: "Time", icon: "ðŸ•", desc: "Hour / Minute / AMÂ·PM" },
+    { value: "section", label: "Section Header", icon: "â–¬", desc: "Heading & description divider" },
   ];
 
   const questionTypeOptions = questionTypes.map(t =>
@@ -3338,10 +3338,10 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
     const actionBtns = isFixed
       ? `<span class="lwfb-fixed-badge">Standard Field</span>`
       : `<div class="lwfb-reorder-btns">
-           <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">▲</button>
-           <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'down')" title="Move down">▼</button>
+           <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">â–²</button>
+           <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'down')" title="Move down">â–¼</button>
          </div>
-         <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>`;
+         <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">Ã—</button>`;
     const needsOptions = ["single_choice", "multiple_choice", "dropdown", "ranking"].includes(q.question_type);
 
     return `
@@ -3385,7 +3385,7 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
             <p class="lwfb-eyebrow">Learning Walk Template Builder</p>
             <h1 class="lwfb-title">${isEdit ? "Edit Template" : "Create New Template"}</h1>
           </div>
-          <button type="button" class="lwfb-close-btn" onclick="closeTemplateBuilder()" title="Close">×</button>
+          <button type="button" class="lwfb-close-btn" onclick="closeTemplateBuilder()" title="Close">Ã—</button>
         </div>
 
         <div class="lwfb-popup-content">
@@ -3414,7 +3414,7 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
             <div id="questionTypePicker" class="lwfb-type-picker hidden">
               <div class="picker-header">
                 <span>Select Question Type</span>
-                <button type="button" class="close-picker" onclick="hideQuestionTypePicker()">×</button>
+                <button type="button" class="close-picker" onclick="hideQuestionTypePicker()">Ã—</button>
               </div>
               <div class="picker-grid">
                 ${questionTypes.map(t => `
@@ -3555,10 +3555,10 @@ function renderLWTemplateBuilderPage(identity: Identity, template: LWTemplateWit
               <input type="checkbox" class="lwfb-q-required"> Required
             </label>
             <div class="lwfb-reorder-btns">
-              <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">▲</button>
-              <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'down')" title="Move down">▼</button>
+              <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">â–²</button>
+              <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'down')" title="Move down">â–¼</button>
             </div>
-            <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>
+            <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">Ã—</button>
           </div>
           <div class="lwfb-question-body">
             <div class="lwfb-section-body \${isSection ? '' : 'hidden'}">
@@ -3671,12 +3671,12 @@ function renderLWEntryTemplateSelectorPage(identity: Identity, templates: LWTemp
   const templatesHtml = templates.length > 0
     ? templates.map(t => `
         <div class="lw-selector-template-card" data-template-id="${t.id}" data-template-name="${escapeHtml(t.title).toLowerCase()}" onclick="selectTemplate('${t.id}')">
-          <div class="lw-selector-template-icon">📋</div>
+          <div class="lw-selector-template-icon">ðŸ“‹</div>
           <div class="lw-selector-template-info">
             <strong>${escapeHtml(t.title)}</strong>
             <span>${escapeHtml(t.description ?? "No description")}</span>
           </div>
-          <div class="lw-selector-template-arrow">→</div>
+          <div class="lw-selector-template-arrow">â†’</div>
         </div>
       `).join("")
     : `<div class="lw-selector-empty">No active templates available. Create a template first.</div>`;
@@ -3689,13 +3689,13 @@ function renderLWEntryTemplateSelectorPage(identity: Identity, templates: LWTemp
             <p class="lwfb-eyebrow">New Learning Walk</p>
             <h1 class="lwfb-title">Select a Template</h1>
           </div>
-          <button type="button" class="lwfb-close-btn" onclick="closeSelector()" title="Close">×</button>
+          <button type="button" class="lwfb-close-btn" onclick="closeSelector()" title="Close">Ã—</button>
         </div>
 
         <div class="lwfb-popup-content">
           <!-- Search Bar -->
           <div class="lw-selector-search-wrapper">
-            <input type="text" id="templateSearch" class="lw-selector-search" placeholder="🔍 Search templates by name..." oninput="filterTemplates(this.value)">
+            <input type="text" id="templateSearch" class="lw-selector-search" placeholder="ðŸ” Search templates by name..." oninput="filterTemplates(this.value)">
           </div>
 
           <!-- Template List -->
@@ -3744,7 +3744,7 @@ function renderLWEntryTemplateSelectorPage(identity: Identity, templates: LWTemp
   `);
 }
 
-// ─── Learning Walk Entry Form ───────────────────────────────────────────────
+// â”€â”€â”€ Learning Walk Entry Form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuestions, users: UserRecord[]): string {
   const user = identity.user!;
@@ -4166,7 +4166,7 @@ function renderLWEntryFormPage(identity: Identity, template: LWTemplateWithQuest
   `);
 }
 
-// ─── Learning Walk Template Builder ─────────────────────────────────────────
+// â”€â”€â”€ Learning Walk Template Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function renderLWTemplateBuilder(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!canCreateForms(identity.user!)) {
@@ -4416,7 +4416,7 @@ async function deleteLWTemplate(request: Request, env: Env, identity: Identity, 
   }
 }
 
-// ─── Learning Walk Entry Creation ───────────────────────────────────────────
+// â”€â”€â”€ Learning Walk Entry Creation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function renderLWEntryForm(request: Request, env: Env, identity: Identity): Promise<Response> {
   const url = new URL(request.url);
@@ -4785,7 +4785,7 @@ function renderLWEntryViewPage(
       <section class="content">
         <header class="topbar">
           <div style="display:flex;align-items:center;gap:1rem;">
-            <a href="/learning-walks" class="small-action" style="width:auto;padding:0.5rem 1rem;">← Back</a>
+            <a href="/learning-walks" class="small-action" style="width:auto;padding:0.5rem 1rem;">â† Back</a>
             <div><p class="eyebrow">Learning Walks</p><h1>${escapeHtml(entry.template_title)}</h1></div>
           </div>
           <div style="display:flex;align-items:center;gap:1rem;">
@@ -4798,7 +4798,7 @@ function renderLWEntryViewPage(
         <div class="lw-entry-form" data-entry-id="${entry.id}">
           <!-- Fixed Header Fields -->
           <section class="lw-entry-section">
-            <h2 class="lw-entry-section-title">📋 Course Information</h2>
+            <h2 class="lw-entry-section-title">ðŸ“‹ Course Information</h2>
             <div class="lw-entry-grid">
               <div class="lw-entry-field">
                 <label class="lw-entry-label">Course ID</label>
@@ -4829,13 +4829,13 @@ function renderLWEntryViewPage(
 
           <!-- Questions -->
           <section class="lw-entry-section">
-            <h2 class="lw-entry-section-title">📝 Assessment Questions</h2>
+            <h2 class="lw-entry-section-title">ðŸ“ Assessment Questions</h2>
             ${questionsHtml || '<div class="lw-entry-empty">No questions in this template.</div>'}
           </section>
 
           <!-- Comments Section -->
           <section class="lw-entry-section lw-entry-comments-section">
-            <h2 class="lw-entry-section-title">💬 Comments & Paper Trail</h2>
+            <h2 class="lw-entry-section-title">ðŸ’¬ Comments & Paper Trail</h2>
             <div class="lw-comments-list">
               ${commentsHtml}
             </div>
@@ -5191,7 +5191,7 @@ async function downloadLWEntry(request: Request, env: Env, identity: Identity, e
     });
   }
 
-  // HTML / PDF — generate a styled, print-ready page
+  // HTML / PDF â€” generate a styled, print-ready page
   const isPdf = format === "pdf";
 
   const metaRows = [
@@ -5244,7 +5244,7 @@ async function downloadLWEntry(request: Request, env: Env, identity: Identity, e
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Learning Walk — ${escapeHtml(entry.template_title)}</title>
+<title>Learning Walk â€” ${escapeHtml(entry.template_title)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#1a1a1a;background:#fff;padding:1.5cm 2cm}
@@ -5281,7 +5281,7 @@ async function downloadLWEntry(request: Request, env: Env, identity: Identity, e
 </style>
 </head>
 <body>
-  ${isPdf ? `<button class="no-print" onclick="window.print()" style="margin-bottom:1rem;padding:0.5rem 1.25rem;background:#cc0040;color:#fff;border:none;border-radius:6px;font-size:11pt;cursor:pointer">🖨️ Print / Save as PDF</button>` : ""}
+  ${isPdf ? `<button class="no-print" onclick="window.print()" style="margin-bottom:1rem;padding:0.5rem 1.25rem;background:#cc0040;color:#fff;border:none;border-radius:6px;font-size:11pt;cursor:pointer">ðŸ–¨ï¸ Print / Save as PDF</button>` : ""}
   <h1>Learning Walk Report</h1>
   <p class="print-org">ESOLQA &mdash; Printed ${new Date().toLocaleString("en-GB")}</p>
 
@@ -5311,7 +5311,7 @@ async function downloadLWEntry(request: Request, env: Env, identity: Identity, e
   return new Response(printHtml, { headers });
 }
 
-// ─── IQA Forms: data helpers ──────────────────────────────────────────────────
+// â”€â”€â”€ IQA Forms: data helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function getIQAFTemplates(env: Env): Promise<IQAFTemplateRecord[]> {
   const r = await env.esol_marking_db.prepare("SELECT id, title, description, is_active, created_by, created_at FROM iqaf_templates WHERE is_active = 1 ORDER BY created_at DESC").all<IQAFTemplateRecord>();
@@ -5377,7 +5377,7 @@ async function createIQAFNotification(env: Env, userId: string, entryId: string,
   await env.esol_marking_db.prepare("INSERT INTO iqaf_notifications (id, user_id, entry_id, message) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), userId, entryId, message).run();
 }
 
-// ─── IQA Forms: page handlers ─────────────────────────────────────────────────
+// â”€â”€â”€ IQA Forms: page handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function renderIQAFDashboard(request: Request, env: Env, identity: Identity): Promise<Response> {
   const url = new URL(request.url);
@@ -5437,7 +5437,7 @@ async function renderIQAFEntryView(request: Request, env: Env, identity: Identit
   return htmlResponse(renderIQAFEntryViewPage(identity, entry, template, answers, comments, usersResult.results, canEdit, isPrivileged));
 }
 
-// ─── IQA Forms: API handlers ──────────────────────────────────────────────────
+// â”€â”€â”€ IQA Forms: API handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function saveIQAFEntry(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!canCreateForms(identity.user!)) return json({ error: "Forbidden" }, 403);
@@ -5577,17 +5577,17 @@ async function downloadIQAFEntry(request: Request, env: Env, identity: Identity,
     const slug = entry.template_title.replace(/[^a-z0-9]/gi, "-").toLowerCase();
     return new Response(csv, { headers: { "Content-Type": "text/csv", "Content-Disposition": `attachment; filename="iqaf-${slug}.csv"` } });
   }
-  const questionsHtml = template.questions.map(q => `<tr><td style="padding:0.5rem 1rem;border:1px solid #e2e8f0;font-weight:600">${escapeHtml(q.question_text)}</td><td style="padding:0.5rem 1rem;border:1px solid #e2e8f0">${escapeHtml(answerMap[q.id] ?? "—")}</td></tr>`).join("");
-  const commentsHtml = comments.map(c => `<div style="border:1px solid #e2e8f0;border-radius:6px;padding:0.75rem;margin-bottom:0.5rem"><strong>${escapeHtml(c.author_email ?? c.author_role)}</strong> <span style="color:#64748b;font-size:0.875rem">[${escapeHtml(c.author_role)}] · ${escapeHtml(c.created_at)}</span><p style="margin:0.5rem 0 0">${escapeHtml(c.comment)}</p></div>`).join("");
+  const questionsHtml = template.questions.map(q => `<tr><td style="padding:0.5rem 1rem;border:1px solid #e2e8f0;font-weight:600">${escapeHtml(q.question_text)}</td><td style="padding:0.5rem 1rem;border:1px solid #e2e8f0">${escapeHtml(answerMap[q.id] ?? "â€”")}</td></tr>`).join("");
+  const commentsHtml = comments.map(c => `<div style="border:1px solid #e2e8f0;border-radius:6px;padding:0.75rem;margin-bottom:0.5rem"><strong>${escapeHtml(c.author_email ?? c.author_role)}</strong> <span style="color:#64748b;font-size:0.875rem">[${escapeHtml(c.author_role)}] Â· ${escapeHtml(c.created_at)}</span><p style="margin:0.5rem 0 0">${escapeHtml(c.comment)}</p></div>`).join("");
   const isPdf = format === "pdf";
-  const printHtml = `<!doctype html><html><head><meta charset="utf-8"><title>IQA Form - ${escapeHtml(entry.template_title)}</title><style>body{font-family:Inter,sans-serif;padding:2rem;color:#0f172a}h1{font-size:1.5rem}table{width:100%;border-collapse:collapse;margin:1rem 0}${isPdf ? "@media print{body{padding:0}}" : ""}</style></head><body><h1>${escapeHtml(entry.template_title)}</h1><p style="color:#64748b">${escapeHtml(entry.course_name)} (${escapeHtml(entry.course_id)}) · Assessor: ${escapeHtml(entry.assessor_name)} · IQA: ${escapeHtml(entry.iqa_name)} · Status: ${escapeHtml(entry.status)}</p><table>${questionsHtml}</table><h2 style="margin-top:2rem">Comments</h2>${commentsHtml || "<p style='color:#64748b'>No comments.</p>"}</body></html>`;
+  const printHtml = `<!doctype html><html><head><meta charset="utf-8"><title>IQA Form - ${escapeHtml(entry.template_title)}</title><style>body{font-family:Inter,sans-serif;padding:2rem;color:#0f172a}h1{font-size:1.5rem}table{width:100%;border-collapse:collapse;margin:1rem 0}${isPdf ? "@media print{body{padding:0}}" : ""}</style></head><body><h1>${escapeHtml(entry.template_title)}</h1><p style="color:#64748b">${escapeHtml(entry.course_name)} (${escapeHtml(entry.course_id)}) Â· Assessor: ${escapeHtml(entry.assessor_name)} Â· IQA: ${escapeHtml(entry.iqa_name)} Â· Status: ${escapeHtml(entry.status)}</p><table>${questionsHtml}</table><h2 style="margin-top:2rem">Comments</h2>${commentsHtml || "<p style='color:#64748b'>No comments.</p>"}</body></html>`;
   const slug = entry.template_title.replace(/[^a-z0-9]/gi, "-").toLowerCase();
   const headers: Record<string, string> = { "Content-Type": "text/html;charset=utf-8" };
   if (!isPdf) headers["Content-Disposition"] = `attachment; filename="iqaf-${slug}.html"`;
   return new Response(printHtml, { headers });
 }
 
-// ─── IQA Forms: renderers ─────────────────────────────────────────────────────
+// â”€â”€â”€ IQA Forms: renderers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function renderIQAFStatusBadge(status: IQAFEntryStatus, dueDate: string | null): string {
   const today = new Date().toISOString().split("T")[0];
@@ -5595,7 +5595,7 @@ function renderIQAFStatusBadge(status: IQAFEntryStatus, dueDate: string | null):
   const labels: Record<string, string> = { pending: "Pending", assessor_submitted: "Assessor Submitted", iqa_reviewed: "IQA Reviewed", eqa_signed: "EQA Signed", complete: "Complete" };
   const colors: Record<string, string> = { pending: "#fef3c7;color:#92400e", assessor_submitted: "#dbeafe;color:#1e40af", iqa_reviewed: "#dcfce7;color:#166534", eqa_signed: "#f3e8ff;color:#6b21a8", complete: "#f1f5f9;color:#475569" };
   const badge = `<span class="lw-status-badge" style="background:${colors[status] ?? "#f1f5f9;color:#475569"}">${labels[status] ?? status}</span>`;
-  return isOverdue ? `${badge} <span class="lw-overdue-badge lw-blink">⚠ OVERDUE</span>` : badge;
+  return isOverdue ? `${badge} <span class="lw-overdue-badge lw-blink">âš  OVERDUE</span>` : badge;
 }
 
 function renderIQAFDashboardPage(identity: Identity, entries: IQAFEntryRecord[], templates: IQAFTemplateRecord[], notifications: IQAFNotification[], search: string): string {
@@ -5603,7 +5603,7 @@ function renderIQAFDashboardPage(identity: Identity, entries: IQAFEntryRecord[],
   const canManage = canCreateForms(user);
   const today = new Date().toISOString().split("T")[0];
   const nc = notifications.length;
-  const notifBell = nc === 0 ? `<div class="lw-bell">🔔</div>` : `<div class="lw-bell lw-bell-active lw-blink" onclick="document.getElementById('iqnp').classList.toggle('hidden')" title="${nc} unread">🔔 <span class="lw-bell-count">${nc}</span><div id="iqnp" class="lw-notif-panel hidden">${notifications.map(n => `<div class="lw-notif-item"><span>${escapeHtml(n.message)}</span></div>`).join("")}</div></div>`;
+  const notifBell = nc === 0 ? `<div class="lw-bell">ðŸ””</div>` : `<div class="lw-bell lw-bell-active lw-blink" onclick="document.getElementById('iqnp').classList.toggle('hidden')" title="${nc} unread">ðŸ”” <span class="lw-bell-count">${nc}</span><div id="iqnp" class="lw-notif-panel hidden">${notifications.map(n => `<div class="lw-notif-item"><span>${escapeHtml(n.message)}</span></div>`).join("")}</div></div>`;
 
   return pageShell("IQA Forms", `
     <main class="dashboard-shell">
@@ -5617,7 +5617,7 @@ function renderIQAFDashboardPage(identity: Identity, entries: IQAFEntryRecord[],
         ${canManage ? `<section class="panel templates-section">
           <div class="section-header"><p class="eyebrow">IQA Form Templates</p><a class="small-action" href="/iqa-forms/templates/build">+ New template</a></div>
           <div class="list-stack templates-list">
-            ${templates.length ? templates.map(t => `<article class="list-card template-card"><div class="card-content"><strong>${escapeHtml(t.title)}</strong><span>${escapeHtml(t.description ?? "No description")}</span></div><div class="card-actions"><a href="/iqa-forms/templates/${t.id}/build" class="action-btn edit-btn" title="Edit">✏️</a><form method="POST" action="/api/iqaf/templates/${t.id}/delete" onsubmit="return iqafTmplDel(this)"><input type="hidden" name="confirm" value="DELETE"><button type="submit" class="action-btn delete-btn" title="Delete">🗑️</button></form></div></article>`).join("") : `<p class="hint">No templates yet. Create one to get started.</p>`}
+            ${templates.length ? templates.map(t => `<article class="list-card template-card"><div class="card-content"><strong>${escapeHtml(t.title)}</strong><span>${escapeHtml(t.description ?? "No description")}</span></div><div class="card-actions"><a href="/iqa-forms/templates/${t.id}/build" class="action-btn edit-btn" title="Edit">âœï¸</a><form method="POST" action="/api/iqaf/templates/${t.id}/delete" onsubmit="return iqafTmplDel(this)"><input type="hidden" name="confirm" value="DELETE"><button type="submit" class="action-btn delete-btn" title="Delete">ðŸ—‘ï¸</button></form></div></article>`).join("") : `<p class="hint">No templates yet. Create one to get started.</p>`}
           </div>
         </section>` : ""}
 
@@ -5633,7 +5633,7 @@ function renderIQAFDashboardPage(identity: Identity, entries: IQAFEntryRecord[],
             ${entries.length ? entries.map(e => {
               const isOverdue = e.due_date && e.due_date < today && e.status !== "complete";
               const delBtn = isSuperuser(user) ? `<button type="button" class="lw-entry-delete-btn" title="Delete" onclick="iqafDel('${e.id}','${escapeHtml(e.template_title).replace(/'/g,"\\'")}')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>` : "";
-              return `<article class="list-card${isOverdue ? " lw-overdue-card" : ""}"><a href="/iqa-forms/entries/${e.id}" style="display:block;flex:1"><strong>${escapeHtml(e.template_title)}</strong><span>Academic Year: ${escapeHtml(String(e.academic_year))} · Course: ${escapeHtml(e.course_name)} (${escapeHtml(e.course_id)})</span><span>Assessor: ${escapeHtml(e.assessor_name)} · IQA: ${escapeHtml(e.iqa_name)}</span><span>Planned: ${escapeHtml(e.planned_date)}${e.due_date ? ` · Due: ${escapeHtml(e.due_date)}` : ""}</span></a><div style="display:flex;align-items:center;gap:0.5rem">${renderIQAFStatusBadge(e.status, e.due_date)}<button type="button" class="lw-entry-download-btn" title="Download" onclick="iqafDlOpen('${e.id}','${escapeHtml(e.template_title).replace(/'/g,"\\'")}')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>${delBtn}</div></article>`;
+              return `<article class="list-card${isOverdue ? " lw-overdue-card" : ""}"><a href="/iqa-forms/entries/${e.id}" style="display:block;flex:1"><strong>${escapeHtml(e.template_title)}</strong><span>Academic Year: ${escapeHtml(String(e.academic_year))} Â· Course: ${escapeHtml(e.course_name)} (${escapeHtml(e.course_id)})</span><span>Assessor: ${escapeHtml(e.assessor_name)} Â· IQA: ${escapeHtml(e.iqa_name)}</span><span>Planned: ${escapeHtml(e.planned_date)}${e.due_date ? ` Â· Due: ${escapeHtml(e.due_date)}` : ""}</span></a><div style="display:flex;align-items:center;gap:0.5rem">${renderIQAFStatusBadge(e.status, e.due_date)}<button type="button" class="lw-entry-download-btn" title="Download" onclick="iqafDlOpen('${e.id}','${escapeHtml(e.template_title).replace(/'/g,"\\'")}')"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>${delBtn}</div></article>`;
             }).join("") : renderEmpty("No IQA forms found")}
           </div>
         </section>
@@ -5641,7 +5641,7 @@ function renderIQAFDashboardPage(identity: Identity, entries: IQAFEntryRecord[],
     </main>
 
     <div id="iqaf-del-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center"><div style="background:#fff;border-radius:12px;padding:2rem;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2)"><h2 style="margin:0 0 0.5rem;font-size:1.25rem">Delete Submission</h2><p style="color:#64748b;margin:0 0 1.25rem">Permanently delete: <strong id="iqaf-del-title"></strong></p><p style="color:#64748b;margin:0 0 0.75rem;font-size:0.9rem">Type <strong>DELETE</strong> to confirm:</p><input id="iqaf-del-input" type="text" placeholder="Type DELETE here" style="width:100%;border:2px solid #e5e7eb;border-radius:8px;padding:0.75rem;font-size:1rem;margin-bottom:1rem"><div style="display:flex;gap:0.75rem;justify-content:flex-end"><button onclick="iqafDelClose()" style="background:#f1f5f9;color:#0f172a;border:none;border-radius:8px;padding:0.7rem 1.25rem;font-weight:600;cursor:pointer">Cancel</button><button id="iqaf-del-btn" onclick="iqafDelSubmit()" style="background:#ff005a;color:#fff;border:none;border-radius:8px;padding:0.7rem 1.25rem;font-weight:600;cursor:pointer">Delete</button></div></div></div>
-    <div id="iqaf-dl-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center"><div class="lw-dl-modal-box"><h2 class="lw-dl-modal-title">Download / Print</h2><p class="lw-dl-modal-sub">Format for: <strong id="iqaf-dl-title"></strong></p><div class="lw-dl-options"><button type="button" class="lw-dl-option" onclick="iqafDlAs('csv')"><span class="lw-dl-icon">📊</span><strong>CSV</strong><span class="lw-dl-desc">Excel / Sheets</span></button><button type="button" class="lw-dl-option" onclick="iqafDlAs('html')"><span class="lw-dl-icon">🌐</span><strong>HTML</strong><span class="lw-dl-desc">Formatted page</span></button><button type="button" class="lw-dl-option" onclick="iqafDlAs('pdf')"><span class="lw-dl-icon">🖨️</span><strong>PDF</strong><span class="lw-dl-desc">Print to PDF</span></button></div><button type="button" class="lw-dl-cancel" onclick="iqafDlClose()">Cancel</button></div></div>
+    <div id="iqaf-dl-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1001;align-items:center;justify-content:center"><div class="lw-dl-modal-box"><h2 class="lw-dl-modal-title">Download / Print</h2><p class="lw-dl-modal-sub">Format for: <strong id="iqaf-dl-title"></strong></p><div class="lw-dl-options"><button type="button" class="lw-dl-option" onclick="iqafDlAs('csv')"><span class="lw-dl-icon">ðŸ“Š</span><strong>CSV</strong><span class="lw-dl-desc">Excel / Sheets</span></button><button type="button" class="lw-dl-option" onclick="iqafDlAs('html')"><span class="lw-dl-icon">ðŸŒ</span><strong>HTML</strong><span class="lw-dl-desc">Formatted page</span></button><button type="button" class="lw-dl-option" onclick="iqafDlAs('pdf')"><span class="lw-dl-icon">ðŸ–¨ï¸</span><strong>PDF</strong><span class="lw-dl-desc">Print to PDF</span></button></div><button type="button" class="lw-dl-cancel" onclick="iqafDlClose()">Cancel</button></div></div>
 
     <script>
       function iqafTmplDel(form){const t=prompt("Type DELETE to confirm:");if(t!=="DELETE"){alert("Cancelled.");return false;}return true;}
@@ -5674,12 +5674,12 @@ function renderIQAFTemplateBuilderPage(identity: Identity, template: IQAFTemplat
       {id:"fixed_due_date",template_id:"",question_text:"Due Date",question_type:"date",options:null,has_text_entry:0,text_entry_label:null,is_required:0,sort_order:5},
     ] as IQAFTemplateQuestion[];
   }
-  const qtypes = [{v:"yes_no",l:"Yes/No",i:"✓"},{v:"rag",l:"Green/Amber/Red",i:"●"},{v:"ggaw",l:"Gold/Green/Amber/White",i:"◆"},{v:"single_choice",l:"MCQ (One Answer)",i:"○"},{v:"multiple_choice",l:"Choices (Multiple)",i:"☑"},{v:"dropdown",l:"Dropdown",i:"▼"},{v:"text",l:"Text",i:"T"},{v:"textarea",l:"Long Text",i:"¶"},{v:"date",l:"Date",i:"📅"},{v:"number",l:"Number",i:"#"},{v:"ranking",l:"Ranking",i:"⇅"},{v:"rating",l:"Rating",i:"★"},{v:"time",l:"Time",i:"🕐"},{v:"section",l:"Section Header",i:"▬"}];
+  const qtypes = [{v:"yes_no",l:"Yes/No",i:"âœ“"},{v:"rag",l:"Green/Amber/Red",i:"â—"},{v:"ggaw",l:"Gold/Green/Amber/White",i:"â—†"},{v:"single_choice",l:"MCQ (One Answer)",i:"â—‹"},{v:"multiple_choice",l:"Choices (Multiple)",i:"â˜‘"},{v:"dropdown",l:"Dropdown",i:"â–¼"},{v:"text",l:"Text",i:"T"},{v:"textarea",l:"Long Text",i:"Â¶"},{v:"date",l:"Date",i:"ðŸ“…"},{v:"number",l:"Number",i:"#"},{v:"ranking",l:"Ranking",i:"â‡…"},{v:"rating",l:"Rating",i:"â˜…"},{v:"time",l:"Time",i:"ðŸ•"},{v:"section",l:"Section Header",i:"â–¬"}];
   const fixedIds = new Set(["fixed_course_id","fixed_course_name","fixed_assessor","fixed_iqa","fixed_planned_date","fixed_due_date"]);
   const renderQ = (q: IQAFTemplateQuestion, i: number) => {
     const isFixed = fixedIds.has(q.id), isSect = q.question_type === "section";
     const needsOpts = ["single_choice","multiple_choice","dropdown","ranking"].includes(q.question_type);
-    const actBtns = isFixed ? `<span class="lwfb-fixed-badge">Standard Field</span>` : `<div class="lwfb-reorder-btns"><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'up')">▲</button><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'down')">▼</button></div><button type="button" class="lwfb-delete-q" onclick="delQ(this)">×</button>`;
+    const actBtns = isFixed ? `<span class="lwfb-fixed-badge">Standard Field</span>` : `<div class="lwfb-reorder-btns"><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'up')">â–²</button><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'down')">â–¼</button></div><button type="button" class="lwfb-delete-q" onclick="delQ(this)">Ã—</button>`;
     const selOpts = qtypes.map(t => `<option value="${t.v}" ${q.question_type===t.v?"selected":""}>${t.l}</option>`).join("");
     const optsVal = q.options ? q.options.map((o: QuestionOption) => escapeHtml(o.label)).join("\n") : "";
     return `<div class="${isFixed?"lwfb-question-card lwfb-fixed-card":"lwfb-question-card"}" data-question-id="${q.id}" data-is-fixed="${isFixed}"><div class="lwfb-question-header"><span class="lwfb-q-number">${i+1}</span><select class="lwfb-q-type-select" onchange="updQType(this)" ${isFixed?"disabled":""}>${selOpts}</select><label class="lwfb-required-label" style="${isSect?"display:none":""}"><input type="checkbox" class="lwfb-q-required" ${q.is_required?"checked":""}> Required</label>${actBtns}</div><div class="lwfb-question-body"><div class="lwfb-section-body ${isSect?"":"hidden"}"><input type="text" class="lwfb-q-text" value="${escapeHtml(q.question_text)}" placeholder="Section heading" style="font-weight:600"><input type="text" class="lwfb-q-section-desc" value="${escapeHtml(q.text_entry_label||"")}" placeholder="Section description" style="margin-top:.5rem;color:#64748b"></div><div class="lwfb-normal-body ${isSect?"hidden":""}"><input type="text" class="lwfb-q-text" value="${escapeHtml(q.question_text)}" placeholder="Enter your question" ${isFixed?"readonly":""}><div class="lwfb-options-section ${needsOpts?"":"hidden"}"><label class="lwfb-options-label">Options (one per line):</label><textarea class="lwfb-q-options" rows="3" ${isFixed?"readonly":""}>${optsVal}</textarea></div></div></div></div>`;
@@ -5688,10 +5688,10 @@ function renderIQAFTemplateBuilderPage(identity: Identity, template: IQAFTemplat
   const pickerGrid = qtypes.map(t => `<div class="type-option" onclick="addQ('${t.v}')"><span class="type-icon">${t.i}</span><span class="type-label">${t.l}</span></div>`).join("");
   return pageShell(isEdit?"Edit IQA Template":"New IQA Template", `
     <main class="lwfb-popup-overlay"><div class="lwfb-popup-container">
-      <div class="lwfb-popup-header"><div><p class="lwfb-eyebrow">IQA Form Template Builder</p><h1 class="lwfb-title">${isEdit?"Edit Template":"Create New Template"}</h1></div><button type="button" class="lwfb-close-btn" onclick="location.href='/iqa-forms'">×</button></div>
+      <div class="lwfb-popup-header"><div><p class="lwfb-eyebrow">IQA Form Template Builder</p><h1 class="lwfb-title">${isEdit?"Edit Template":"Create New Template"}</h1></div><button type="button" class="lwfb-close-btn" onclick="location.href='/iqa-forms'">Ã—</button></div>
       <div class="lwfb-popup-content">
         <div class="lwfb-section-card"><input type="text" id="tTitle" class="lwfb-title-input" value="${escapeHtml(title)}" placeholder="Untitled Template"><textarea id="tDesc" class="lwfb-desc-input" rows="2" placeholder="Description">${escapeHtml(description)}</textarea></div>
-        <div class="lwfb-section-card"><h3 class="lwfb-section-title">Questions</h3><p class="lwfb-section-hint">First 6 fields are standard for all IQA Forms.</p><div id="qContainer" class="lwfb-questions-container">${qHtml}</div><div style="position:relative"><button type="button" class="lwfb-add-btn" onclick="showPicker()">+ Add Question</button><div id="qPicker" class="lwfb-type-picker hidden"><div class="picker-header"><span>Select Type</span><button type="button" class="close-picker" onclick="hidePicker()">×</button></div><div class="picker-grid">${pickerGrid}</div></div></div></div>
+        <div class="lwfb-section-card"><h3 class="lwfb-section-title">Questions</h3><p class="lwfb-section-hint">First 6 fields are standard for all IQA Forms.</p><div id="qContainer" class="lwfb-questions-container">${qHtml}</div><div style="position:relative"><button type="button" class="lwfb-add-btn" onclick="showPicker()">+ Add Question</button><div id="qPicker" class="lwfb-type-picker hidden"><div class="picker-header"><span>Select Type</span><button type="button" class="close-picker" onclick="hidePicker()">Ã—</button></div><div class="picker-grid">${pickerGrid}</div></div></div></div>
       </div>
       <div class="lwfb-popup-footer"><button type="button" class="lwfb-secondary-btn" onclick="location.href='/iqa-forms'">Cancel</button><button type="button" class="lwfb-primary-btn" onclick="saveTmpl()">${isEdit?"Save Changes":"Create Template"}</button></div>
     </div></main>
@@ -5710,7 +5710,7 @@ function renderIQAFTemplateBuilderPage(identity: Identity, template: IQAFTemplat
         const no=['single_choice','multiple_choice','dropdown','ranking'].includes(type),is=type==='section';
         const opts=allQt.map(t=>\`<option value="\${t.v}" \${t.v===type?'selected':''}>\${t.l}</option>\`).join('');
         const card=document.createElement('div');card.className='lwfb-question-card';card.dataset.questionId='new_'+crypto.randomUUID();card.dataset.sortOrder=String(qc);
-        card.innerHTML=\`<div class="lwfb-question-header"><span class="lwfb-q-number">\${document.querySelectorAll('.lwfb-question-card').length+1}</span><select class="lwfb-q-type-select" onchange="updQType(this)">\${opts}</select><label class="lwfb-required-label" style="\${is?'display:none':''}"><input type="checkbox" class="lwfb-q-required"> Required</label><div class="lwfb-reorder-btns"><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'up')">▲</button><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'down')">▼</button></div><button type="button" class="lwfb-delete-q" onclick="delQ(this)">×</button></div><div class="lwfb-question-body"><div class="lwfb-section-body \${is?'':'hidden'}"><input type="text" class="lwfb-q-text" placeholder="Section heading" style="font-weight:600"><input type="text" class="lwfb-q-section-desc" placeholder="Section description" style="margin-top:.5rem;color:#64748b"></div><div class="lwfb-normal-body \${is?'hidden':''}"><input type="text" class="lwfb-q-text" placeholder="Enter question"><div class="lwfb-options-section \${no?'':'hidden'}"><label class="lwfb-options-label">Options (one per line):</label><textarea class="lwfb-q-options" rows="3"></textarea></div></div></div>\`;
+        card.innerHTML=\`<div class="lwfb-question-header"><span class="lwfb-q-number">\${document.querySelectorAll('.lwfb-question-card').length+1}</span><select class="lwfb-q-type-select" onchange="updQType(this)">\${opts}</select><label class="lwfb-required-label" style="\${is?'display:none':''}"><input type="checkbox" class="lwfb-q-required"> Required</label><div class="lwfb-reorder-btns"><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'up')">â–²</button><button type="button" class="lwfb-reorder-btn" onclick="moveQ(this,'down')">â–¼</button></div><button type="button" class="lwfb-delete-q" onclick="delQ(this)">Ã—</button></div><div class="lwfb-question-body"><div class="lwfb-section-body \${is?'':'hidden'}"><input type="text" class="lwfb-q-text" placeholder="Section heading" style="font-weight:600"><input type="text" class="lwfb-q-section-desc" placeholder="Section description" style="margin-top:.5rem;color:#64748b"></div><div class="lwfb-normal-body \${is?'hidden':''}"><input type="text" class="lwfb-q-text" placeholder="Enter question"><div class="lwfb-options-section \${no?'':'hidden'}"><label class="lwfb-options-label">Options (one per line):</label><textarea class="lwfb-q-options" rows="3"></textarea></div></div></div>\`;
         c.appendChild(card);card.scrollIntoView({behavior:'smooth',block:'center'});
       }
       async function saveTmpl(){
@@ -5734,12 +5734,12 @@ function renderIQAFTemplateBuilderPage(identity: Identity, template: IQAFTemplat
 }
 
 function renderIQAFEntryTemplateSelectorPage(identity: Identity, templates: IQAFTemplateRecord[]): string {
-  const tHtml = templates.length > 0 ? templates.map(t => `<div class="lw-selector-template-card" data-template-id="${t.id}" data-template-name="${escapeHtml(t.title).toLowerCase()}" onclick="location.href='/iqa-forms/entries/create?templateId=${t.id}'"><div class="lw-selector-template-icon">📋</div><div class="lw-selector-template-info"><strong>${escapeHtml(t.title)}</strong><span>${escapeHtml(t.description ?? "No description")}</span></div><div class="lw-selector-template-arrow">→</div></div>`).join("") : `<div class="lw-selector-empty">No active templates. Create one first.</div>`;
+  const tHtml = templates.length > 0 ? templates.map(t => `<div class="lw-selector-template-card" data-template-id="${t.id}" data-template-name="${escapeHtml(t.title).toLowerCase()}" onclick="location.href='/iqa-forms/entries/create?templateId=${t.id}'"><div class="lw-selector-template-icon">ðŸ“‹</div><div class="lw-selector-template-info"><strong>${escapeHtml(t.title)}</strong><span>${escapeHtml(t.description ?? "No description")}</span></div><div class="lw-selector-template-arrow">â†’</div></div>`).join("") : `<div class="lw-selector-empty">No active templates. Create one first.</div>`;
   return pageShell("New IQA Form", `
     <main class="lwfb-popup-overlay"><div class="lwfb-popup-container" style="max-width:600px">
-      <div class="lwfb-popup-header"><div><p class="lwfb-eyebrow">New IQA Form</p><h1 class="lwfb-title">Select a Template</h1></div><button type="button" class="lwfb-close-btn" onclick="location.href='/iqa-forms'">×</button></div>
+      <div class="lwfb-popup-header"><div><p class="lwfb-eyebrow">New IQA Form</p><h1 class="lwfb-title">Select a Template</h1></div><button type="button" class="lwfb-close-btn" onclick="location.href='/iqa-forms'">Ã—</button></div>
       <div class="lwfb-popup-content">
-        <div class="lw-selector-search-wrapper"><input type="text" id="tSearch" class="lw-selector-search" placeholder="🔍 Search templates..." oninput="filterT(this.value)"></div>
+        <div class="lw-selector-search-wrapper"><input type="text" id="tSearch" class="lw-selector-search" placeholder="ðŸ” Search templates..." oninput="filterT(this.value)"></div>
         <div id="tList" class="lw-selector-list">${tHtml}</div>
         <div id="noRes" class="lw-selector-no-results hidden">No templates match.</div>
       </div>
@@ -5959,7 +5959,7 @@ function renderIQAFEntryViewPage(identity: Identity, entry: IQAFEntryRecord, tem
   const qHtml = visibleQuestions.map(q => {
     if (q.question_type === "section") return `<tr><td colspan="2" style="padding:.75rem 1rem;background:#f8fafc;font-weight:700;border:1px solid #e2e8f0">${escapeHtml(q.question_text)}</td></tr>`;
     const ans = ansMap[q.id];
-    let disp = escapeHtml(ans || "—");
+    let disp = escapeHtml(ans || "â€”");
     if (q.question_type === "rag" && ans) { const c: Record<string,string>={green:"#16a34a",amber:"#d97706",red:"#dc2626"}; disp = `<span style="color:${c[ans]??"#0f172a"};font-weight:600">${ans.toUpperCase()}</span>`; }
     if (q.question_type === "ggaw" && ans) { const c: Record<string,string>={gold:"#b45309",green:"#16a34a",amber:"#d97706",white:"#64748b"}; disp = `<span style="color:${c[ans]??"#0f172a"};font-weight:600">${ans.toUpperCase()}</span>`; }
     let inp = `<input type="text" data-qid="${q.id}" class="iqaf-ans lw-entry-input" value="${escapeHtml(ans??"")}">`;
@@ -5985,7 +5985,7 @@ function renderIQAFEntryViewPage(identity: Identity, entry: IQAFEntryRecord, tem
     <main class="dashboard-shell">
       ${renderSidebar(identity, "iqa-forms")}
       <section class="content">
-        <header class="topbar"><div><p class="eyebrow"><a href="/iqa-forms" style="color:var(--primary)">← IQA Forms</a></p><h1>${escapeHtml(entry.template_title)}</h1></div><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></header>
+        <header class="topbar"><div><p class="eyebrow"><a href="/iqa-forms" style="color:var(--primary)">â† IQA Forms</a></p><h1>${escapeHtml(entry.template_title)}</h1></div><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></header>
 
         <section class="panel"><div class="meta-panel">
           <div class="lw-meta-item"><label class="lw-meta-label">Course</label><span>${escapeHtml(entry.course_name)} (${escapeHtml(entry.course_id)})</span></div>
@@ -6930,7 +6930,7 @@ async function renderAssessmentsPageHandler(request: Request, env: Env, identity
   const { results: templates } = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE is_active=1 AND template_type='quiz' ORDER BY created_at DESC").all<AssessmentTemplate>();
 
   if (isStudent) {
-    // Extract learner ID from email (e.g. 45345@haringeylearns.ac.uk → "45345")
+    // Extract learner ID from email (e.g. 45345@haringeylearns.ac.uk â†’ "45345")
     const learnerId = identity.email.split("@")[0].replace(/[^0-9]/g, "");
     let enrolments: StudentEnrolment[] = [];
     let entries: AssessmentEntry[] = [];
@@ -6971,7 +6971,7 @@ function renderStudentAssessmentsPage(identity: Identity, templates: AssessmentT
     const scoreText = done ? `${entry!.score_earned}/${entry!.max_score} (${pct}%)` : "Not started";
     return `
     <div class="assess-tile ${done ? "assess-tile--done" : ""}" data-template-id="${escapeHtml(t.id)}" data-enrolment-id="${escapeHtml(enrolmentId)}" onclick="openQuizModal('${escapeHtml(t.id)}','${escapeHtml(enrolmentId)}','${escapeHtml(t.title)}',${done ? 1 : 0})">
-      <div class="assess-tile-icon">${done ? "✅" : "📝"}</div>
+      <div class="assess-tile-icon">${done ? "âœ…" : "ðŸ“"}</div>
       <div class="assess-tile-body">
         <h3>${escapeHtml(t.title)}</h3>
         <p>${escapeHtml(t.description ?? "")}</p>
@@ -6986,7 +6986,7 @@ function renderStudentAssessmentsPage(identity: Identity, templates: AssessmentT
   return pageShell("My Assessments", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "assessments")}
-      <div class="shell-content">
+      <div class="content">
         ${renderTopbar(identity, "My Assessments")}
         <section class="page-section">
           ${learnerId ? "" : `<div class="alert alert-warn">Your student ID could not be extracted from your email address. Please contact your tutor.</div>`}
@@ -7097,13 +7097,13 @@ function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTem
           <th>Student</th>
           <th>Learner ID</th>
           <th>Course</th>
-          ${templates.map(t => `<th title="${escapeHtml(t.title)}">${escapeHtml(t.title.length > 18 ? t.title.slice(0, 18) + "…" : t.title)}</th>`).join("")}
+          ${templates.map(t => `<th title="${escapeHtml(t.title)}">${escapeHtml(t.title.length > 18 ? t.title.slice(0, 18) + "â€¦" : t.title)}</th>`).join("")}
         </tr></thead>
         <tbody>
           ${enrolments.map(en => {
             const cols = templates.map(t => {
               const entry = entryMap.get(t.id + "_" + en.id);
-              if (!entry) return `<td><span class="meta-chip chip-grey">—</span></td>`;
+              if (!entry) return `<td><span class="meta-chip chip-grey">â€”</span></td>`;
               const pct = entry.percentage;
               const cls = pct >= (t.pass_percentage ?? 70) ? "chip-green" : "chip-amber";
               return `<td><span class="meta-chip ${cls}">${entry.score_earned}/${entry.max_score}</span></td>`;
@@ -7122,14 +7122,14 @@ function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTem
   return pageShell("Assessments", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "assessments")}
-      <div class="shell-content">
+      <div class="content">
         ${renderTopbar(identity, "Assessments")}
         <section class="page-section">
           <div class="assess-toolbar">
             <form method="GET" action="/assessments" class="assess-search-form">
-              <input class="form-input" name="courseId" placeholder="Course Instance ID…" value="${escapeHtml(courseInstanceId)}">
-              <button class="btn btn-primary" type="submit">🔍 Search</button>
-              ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncClass()">🔄 Sync Class</button>` : ""}
+              <input class="form-input" name="courseId" placeholder="Course Instance IDâ€¦" value="${escapeHtml(courseInstanceId)}">
+              <button class="btn btn-primary" type="submit">Search</button>
+              ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncClass()">Sync Class</button>` : ""}
             </form>
             ${isAdmin ? `<button class="btn btn-pink" onclick="openTemplateBuilder()">+ New Template</button>` : ""}
           </div>
@@ -7141,7 +7141,7 @@ function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTem
           <div class="assess-tiles">
             ${templates.length === 0 ? "<p class='muted-text' style='padding:1rem'>No quiz templates yet. Create one with + New Template.</p>" : templates.map(t => `
             <div class="assess-tile">
-              <div class="assess-tile-icon">📝</div>
+              <div class="assess-tile-icon">ðŸ“</div>
               <div class="assess-tile-body">
                 <h3>${escapeHtml(t.title)}</h3>
                 <p>${escapeHtml(t.description ?? "")}</p>
@@ -7153,7 +7153,7 @@ function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTem
             </div>`).join("")}
           </div>
 
-          ${rosterHtml ? `<div class="section-header" style="margin-top:2rem"><h2>Class Roster — ${escapeHtml(courseInstanceId)}</h2></div>${rosterHtml}` : ""}
+          ${rosterHtml ? `<div class="section-header" style="margin-top:2rem"><h2>Class Roster â€” ${escapeHtml(courseInstanceId)}</h2></div>${rosterHtml}` : ""}
         </section>
       </div>
     </main>
@@ -7257,7 +7257,7 @@ function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTem
           <div class="q-pts-wrap"\${tmplType !== 'quiz' ? ' style="display:none"' : ''}>
             <input type="number" class="form-input q-pts-input" id="q-pts-\${idx}" placeholder="Pts" min="0" value="1">
           </div>
-          <button class="btn btn-secondary" style="padding:.3rem .7rem" onclick="removeQ(\${idx})">✕</button>
+          <button class="btn btn-secondary" style="padding:.3rem .7rem" onclick="removeQ(\${idx})">âœ•</button>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -7397,26 +7397,26 @@ function renderTrackerTile(id: string, emoji: string, title: string, content: st
       ${hasContent ? "<span class='rag-badge rag-green' style='margin-left:auto'>Completed</span>" : "<span class='rag-badge rag-grey' style='margin-left:auto'>Pending</span>"}
     </div>
     <div class="tracker-tile-body">${content || `<p class="muted-text">Not filled in yet.</p>`}</div>
-    ${editable ? `<div class="tracker-tile-footer"><button class="btn btn-secondary" onclick="${editAction}">✏️ Edit</button></div>` : ""}
+    ${editable ? `<div class="tracker-tile-footer"><button class="btn btn-secondary" onclick="${editAction}">âœï¸ Edit</button></div>` : ""}
   </div>`;
 }
 
 function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string): string {
   const enrolment = enrolments[0] ?? null;
 
-  const purposeTile = renderTrackerTile("purpose", "🎯", "Tailored Learning Purpose",
+  const purposeTile = renderTrackerTile("purpose", "ðŸŽ¯", "Tailored Learning Purpose",
     tracker?.tailored_purpose ? `<p>${escapeHtml(tracker.tailored_purpose)}</p>` : "",
     true, "openStudentEdit('purpose')");
 
-  const goalsTile = renderTrackerTile("goals", "📋", "SMART Goals",
+  const goalsTile = renderTrackerTile("goals", "ðŸ“‹", "SMART Goals",
     tracker?.smart_goals ? `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(tracker.smart_goals)}</pre>` : "",
     true, "openStudentEdit('goals')");
 
-  const outcomesTile = renderTrackerTile("outcomes", "✨", "Tailored Learning Outcomes",
+  const outcomesTile = renderTrackerTile("outcomes", "âœ¨", "Tailored Learning Outcomes",
     tracker?.tailored_outcomes ? `<p>${escapeHtml(tracker.tailored_outcomes)}</p>` : "",
     true, "openStudentEdit('outcomes')");
 
-  const diagnosticTile = renderTrackerTile("diagnostic", "🔍", "Initial Assessment & Diagnostic",
+  const diagnosticTile = renderTrackerTile("diagnostic", "ðŸ”", "Initial Assessment & Diagnostic",
     tracker?.initial_assessment_level ? `
       <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem">
         <strong>Level:</strong> ${escapeHtml(tracker.initial_assessment_level)}
@@ -7429,12 +7429,12 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
     const grade = tracker?.[`term${n}_grade` as keyof StudentTracker] as string | null;
     const rag = tracker?.[`term${n}_rag` as keyof StudentTracker] as string | null;
     const comments = tracker?.[`term${n}_comments` as keyof StudentTracker] as string | null;
-    return renderTrackerTile(`term${n}`, "📊", `Term ${n} Progress & Grade`,
+    return renderTrackerTile(`term${n}`, "ðŸ“Š", `Term ${n} Progress & Grade`,
       grade ? `<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem"><strong>${escapeHtml(grade)}</strong>${ragBadge(rag)}</div><p>${escapeHtml(comments ?? "")}</p>` : "",
       false, "");
   }
 
-  const destinationTile = renderTrackerTile("destination", "🚀", "Destination & Progression",
+  const destinationTile = renderTrackerTile("destination", "ðŸš€", "Destination & Progression",
     tracker?.destination_type ? `<p><strong>${escapeHtml(tracker.destination_type)}</strong></p><p>${escapeHtml(tracker.destination_notes ?? "")}</p>` : "",
     false, "");
 
@@ -7447,7 +7447,7 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
   return pageShell("My Progress Tracker", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "tracker")}
-      <div class="shell-content">
+      <div class="content">
         ${renderTopbar(identity, "My Progress Tracker")}
         <section class="page-section">
           ${!learnerId ? `<div class="alert alert-warn">Could not determine your learner ID from your email.</div>` : ""}
@@ -7460,7 +7460,7 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
             <h3>Discussion Thread</h3>
             <div class="comments-list">${commentsHtml || "<p class='muted-text'>No comments yet.</p>"}</div>
             <div class="comment-form">
-              <textarea class="form-input" id="newComment" rows="2" placeholder="Add a comment…"></textarea>
+              <textarea class="form-input" id="newComment" rows="2" placeholder="Add a commentâ€¦"></textarea>
               <button class="btn btn-primary" onclick="postComment('${escapeHtml(tracker?.enrolment_id ?? "")}','tracker')">Post Comment</button>
             </div>
           </div>` : ""}
@@ -7551,9 +7551,9 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
 
   const ragSelector = (field: string, current: string | null) => `
     <div class="rag-selector" data-field="${field}">
-      <button class="rag-btn ${current === 'green' ? 'rag-btn--active-green' : ""}" onclick="setRag('${field}','green')">🟢 On Track</button>
-      <button class="rag-btn ${current === 'amber' ? 'rag-btn--active-amber' : ""}" onclick="setRag('${field}','amber')">🟡 Working Towards</button>
-      <button class="rag-btn ${current === 'red' ? 'rag-btn--active-red' : ""}" onclick="setRag('${field}','red')">🔴 Behind Target</button>
+      <button class="rag-btn ${current === 'green' ? 'rag-btn--active-green' : ""}" onclick="setRag('${field}','green')">ðŸŸ¢ On Track</button>
+      <button class="rag-btn ${current === 'amber' ? 'rag-btn--active-amber' : ""}" onclick="setRag('${field}','amber')">ðŸŸ¡ Working Towards</button>
+      <button class="rag-btn ${current === 'red' ? 'rag-btn--active-red' : ""}" onclick="setRag('${field}','red')">ðŸ”´ Behind Target</button>
     </div>`;
 
   const detailHtml = !tracker || !selectedEnrolment ? "<p class='muted-text' style='padding:2rem'>Select a student from the roster to view their tracker.</p>" : `
@@ -7566,21 +7566,21 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
 
       <!-- Student Goals (Read-only for staff) -->
       <div class="tracker-section">
-        <h3>🎯 Tailored Learning Purpose</h3>
+        <h3>ðŸŽ¯ Tailored Learning Purpose</h3>
         <p>${tracker.tailored_purpose ? escapeHtml(tracker.tailored_purpose) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
       </div>
       <div class="tracker-section">
-        <h3>📋 SMART Goals</h3>
+        <h3>ðŸ“‹ SMART Goals</h3>
         <pre style="white-space:pre-wrap;font-family:inherit;margin:0">${tracker.smart_goals ? escapeHtml(tracker.smart_goals) : "<em class='muted-text'>Not filled in by student yet.</em>"}</pre>
       </div>
       <div class="tracker-section">
-        <h3>✨ Tailored Learning Outcomes</h3>
+        <h3>âœ¨ Tailored Learning Outcomes</h3>
         <p>${tracker.tailored_outcomes ? escapeHtml(tracker.tailored_outcomes) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
       </div>
 
       <!-- Initial Assessment -->
       <div class="tracker-section">
-        <h3>🔍 Initial Assessment & Diagnostic</h3>
+        <h3>ðŸ” Initial Assessment & Diagnostic</h3>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Assessment Level</label>
@@ -7601,7 +7601,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       <!-- Term Reviews -->
       ${[1, 2, 3].map(n => `
       <div class="tracker-section">
-        <h3>📊 Term ${n} Review</h3>
+        <h3>ðŸ“Š Term ${n} Review</h3>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Grade</label>
@@ -7622,12 +7622,12 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
 
       <!-- Destination -->
       <div class="tracker-section">
-        <h3>🚀 Destination & Progression</h3>
+        <h3>ðŸš€ Destination & Progression</h3>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Destination</label>
             <select class="form-input" id="f-dest-type">
-              <option value="">Select…</option>
+              <option value="">Selectâ€¦</option>
               ${["Employment", "Next Level ESOL", "Further Education", "Volunteering", "Digital Skills", "Other"].map(o => `<option value="${o}" ${tracker.destination_type === o ? "selected" : ""}>${o}</option>`).join("")}
             </select>
           </div>
@@ -7643,12 +7643,12 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       </div>
 
       <div style="padding:1rem 0;text-align:right">
-        <button class="btn btn-primary" onclick="saveTrackerRecord()">💾 Save All Changes</button>
+        <button class="btn btn-primary" onclick="saveTrackerRecord()">ðŸ’¾ Save All Changes</button>
       </div>
 
       <!-- Comments Thread -->
       <div class="tracker-section">
-        <h3>💬 Discussion Thread</h3>
+        <h3>ðŸ’¬ Discussion Thread</h3>
         <div class="comments-list">
           ${comments.map(c => `
           <div class="comment-row comment-${escapeHtml(c.author_role)}">
@@ -7657,7 +7657,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
           </div>`).join("") || "<p class='muted-text'>No comments yet.</p>"}
         </div>
         <div class="comment-form">
-          <textarea class="form-input" id="newComment" rows="2" placeholder="Add a comment…"></textarea>
+          <textarea class="form-input" id="newComment" rows="2" placeholder="Add a commentâ€¦"></textarea>
           <button class="btn btn-primary" onclick="postComment('${escapeHtml(selectedEnrolment?.id ?? "")}','tracker')">Post</button>
         </div>
       </div>
@@ -7666,14 +7666,14 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
   return pageShell("Progress Tracker", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "tracker")}
-      <div class="shell-content">
+      <div class="content">
         ${renderTopbar(identity, "Progress Tracker")}
         <section class="page-section">
           <div class="tracker-toolbar">
             <form method="GET" action="/tracker" class="assess-search-form">
-              <input class="form-input" name="courseId" placeholder="Course Instance ID…" value="${escapeHtml(courseInstanceId)}">
-              <button class="btn btn-primary" type="submit">🔍 Search</button>
-              ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncCourse()">🔄 Sync Class</button>` : ""}
+              <input class="form-input" name="courseId" placeholder="Course Instance IDâ€¦" value="${escapeHtml(courseInstanceId)}">
+              <button class="btn btn-primary" type="submit">Search</button>
+              ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncCourse()">Sync Class</button>` : ""}
             </form>
             <button class="btn btn-pink" onclick="openTrackerTemplateBuilder()">+ New Template</button>
           </div>
@@ -7783,8 +7783,9 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       alert(d.error ? 'Error: ' + d.error : 'Synced ' + d.upserted + ' student(s)');
       if (!d.error) location.reload();
     }
-    function openTrackerTemplateBuilder() { alert('Tracker template builder — coming soon as part of the unified builder.'); }
+    function openTrackerTemplateBuilder() { alert('Tracker template builder â€” coming soon as part of the unified builder.'); }
     </script>
   `);
 }
+
 
