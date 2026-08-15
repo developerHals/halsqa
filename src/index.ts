@@ -7818,6 +7818,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
             <button class="bulk-rag-btn ${val==='green'?'bulk-active-green':''}" onclick="setBulkRag('${escapeHtml(en.id)}','${col.key}','green',this)">🟢</button>
             <button class="bulk-rag-btn ${val==='amber'?'bulk-active-amber':''}" onclick="setBulkRag('${escapeHtml(en.id)}','${col.key}','amber',this)">🟡</button>
             <button class="bulk-rag-btn ${val==='red'?'bulk-active-red':''}" onclick="setBulkRag('${escapeHtml(en.id)}','${col.key}','red',this)">🔴</button>
+            <button class="bulk-rag-btn ${val==='na'?'bulk-active-na':''}" onclick="setBulkRag('${escapeHtml(en.id)}','${col.key}','na',this)">⚪</button>
           </div>
           ${dateVal ? `<div class="bulk-date">${escapeHtml(dateVal)}</div>` : ''}
         </td>`;
@@ -7830,10 +7831,11 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
 
   const bulkColHeaders = bulkCols.map(col => `<th class="bulk-col-th">
                 <div class="bulk-col-title">${col.label}</div>
-                <div class="bulk-apply-btns">
+                <div class="bulk-apply-btns" style="display:grid;grid-template-columns:1fr 1fr;gap:0.3rem;margin-top:0.25rem;">
                   <button class="bulk-apply-btn bulk-apply-green" onclick="applyColToAll('${col.key}','green')">🟢 All Green</button>
                   <button class="bulk-apply-btn bulk-apply-amber" onclick="applyColToAll('${col.key}','amber')">🟡 All Amber</button>
                   <button class="bulk-apply-btn bulk-apply-red" onclick="applyColToAll('${col.key}','red')">🔴 All Red</button>
+                  <button class="bulk-apply-btn bulk-apply-na" onclick="applyColToAll('${col.key}','na')">⚪ N/A</button>
                 </div>
               </th>`).join('');
 
@@ -7862,22 +7864,24 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       <div class="content">
         ${renderTopbar(identity, "Progress Tracker")}
         <section class="page-section">
-          <div class="tracker-toolbar">
-            <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
+          <div class="tracker-toolbar" style="display:flex;justify-content:space-between;width:100%;">
+            <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+              <form method="GET" action="/tracker" class="assess-search-form" style="display:flex;align-items:center;gap:0.75rem;margin:0;">
+                <input class="form-input" name="courseId" placeholder="New Course ID…" style="width:140px;">
+                <button class="btn" type="submit" style="background:var(--primary);color:#fff;width:120px;text-align:center;">Search</button>
+              </form>
+              ${courseInstanceId ? `<button class="btn" type="button" onclick="syncCourse()" style="background:#000;color:#fff;width:120px;text-align:center;">Sync Class</button>` : ""}
+            </div>
+            <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;">
               <form method="GET" action="/tracker" class="assess-search-form" style="display:flex;align-items:center;gap:0.75rem;margin:0;">
                 <label style="font-weight:600;white-space:nowrap;">My classes</label>
-                <select class="form-input" name="courseId" onchange="this.form.submit()">
+                <select class="form-input" name="courseId" onchange="this.form.submit()" style="width:400px; max-width: 100%;">
                   <option value="">-- Select a class --</option>
                   ${allCourses.map(c => `<option value="${escapeHtml(c.course_instance_id)}" ${c.course_instance_id === courseInstanceId ? "selected" : ""}>${escapeHtml(c.course_title)} (${escapeHtml(c.course_instance_id)})</option>`).join("")}
                 </select>
               </form>
-              <form method="GET" action="/tracker" class="assess-search-form" style="display:flex;align-items:center;gap:0.75rem;margin:0;border-left:1px solid #e2e8f0;padding-left:1.5rem;">
-                <input class="form-input" name="courseId" placeholder="New Course ID…" style="width:140px;">
-                <button class="btn btn-primary" type="submit">Open</button>
-              </form>
-              ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncCourse()">Sync Class</button>` : ""}
+              ${enrolments.length > 0 ? `<button class="btn btn-toggle" id="bulkToggle" onclick="toggleBulkView()">📋 Bulk Class View</button>` : ""}
             </div>
-            ${enrolments.length > 0 ? `<button class="btn btn-toggle" id="bulkToggle" onclick="toggleBulkView()">📋 Bulk Class View</button>` : ""}
           </div>
           ${bulkViewHtml}
           <div id="individualView">
@@ -7913,11 +7917,12 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       .form-hint{color:var(--muted);font-size:.8125rem;margin:0 0 .75rem}
       .rag-date-display{color:#4f46e5;font-size:.8125rem;margin:.4rem 0 0;font-weight:500}
       .rag-selector{display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0}
-      .rag-btn{padding:.45rem 1rem;border-radius:20px;border:2px solid #e2e8f0;background:#fff;cursor:pointer;font-size:.875rem;font-weight:600;transition:all .15s}
-      .rag-btn:hover{border-color:var(--primary);transform:scale(1.03)}
+      .rag-btn{flex:1;white-space:nowrap;padding:.45rem 1rem;border-radius:20px;border:2px solid transparent;background:#f1f5f9;color:var(--text);cursor:pointer;font-size:.875rem;font-weight:600;transition:all .15s}
+      .rag-btn:hover{background:var(--primary);color:#fff;border-color:var(--primary);transform:scale(1.03)}
       .rag-btn--active-green{background:#dcfce7;border-color:#22c55e;color:#166534}
       .rag-btn--active-amber{background:#fffbeb;border-color:#f59e0b;color:#92400e}
       .rag-btn--active-red{background:#fee2e2;border-color:#ef4444;color:#991b1b}
+      .rag-btn--active-na{background:#e2e8f0;border-color:#94a3b8;color:#475569}
       .comment-row{padding:.75rem 1rem;border-radius:10px;margin-bottom:.75rem}
       .comment-student{background:#eff6ff;border-left:3px solid #3b82f6}
       .comment-teacher,.comment-assessor,.comment-admin,.comment-superuser{background:#f0fdf4;border-left:3px solid #22c55e}
@@ -7943,6 +7948,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       .bulk-apply-green{background:#dcfce7;color:#166534}
       .bulk-apply-amber{background:#fffbeb;color:#92400e}
       .bulk-apply-red{background:#fee2e2;color:#991b1b}
+      .bulk-apply-na{background:#f1f5f9;color:#475569}
       .bulk-name-cell{font-weight:600;min-width:160px}
       .bulk-student-link{color:var(--primary);text-decoration:none;font-weight:600}
       .bulk-student-link:hover{text-decoration:underline}
@@ -7954,6 +7960,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       .bulk-active-green{border-color:#22c55e;background:#dcfce7}
       .bulk-active-amber{border-color:#f59e0b;background:#fffbeb}
       .bulk-active-red{border-color:#ef4444;background:#fee2e2}
+      .bulk-active-na{border-color:#94a3b8;background:#f1f5f9}
       .bulk-date{font-size:.7rem;color:var(--muted);margin-top:.25rem}
     </style>
     <script>
@@ -8026,7 +8033,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         const key = enrolId + ':' + field;
         bulkChanges[key] = value;
         cell.querySelectorAll('.bulk-rag-btn').forEach(b => { b.className = 'bulk-rag-btn'; });
-        const emoji = value === 'green' ? '🟢' : value === 'amber' ? '🟡' : '🔴';
+        const emoji = value === 'green' ? '🟢' : value === 'amber' ? '🟡' : value === 'red' ? '🔴' : '⚪';
         const targetBtn = [...cell.querySelectorAll('.bulk-rag-btn')].find(b => b.textContent.trim() === emoji);
         if (targetBtn) targetBtn.className = 'bulk-rag-btn bulk-active-' + value;
       });
