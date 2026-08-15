@@ -6,4 +6,4 @@ assets = { directory = "./public" }
 [[d1_databases]]
 binding = "esol_marking_db"
 database_name = "esol-marking-db-v2"
-database_id = "964d953b-08fb-4d88-837c-74e336902a38"
+database_id = "b0293a0b-252e-4e15-844c-4a90b5821482"
