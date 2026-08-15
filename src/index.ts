@@ -7863,14 +7863,20 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         ${renderTopbar(identity, "Progress Tracker")}
         <section class="page-section">
           <div class="tracker-toolbar">
-            <form method="GET" action="/tracker" class="assess-search-form" style="display:flex;align-items:center;gap:0.75rem;">
-              <label style="font-weight:600;white-space:nowrap;">My classes</label>
-              <select class="form-input" name="courseId" onchange="this.form.submit()">
-                <option value="">-- Select a class --</option>
-                ${allCourses.map(c => `<option value="${escapeHtml(c.course_instance_id)}" ${c.course_instance_id === courseInstanceId ? "selected" : ""}>${escapeHtml(c.course_title)} (${escapeHtml(c.course_instance_id)})</option>`).join("")}
-              </select>
+            <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
+              <form method="GET" action="/tracker" class="assess-search-form" style="display:flex;align-items:center;gap:0.75rem;margin:0;">
+                <label style="font-weight:600;white-space:nowrap;">My classes</label>
+                <select class="form-input" name="courseId" onchange="this.form.submit()">
+                  <option value="">-- Select a class --</option>
+                  ${allCourses.map(c => `<option value="${escapeHtml(c.course_instance_id)}" ${c.course_instance_id === courseInstanceId ? "selected" : ""}>${escapeHtml(c.course_title)} (${escapeHtml(c.course_instance_id)})</option>`).join("")}
+                </select>
+              </form>
+              <form method="GET" action="/tracker" class="assess-search-form" style="display:flex;align-items:center;gap:0.75rem;margin:0;border-left:1px solid #e2e8f0;padding-left:1.5rem;">
+                <input class="form-input" name="courseId" placeholder="New Course ID…" style="width:140px;">
+                <button class="btn btn-primary" type="submit">Open</button>
+              </form>
               ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncCourse()">Sync Class</button>` : ""}
-            </form>
+            </div>
             ${enrolments.length > 0 ? `<button class="btn btn-toggle" id="bulkToggle" onclick="toggleBulkView()">📋 Bulk Class View</button>` : ""}
           </div>
           ${bulkViewHtml}
