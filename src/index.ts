@@ -1,4 +1,4 @@
-﻿interface Env {
+interface Env {
   esol_marking_db: {
     prepare(query: string): {
       bind(...values: unknown[]): {
@@ -2795,9 +2795,33 @@ function renderUsers(identity: Identity, users: UserRecord[], importResult?: { s
           </script>
         </section>
         <section class="panel">
-          <p class="eyebrow">All users</p>
-          <div class="user-table">${users.map((user) => renderUserRow(user, identity.user!.id)).join("")}</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:1rem;">
+            <p class="eyebrow" style="margin:0">All users</p>
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+              <input type="text" id="filter-user-name" placeholder="Search by email..." style="padding:0.4rem; border:1px solid #ccc; border-radius:4px;" oninput="applyUserFilters()">
+              <select id="filter-user-role" style="padding:0.4rem; border:1px solid #ccc; border-radius:4px;" onchange="applyUserFilters()">
+                <option value="">All Roles</option>
+                ${roles.map(r => `<option value="${r}">${r}</option>`).join("")}
+                <option value="student">student</option>
+              </select>
+            </div>
+          </div>
+          <div class="user-table" id="users-list">${users.map((user) => renderUserRow(user, identity.user!.id)).join("")}</div>
         </section>
+        <script>
+          function applyUserFilters() {
+            const email = document.getElementById('filter-user-name').value.toLowerCase();
+            const role = document.getElementById('filter-user-role').value;
+            const rows = document.querySelectorAll('#users-list .user-row');
+            rows.forEach(r => {
+              const rEmail = r.dataset.email || '';
+              const rRole = r.dataset.role || '';
+              const matchEmail = email === '' || rEmail.includes(email);
+              const matchRole = role === '' || rRole === role;
+              r.style.display = (matchEmail && matchRole) ? '' : 'none';
+            });
+          }
+        </script>
       </section>
     </main>
 
@@ -2868,7 +2892,7 @@ function renderUserRow(user: UserRecord, currentUserId: string) {
   const roleDisplay = user.role === "assessor_iqa" ? "Assessor / IQA" : user.role;
   const stageDisplay = user.stage ? ` (${user.stage})` : "";
   
-  return `<div class="user-row">
+  return `<div class="user-row" data-email="${escapeHtml(user.email.toLowerCase())}" data-role="${escapeHtml(user.role)}">
     <div class="user-info">
       <span class="user-email">${escapeHtml(user.email)}</span>
       <span class="role-badge">${roleDisplay}${stageDisplay}</span>
@@ -6125,6 +6149,13 @@ async function handleMicrosoftCallback(request: Request, env: Env): Promise<Resp
   const profile = await profileResponse.json() as MicrosoftUser;
   const email = profile.mail ?? profile.userPrincipalName;
   if (!email) return htmlResponse(renderAuthErrorPage("Your Microsoft account did not provide an email address."), 401);
+  const normalizedEmail = email.toLowerCase();
+
+  const existingUser = await env.esol_marking_db.prepare("SELECT id FROM users WHERE lower(email) = ? LIMIT 1").bind(normalizedEmail).first();
+  if (!existingUser && normalizedEmail.endsWith("@haringeylearns.ac.uk")) {
+    await env.esol_marking_db.prepare("INSERT INTO users (id, email, role, stage) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), normalizedEmail, "student", null).run();
+  }
+
   const session = await createSession({ email, name: profile.displayName ?? null }, env);
   const headers = new Headers({ location: `${url.origin}/dashboard` });
   headers.append("set-cookie", serializeCookie(sessionCookie, session, 60 * 60 * 8));
