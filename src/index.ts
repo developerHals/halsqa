@@ -7547,7 +7547,11 @@ function renderTrackerTile(id: string, emoji: string, title: string, content: st
 function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string, activeEnrolmentId: string): string {
   const enrolment = enrolments.find(e => e.id === activeEnrolmentId) ?? enrolments[0] ?? null;
 
-  const purposeTile = renderTrackerTile("purpose", "🎯", "Tailored Learning Purpose",
+  
+  const closTile = renderTrackerTile("clos", "📚", "Course Learning Objectives",
+    tracker?.course_learning_objectives ? `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(tracker.course_learning_objectives)}</pre>` : "",
+    true, "openStudentEdit('clos')");
+const purposeTile = renderTrackerTile("purpose", "🎯", "Tailored Learning Purpose",
     tracker?.tailored_purpose ? `<p>${escapeHtml(tracker.tailored_purpose)}</p>` : "",
     true, "openStudentEdit('purpose')");
 
@@ -7558,10 +7562,6 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
   const outcomesTile = renderTrackerTile("outcomes", "✨", "Tailored Learning Outcomes",
     tracker?.tailored_outcomes ? `<p>${escapeHtml(tracker.tailored_outcomes)}</p>` : "",
     true, "openStudentEdit('outcomes')");
-  const closTile = renderTrackerTile("clos", "📚", "Course Learning Objectives",
-    tracker?.course_learning_objectives ? `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(tracker.course_learning_objectives)}</pre>` : "",
-    true, "openStudentEdit('clos')");
-
 
   const diagnosticTile = renderTrackerTile("diagnostic", "🔍", "Initial Assessment & Diagnostic",
     tracker?.initial_assessment_level ? `
@@ -7607,7 +7607,10 @@ const destinationTile = renderTrackerTile("destination", "🚀", "Destination & 
           ${!learnerId ? `<div class="alert alert-warn">Could not determine your learner ID from your email.</div>` : ""}
           ${enrolment ? `<div class="tracker-course-banner"><strong>${escapeHtml(enrolment.course_title)}</strong> <span class="meta-chip">${escapeHtml(enrolment.course_code)}</span></div>` : ""}
           <div class="tracker-tiles">
-            ${purposeTile}${goalsTile}${outcomesTile}${diagnosticTile}${termTile(1)}${termTile(2)}${termTile(3)}${destinationTile}
+            ${closTile}
+            ${purposeTile}
+            ${goalsTile}
+            ${outcomesTile}${diagnosticTile}${termTile(1)}${termTile(2)}${termTile(3)}${destinationTile}
           </div>
           ${tracker ? `
           <div class="tracker-comments">
@@ -7720,7 +7723,11 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
 
       <!-- Student Goals (Read-only for staff) -->
       <div class="tracker-section">
-        <h3>🎯 Tailored Learning Purpose</h3>
+<h3>📚 Course Learning Objectives</h3>
+<pre style="white-space:pre-wrap;font-family:inherit;margin:0">${tracker.course_learning_objectives ? escapeHtml(tracker.course_learning_objectives) : "<em class='muted-text'>Not filled in by student yet.</em>"}</pre>
+</div>
+<div class="tracker-section">
+<h3>🎯 Tailored Learning Purpose</h3>
         <p>${tracker.tailored_purpose ? escapeHtml(tracker.tailored_purpose) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
       </div>
       <div class="tracker-section">
@@ -7765,9 +7772,16 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       </div>
       `).join("")}
 
-      <!-- Destination -->
-      <div class="tracker-section">
-        <h3>🚀 Destination & Progression</h3>
+      <!-- CLOs Achieved Confirmation -->
+<div class="tracker-section">
+<h3>✅ CLOs Achieved Confirmation</h3>
+<p class="form-hint">Have the Course Learning Objectives been achieved?</p>
+${ragSelector("clos_achieved_rag", tracker.clos_achieved_rag)}
+</div>
+
+<!-- Destination -->
+<div class="tracker-section">
+<h3>🚀 Destination & Progression</h3>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Destination</label>
