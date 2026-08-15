@@ -1,4 +1,4 @@
-name = "esolqa-v2"
+name = "esolqa"
 main = "src/index.ts"
 compatibility_date = "2026-05-30"
 assets = { directory = "./public" }
