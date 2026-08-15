@@ -10,11 +10,16 @@
     "db:migrate": "wrangler d1 migrations apply esol_marking_db --local",
     "db:migrate:remote": "wrangler d1 migrations apply esol_marking_db --remote"
   },
-  "keywords": ["cloudflare", "workers", "d1", "quality-assurance"],
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "d1",
+    "quality-assurance"
+  ],
   "author": "Haringey Learns",
   "license": "UNLICENSED",
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241112.0",
+    "@cloudflare/workers-types": "^5.20260814.1",
     "typescript": "^5.6.3",
     "wrangler": "^4.123.0"
   }
