@@ -1,4 +1,4 @@
-﻿interface Env {
+interface Env {
   esol_marking_db: {
     prepare(query: string): {
       bind(...values: unknown[]): {
@@ -801,7 +801,11 @@ async function renderMyClassPageHandler(request: Request, env: Env, identity: Id
 }
 
 function renderCoursesPage(identity: Identity, courses: LearnerTrackCourse[], error: string | null): string {
-  const header = ["ID", "Course Code", "Course Title", "Provider", "Level", "Location", "Venue", "Tutor", "Academic Year", "Times", "Start Date", "End Date", "Day", "Weeks", "Sessions", "Fee"];
+  const header = [
+    "ID", "Course Code", "Course Title", "Times", "Tutor", 
+    "Academic Year", "Start Term", "Weeks", "Category", 
+    "Option Group", "Location", "Available Places"
+  ];
   const tutors = [...new Set(courses.map(c => c.Tutor || c.TutorName || "").filter(Boolean))].sort();
   const years = [...new Set(courses.map(c => c.AcademicYear != null ? String(c.AcademicYear) : "").filter(Boolean))].sort();
   const rows = courses.map(c => {
@@ -811,22 +815,18 @@ function renderCoursesPage(identity: Identity, courses: LearnerTrackCourse[], er
       String(c.ID ?? ""),
       c.CourseCode ?? "",
       c.CourseTitle ?? "",
-      c.ProviderLabel ?? "",
-      c.CourseLevelID != null ? String(c.CourseLevelID) : "",
-      c.LocationLabel || c.LocationName || "",
-      c.VenueName ?? "",
+      c.Times ?? "",
       tutor,
       year,
-      c.Times ?? "",
-      c.StartDate ?? "",
-      c.EndDate ?? "",
-      c.DayOfWeek ?? "",
-      c.DurationInWeeks != null ? String(c.DurationInWeeks) : "",
-      c.NumberOfSessions != null ? String(c.NumberOfSessions) : "",
-      c.CourseFee != null ? String(c.CourseFee) : ""
+      c.StartTerm ?? "",
+      c.Weeks != null ? String(c.Weeks) : (c.DurationInWeeks != null ? String(c.DurationInWeeks) : ""),
+      c.CatLabel ?? "",
+      c.OptionGroup ?? "",
+      c.LocationLabel || c.LocationName || "",
+      c.AvailablePlaces != null ? String(c.AvailablePlaces) : ""
     ];
   });
-  const tableBody = rows.map((row, i) => `<tr data-year="${escapeHtml(row[8])}" data-tutor="${escapeHtml(row[7])}">${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  const tableBody = rows.map((row, i) => `<tr data-year="${escapeHtml(String(row[5]))}" data-tutor="${escapeHtml(String(row[4]))}">${row.map(cell => `<td>${escapeHtml(String(cell))}</td>`).join("")}</tr>`).join("");
   const tableHead = `<thead><tr>${header.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
   const yearFilter = `<select id="filter-year" class="lw-entry-select"><option value="">All years</option>${years.map(y => `<option value="${escapeHtml(y)}">${escapeHtml(y)}</option>`).join("")}</select>`;
   const tutorFilter = `<select id="filter-tutor" class="lw-entry-select"><option value="">All tutors</option>${tutors.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("")}</select>`;
