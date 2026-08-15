@@ -8,7 +8,9 @@ interface Env {
       };
       first<T>(): Promise<T | null>;
       all<T>(): Promise<{ results: T[] }>;
-  esol_marking_db: D1Database;
+      run(): Promise<unknown>;
+    };
+  };
   MICROSOFT_CLIENT_ID?: string;
   MICROSOFT_CLIENT_SECRET?: string;
   MICROSOFT_TENANT_ID?: string;
