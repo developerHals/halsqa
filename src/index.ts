@@ -8208,19 +8208,19 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
       }
     }
 
-    return \`
-    <div class="\${cardClass}" data-question-id="\${q.id}" data-sort-order="\${q.sort_order}">
+    return `
+    <div class="${cardClass}" data-question-id="${q.id}" data-sort-order="${q.sort_order}">
       <div class="lwfb-question-header">
-        <span class="lwfb-q-number">\${index + 1}</span>
+        <span class="lwfb-q-number">${index + 1}</span>
         <select class="lwfb-q-type-select" onchange="updateQuestionType(this)">
-          \${questionTypes.map(t => \`<option value="\${t.value}" \${q.question_type === t.value ? "selected" : ""}>\${t.label}</option>\`).join("")}
+          ${questionTypes.map(t => `<option value="${t.value}" ${q.question_type === t.value ? "selected" : ""}>${t.label}</option>`).join("")}
         </select>
-        <label class="lwfb-required-label" style="\${isSection ? 'display:none' : ''}">
-          <input type="checkbox" class="lwfb-q-required" \${q.is_required ? "checked" : ""}>
+        <label class="lwfb-required-label" style="${isSection ? 'display:none' : ''}">
+          <input type="checkbox" class="lwfb-q-required" ${q.is_required ? "checked" : ""}>
           Required
         </label>
-        <div class="lwfb-pts-wrap" style="\${tmplType !== 'quiz' || isSection ? 'display:none' : ''}">
-          <label>Pts: <input type="number" class="lwfb-q-pts" value="\${q.points || 1}" min="0" style="width:50px"></label>
+        <div class="lwfb-pts-wrap" style="${tmplType !== 'quiz' || isSection ? 'display:none' : ''}">
+          <label>Pts: <input type="number" class="lwfb-q-pts" value="${q.points || 1}" min="0" style="width:50px"></label>
         </div>
         <div class="lwfb-reorder-btns">
            <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">▲</button>
@@ -8229,38 +8229,38 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
          <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>
       </div>
       <div class="lwfb-question-body">
-        <div class="lwfb-section-body \${isSection ? '' : 'hidden'}">
-          <input type="text" class="lwfb-q-text" value="\${escapeHtml(q.question_text)}" placeholder="Section heading" style="font-weight:600;font-size:1.05rem">
-          <input type="text" class="lwfb-q-section-desc" value="\${escapeHtml(q.text_entry_label || '')}" placeholder="Section description (optional)" style="margin-top:0.5rem;color:#64748b">
+        <div class="lwfb-section-body ${isSection ? '' : 'hidden'}">
+          <input type="text" class="lwfb-q-text" value="${escapeHtml(q.question_text)}" placeholder="Section heading" style="font-weight:600;font-size:1.05rem">
+          <input type="text" class="lwfb-q-section-desc" value="${escapeHtml(q.text_entry_label || '')}" placeholder="Section description (optional)" style="margin-top:0.5rem;color:#64748b">
         </div>
-        <div class="lwfb-normal-body \${isSection ? 'hidden' : ''}">
-          <input type="text" class="lwfb-q-text" value="\${escapeHtml(q.question_text)}" placeholder="Enter your question">
-          <div class="lwfb-options-section \${needsOptions ? "" : "hidden"}">
+        <div class="lwfb-normal-body ${isSection ? 'hidden' : ''}">
+          <input type="text" class="lwfb-q-text" value="${escapeHtml(q.question_text)}" placeholder="Enter your question">
+          <div class="lwfb-options-section ${needsOptions ? "" : "hidden"}">
             <label class="lwfb-options-label">Options (one per line, prefix correct with *):</label>
-            <textarea class="lwfb-q-options" rows="3" placeholder="*Option A (correct)\\nOption B\\nOption C">\${parsedOptions.map((o: any) => (o.correct || o.value === q.correct_answer ? '*' : '') + escapeHtml(o.label)).join("\\n")}</textarea>
+            <textarea class="lwfb-q-options" rows="3" placeholder="*Option A (correct)\nOption B\nOption C">${parsedOptions.map((o: any) => (o.correct || o.value === q.correct_answer ? '*' : '') + escapeHtml(o.label)).join("\n")}</textarea>
           </div>
         </div>
       </div>
-    </div>\`;
+    </div>`;
   };
 
   const questionsHtml = questions.length > 0
     ? questions.map((q: any, i: number) => renderQuestionCard(q, i)).join("")
-    : \`<div class="lwfb-empty-state" id="emptyQuestionsMsg">No questions yet. Click the + button below to add your first question.</div>\`;
+    : `<div class="lwfb-empty-state" id="emptyQuestionsMsg">No questions yet. Click the + button below to add your first question.</div>`;
 
-  return pageShell(isEdit ? "Edit Assessment Template" : "New Assessment Template", \`
+  return pageShell(isEdit ? "Edit Assessment Template" : "New Assessment Template", `
     <main class="lwfb-popup-overlay" id="templateBuilderPopup" style="display:flex;">
       <div class="lwfb-popup-container">
         <div class="lwfb-popup-header">
           <div>
             <p class="lwfb-eyebrow">Assessment Template Builder</p>
-            <h1 class="lwfb-title">\${isEdit ? "Edit Template" : "Create New Template"}</h1>
+            <h1 class="lwfb-title">${isEdit ? "Edit Template" : "Create New Template"}</h1>
           </div>
           <button type="button" class="lwfb-close-btn" onclick="window.location.href='/assessments'" title="Close">×</button>
         </div>
 
         <div class="lwfb-popup-content">
-          <div class="lwfb-section-card" id="tmplTypeSelection" style="\${isEdit ? 'display:none;' : ''}">
+          <div class="lwfb-section-card" id="tmplTypeSelection" style="${isEdit ? 'display:none;' : ''}">
              <h3 class="lwfb-section-title">What would you like to create?</h3>
              <div style="display:flex;gap:1.5rem;margin-top:1rem;">
                <label style="cursor:pointer;padding:1rem;border:2px solid #e2e8f0;border-radius:8px;flex:1;text-align:center;" onclick="selectTmplType('form', this)">
@@ -8282,32 +8282,32 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
           <div class="lwfb-section-card">
             <h3 class="lwfb-section-title">Template Settings</h3>
             <div style="margin-bottom:1rem;">
-              <input type="text" id="templateTitle" class="lwfb-title-input" value="\${escapeHtml(title)}" placeholder="Template Title *">
+              <input type="text" id="templateTitle" class="lwfb-title-input" value="${escapeHtml(title)}" placeholder="Template Title *">
             </div>
             <div style="margin-bottom:1rem;">
-              <textarea id="templateDescription" class="lwfb-desc-input" rows="2" placeholder="Template description (optional)">\${escapeHtml(description)}</textarea>
+              <textarea id="templateDescription" class="lwfb-desc-input" rows="2" placeholder="Template description (optional)">${escapeHtml(description)}</textarea>
             </div>
             
             <div style="display:flex;gap:1rem;margin-bottom:1rem;align-items:center;">
               <div style="flex:1;">
                 <label class="form-label" style="font-weight:600;display:block;margin-bottom:0.25rem;">Course ID</label>
-                <input type="text" id="templateCourseId" class="form-input" value="\${escapeHtml(courseId)}" placeholder="e.g. 10508" \${applyToAll ? 'disabled' : ''} onblur="fetchCourseTitle()">
+                <input type="text" id="templateCourseId" class="form-input" value="${escapeHtml(courseId)}" placeholder="e.g. 10508" ${applyToAll ? 'disabled' : ''} onblur="fetchCourseTitle()">
               </div>
               <div style="flex:1;display:flex;align-items:center;padding-top:1.5rem;">
                 <label style="display:flex;align-items:center;gap:0.5rem;font-weight:600;cursor:pointer;">
-                  <input type="checkbox" id="templateApplyToAll" \${applyToAll ? 'checked' : ''} onchange="toggleApplyToAll()">
+                  <input type="checkbox" id="templateApplyToAll" ${applyToAll ? 'checked' : ''} onchange="toggleApplyToAll()">
                   Apply to all classes & students
                 </label>
               </div>
             </div>
-            <div style="margin-bottom:1rem;" id="courseTitleWrap" class="\${applyToAll ? 'hidden' : ''}">
+            <div style="margin-bottom:1rem;" id="courseTitleWrap" class="${applyToAll ? 'hidden' : ''}">
               <label class="form-label" style="font-weight:600;display:block;margin-bottom:0.25rem;">Course Title (Auto-populated)</label>
               <input type="text" id="templateCourseTitle" class="form-input" placeholder="Will populate from LearnerTrack..." readonly style="background:#f1f5f9;">
             </div>
 
-            <div class="form-group" id="tmplPassGroup" style="\${tmplType === 'tracker' ? 'display:none;' : ''}">
+            <div class="form-group" id="tmplPassGroup" style="${tmplType === 'tracker' ? 'display:none;' : ''}">
               <label class="form-label" style="font-weight:600;display:block;margin-bottom:0.25rem;">Pass Percentage (%)</label>
-              <input class="form-input" id="tmplPass" type="number" value="\${passPercentage}" min="0" max="100">
+              <input class="form-input" id="tmplPass" type="number" value="${passPercentage}" min="0" max="100">
             </div>
           </div>
 
@@ -8321,7 +8321,7 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
           <div class="lwfb-section-card">
             <h3 class="lwfb-section-title">Questions</h3>
             <div id="questionsContainer" class="lwfb-questions-container">
-              \${questionsHtml}
+              ${questionsHtml}
             </div>
             <div class="lwfb-add-wrapper" style="position:relative;">
               <button type="button" class="lwfb-add-btn" onclick="showQuestionTypePicker()">
@@ -8337,13 +8337,13 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
                 <button type="button" class="close-picker" onclick="hideQuestionTypePicker()">×</button>
               </div>
               <div class="picker-grid">
-                \${questionTypes.map(t => \`
-                  <div class="type-option" onclick="addQuestion('\${t.value}')">
-                    <span class="type-icon">\${t.icon}</span>
-                    <span class="type-label">\${t.label}</span>
-                    <span class="type-desc">\${t.desc}</span>
+                ${questionTypes.map(t => `
+                  <div class="type-option" onclick="addQuestion('${t.value}')">
+                    <span class="type-icon">${t.icon}</span>
+                    <span class="type-label">${t.label}</span>
+                    <span class="type-desc">${t.desc}</span>
                   </div>
-                \`).join("")}
+                `).join("")}
               </div>
             </div>
           </div>
@@ -8351,15 +8351,15 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
 
         <div class="lwfb-popup-footer">
           <button type="button" class="btn btn-secondary" onclick="window.location.href='/assessments'">Cancel</button>
-          <button type="button" class="btn btn-primary" id="saveTemplateBtn" onclick="saveTemplate()">\${isEdit ? "Update Template" : "Save Template"}</button>
+          <button type="button" class="btn btn-primary" id="saveTemplateBtn" onclick="saveTemplate()">${isEdit ? "Update Template" : "Save Template"}</button>
         </div>
       </div>
     </main>
     <script>
-    let activeTmplType = '\${tmplType}';
-    let questionTypes = \${JSON.stringify(questionTypes)};
-    const isEdit = \${isEdit};
-    const templateId = '\${templateId}';
+    let activeTmplType = '${tmplType}';
+    let questionTypes = ${JSON.stringify(questionTypes)};
+    const isEdit = ${isEdit};
+    const templateId = '${templateId}';
 
     function selectTmplType(type, el) {
       activeTmplType = type === 'quiz' ? 'quiz' : 'tracker';
@@ -8426,17 +8426,17 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
       const div = document.createElement('div');
       div.className = 'lwfb-question-card';
       div.dataset.questionId = 'new_' + Date.now();
-      div.innerHTML = \`
+      div.innerHTML = `
         <div class="lwfb-question-header">
-          <span class="lwfb-q-number">\${idx + 1}</span>
+          <span class="lwfb-q-number">${idx + 1}</span>
           <select class="lwfb-q-type-select" onchange="updateQuestionType(this)">
-            \${questionTypes.map(qt => \`<option value="\${qt.value}" \${type === qt.value ? "selected" : ""}>\${qt.label}</option>\`).join("")}
+            ${questionTypes.map(qt => `<option value="${qt.value}" ${type === qt.value ? "selected" : ""}>${qt.label}</option>`).join("")}
           </select>
-          <label class="lwfb-required-label" style="\${isSection ? 'display:none' : ''}">
+          <label class="lwfb-required-label" style="${isSection ? 'display:none' : ''}">
             <input type="checkbox" class="lwfb-q-required" checked>
             Required
           </label>
-          <div class="lwfb-pts-wrap" style="\${activeTmplType !== 'quiz' || isSection ? 'display:none' : ''}">
+          <div class="lwfb-pts-wrap" style="${activeTmplType !== 'quiz' || isSection ? 'display:none' : ''}">
             <label>Pts: <input type="number" class="lwfb-q-pts" value="1" min="0" style="width:50px"></label>
           </div>
           <div class="lwfb-reorder-btns">
@@ -8446,19 +8446,19 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
            <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>
         </div>
         <div class="lwfb-question-body">
-          <div class="lwfb-section-body \${isSection ? '' : 'hidden'}">
+          <div class="lwfb-section-body ${isSection ? '' : 'hidden'}">
             <input type="text" class="lwfb-q-text" value="" placeholder="Section heading" style="font-weight:600;font-size:1.05rem">
             <input type="text" class="lwfb-q-section-desc" value="" placeholder="Section description (optional)" style="margin-top:0.5rem;color:#64748b">
           </div>
-          <div class="lwfb-normal-body \${isSection ? 'hidden' : ''}">
+          <div class="lwfb-normal-body ${isSection ? 'hidden' : ''}">
             <input type="text" class="lwfb-q-text" value="" placeholder="Enter your question">
-            <div class="lwfb-options-section \${needsOptions ? "" : "hidden"}">
+            <div class="lwfb-options-section ${needsOptions ? "" : "hidden"}">
               <label class="lwfb-options-label">Options (one per line, prefix correct with *):</label>
               <textarea class="lwfb-q-options" rows="3" placeholder="*Option A (correct)\\nOption B\\nOption C"></textarea>
             </div>
           </div>
         </div>
-      \`;
+      `;
       document.getElementById('questionsContainer').appendChild(div);
       updateNumbers();
     }
@@ -8482,7 +8482,7 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
       btn.closest('.lwfb-question-card').remove();
       updateNumbers();
       if (document.querySelectorAll('.lwfb-question-card').length === 0) {
-        document.getElementById('questionsContainer').innerHTML = \`<div class="lwfb-empty-state" id="emptyQuestionsMsg">No questions yet. Click the + button below to add your first question.</div>\`;
+        document.getElementById('questionsContainer').innerHTML = `<div class="lwfb-empty-state" id="emptyQuestionsMsg">No questions yet. Click the + button below to add your first question.</div>`;
       }
     }
     
@@ -8583,7 +8583,7 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
       fetchCourseTitle();
     }
     </script>
-  \`);
+  `);
 }
 async function renderQuizPageHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!identity.user) return htmlResponse(renderForbiddenPage(identity), 403);
@@ -8620,10 +8620,10 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
      return htmlResponse(pageShell(tmpl.title, `
        <main class="dashboard-shell">
          <div class="content" style="max-width:800px;margin:2rem auto;padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
-           <h1 style="margin-bottom:1rem">\${escapeHtml(tmpl.title)}</h1>
+           <h1 style="margin-bottom:1rem">${escapeHtml(tmpl.title)}</h1>
            <div style="background:#f8fafc;padding:2rem;border-radius:12px;text-align:center">
              <h2 style="color:var(--text);margin-bottom:.5rem">Assessment Completed</h2>
-             <p style="color:var(--muted)">Your score: <strong>\${entry.score_earned} / \${entry.max_score} (\${entry.percentage}%)</strong></p>
+             <p style="color:var(--muted)">Your score: <strong>${entry.score_earned} / ${entry.max_score} (${entry.percentage}%)</strong></p>
              <button class="btn btn-primary" style="margin-top:1rem" onclick="window.location.href='/assessments'">Back to Assessments</button>
            </div>
          </div>
@@ -8636,7 +8636,7 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
      return htmlResponse(pageShell(tmpl.title, `
        <main class="dashboard-shell">
          <div class="content" style="max-width:800px;margin:2rem auto;padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
-           <h1 style="margin-bottom:1rem">\${escapeHtml(tmpl.title)}</h1>
+           <h1 style="margin-bottom:1rem">${escapeHtml(tmpl.title)}</h1>
            <div style="background:#fffbeb;padding:2rem;border-radius:12px;text-align:center;border:1px solid #fcd34d">
              <h2 style="color:#92400e;margin-bottom:.5rem">Pending Marking</h2>
              <p style="color:#92400e">Your assessment has been submitted and is awaiting tutor marking for open questions.</p>
@@ -8659,34 +8659,34 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
     let inputHtml = '';
     
     if (q.question_type === 'section') {
-       return \`
+       return `
          <div class="quiz-section-header" style="margin-top:2rem;margin-bottom:1rem">
-           <h3 style="font-size:1.25rem;color:var(--text);border-bottom:2px solid var(--primary);padding-bottom:.5rem">\${escapeHtml(q.question_text)}</h3>
-           \${q.text_entry_label ? \`<p style="color:var(--muted);font-size:.9rem;margin-top:.25rem">\${escapeHtml(q.text_entry_label)}</p>\` : ''}
+           <h3 style="font-size:1.25rem;color:var(--text);border-bottom:2px solid var(--primary);padding-bottom:.5rem">${escapeHtml(q.question_text)}</h3>
+           ${q.text_entry_label ? `<p style="color:var(--muted);font-size:.9rem;margin-top:.25rem">${escapeHtml(q.text_entry_label)}</p>` : ''}
          </div>
-       \`;
+       `;
     }
 
     if (q.question_type === 'yes_no') {
-      inputHtml = \`
+      inputHtml = `
         <div class="quiz-options" style="display:flex;gap:1rem;margin-top:.5rem">
-          <label><input type="radio" name="q_\${q.id}" value="yes" \${val==='yes'?'checked':''} \${isMarking?'disabled':''}> Yes</label>
-          <label><input type="radio" name="q_\${q.id}" value="no" \${val==='no'?'checked':''} \${isMarking?'disabled':''}> No</label>
+          <label><input type="radio" name="q_${q.id}" value="yes" ${val==='yes'?'checked':''} ${isMarking?'disabled':''}> Yes</label>
+          <label><input type="radio" name="q_${q.id}" value="no" ${val==='no'?'checked':''} ${isMarking?'disabled':''}> No</label>
         </div>
-      \`;
+      `;
     } else if (q.question_type === 'single_choice') {
-      inputHtml = \`<div class="quiz-options" style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">\` + opts.map(o => \`
-        <label><input type="radio" name="q_\${q.id}" value="\${escapeHtml(o.value)}" \${val===o.value?'checked':''} \${isMarking?'disabled':''}> \${escapeHtml(o.label)}</label>
-      \`).join('') + \`</div>\`;
+      inputHtml = `<div class="quiz-options" style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">` + opts.map(o => `
+        <label><input type="radio" name="q_${q.id}" value="${escapeHtml(o.value)}" ${val===o.value?'checked':''} ${isMarking?'disabled':''}> ${escapeHtml(o.label)}</label>
+      `).join('') + `</div>`;
     } else if (q.question_type === 'multiple_choice') {
       const vals = val ? val.split(',') : [];
-      inputHtml = \`<div class="quiz-options" style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">\` + opts.map(o => \`
-        <label><input type="checkbox" name="q_\${q.id}" value="\${escapeHtml(o.value)}" \${vals.includes(o.value)?'checked':''} \${isMarking?'disabled':''}> \${escapeHtml(o.label)}</label>
-      \`).join('') + \`</div>\`;
+      inputHtml = `<div class="quiz-options" style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">` + opts.map(o => `
+        <label><input type="checkbox" name="q_${q.id}" value="${escapeHtml(o.value)}" ${vals.includes(o.value)?'checked':''} ${isMarking?'disabled':''}> ${escapeHtml(o.label)}</label>
+      `).join('') + `</div>`;
     } else if (q.question_type === 'textarea') {
-      inputHtml = \`<textarea name="q_\${q.id}" class="form-input" rows="4" style="margin-top:.5rem" \${isMarking?'disabled':''}>\${escapeHtml(val)}</textarea>\`;
+      inputHtml = `<textarea name="q_${q.id}" class="form-input" rows="4" style="margin-top:.5rem" ${isMarking?'disabled':''}>${escapeHtml(val)}</textarea>`;
     } else {
-      inputHtml = \`<input type="text" name="q_\${q.id}" class="form-input" style="margin-top:.5rem" value="\${escapeHtml(val)}" \${isMarking?'disabled':''}>\`;
+      inputHtml = `<input type="text" name="q_${q.id}" class="form-input" style="margin-top:.5rem" value="${escapeHtml(val)}" ${isMarking?'disabled':''}>`;
     }
     
     let tutorMarkingHtml = '';
@@ -8696,77 +8696,77 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
           // Open question requiring points
           // Find if points already awarded manually
           const isAwarded = answers['manual_score_'+q.id] === 1;
-          tutorMarkingHtml = \`
+          tutorMarkingHtml = `
             <div style="margin-top:1rem;padding:1rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;display:flex;align-items:center;gap:1rem;">
               <span style="font-weight:600;color:#166534;">Tutor Marking:</span>
               <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;background:#fff;padding:.5rem 1rem;border-radius:20px;border:1px solid #166534;">
-                <input type="checkbox" class="tutor-point-cb" data-qid="\${q.id}" data-points="\${q.points}" \${isAwarded ? 'checked' : ''} onchange="togglePoint(this)">
-                <span style="color:#166534;font-weight:600">Point (\${q.points})</span>
+                <input type="checkbox" class="tutor-point-cb" data-qid="${q.id}" data-points="${q.points}" ${isAwarded ? 'checked' : ''} onchange="togglePoint(this)">
+                <span style="color:#166534;font-weight:600">Point (${q.points})</span>
               </label>
             </div>
-          \`;
+          `;
        } else if (isAutoMarked && q.points > 0) {
           const correct = q.correct_answer && val === q.correct_answer;
-          tutorMarkingHtml = \`
-            <div style="margin-top:1rem;padding:.5rem 1rem;background:\${correct ? '#f0fdf4' : '#fef2f2'};border:1px solid \${correct ? '#bbf7d0' : '#fecaca'};border-radius:8px;">
-               <span style="color:\${correct ? '#166534' : '#991b1b'};font-weight:600;">\${correct ? 'Correct' : 'Incorrect'} (\${correct ? q.points : 0} / \${q.points} pts)</span>
+          tutorMarkingHtml = `
+            <div style="margin-top:1rem;padding:.5rem 1rem;background:${correct ? '#f0fdf4' : '#fef2f2'};border:1px solid ${correct ? '#bbf7d0' : '#fecaca'};border-radius:8px;">
+               <span style="color:${correct ? '#166534' : '#991b1b'};font-weight:600;">${correct ? 'Correct' : 'Incorrect'} (${correct ? q.points : 0} / ${q.points} pts)</span>
             </div>
-          \`;
+          `;
        }
     }
 
-    return \`
+    return `
       <div class="quiz-question" style="margin-bottom:2rem;padding-bottom:1rem;border-bottom:1px solid #e2e8f0">
         <div class="quiz-question-text" style="font-size:1.1rem;font-weight:600;color:var(--text)">
-          \${index + 1}. \${escapeHtml(q.question_text)}
-          \${q.points > 0 ? \`<span style="font-size:.8rem;color:#7c3aed;background:#f5f3ff;padding:.15rem .45rem;border-radius:10px;margin-left:.5rem;vertical-align:middle">\${q.points} pts</span>\` : ''}
-          \${q.is_required && !isMarking ? '<span style="color:#ef4444;margin-left:.25rem">*</span>' : ''}
+          ${index + 1}. ${escapeHtml(q.question_text)}
+          ${q.points > 0 ? `<span style="font-size:.8rem;color:#7c3aed;background:#f5f3ff;padding:.15rem .45rem;border-radius:10px;margin-left:.5rem;vertical-align:middle">${q.points} pts</span>` : ''}
+          ${q.is_required && !isMarking ? '<span style="color:#ef4444;margin-left:.25rem">*</span>' : ''}
         </div>
-        \${inputHtml}
-        \${tutorMarkingHtml}
+        ${inputHtml}
+        ${tutorMarkingHtml}
       </div>
-    \`;
+    `;
   };
 
-  return htmlResponse(pageShell(tmpl.title, \`
+  return htmlResponse(pageShell(tmpl.title, `
     <main class="dashboard-shell">
       <div class="content" style="max-width:800px;margin:2rem auto;padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
-        <h1 style="margin-bottom:.5rem;color:var(--text)">\${escapeHtml(tmpl.title)}</h1>
-        <p style="color:var(--muted);margin-bottom:2rem">\${escapeHtml(tmpl.description || '')}</p>
+        <h1 style="margin-bottom:.5rem;color:var(--text)">${escapeHtml(tmpl.title)}</h1>
+        <p style="color:var(--muted);margin-bottom:2rem">${escapeHtml(tmpl.description || '')}</p>
         
         <!-- Fixed Info -->
         <div style="display:flex;gap:1.5rem;margin-bottom:2rem;padding:1rem;background:#f8fafc;border-radius:8px">
           <div>
             <span style="font-size:.85rem;color:var(--muted);display:block">Course</span>
-            <strong style="color:var(--text)">\${escapeHtml(enrolment.course_instance_id)} - \${escapeHtml(enrolment.course_title)}</strong>
+            <strong style="color:var(--text)">${escapeHtml(enrolment.course_instance_id)} - ${escapeHtml(enrolment.course_title)}</strong>
           </div>
           <div>
             <span style="font-size:.85rem;color:var(--muted);display:block">Student</span>
-            <strong style="color:var(--text)">\${escapeHtml(enrolment.student_label)} (\${escapeHtml(enrolment.learner_id)})</strong>
+            <strong style="color:var(--text)">${escapeHtml(enrolment.student_label)} (${escapeHtml(enrolment.learner_id)})</strong>
           </div>
         </div>
 
         <form id="quizForm" onsubmit="submitQuiz(event)">
-          \${questions.map((q, i) => renderQ(q, i)).join('')}
+          ${questions.map((q, i) => renderQ(q, i)).join('')}
           
           <div style="margin-top:2rem;display:flex;gap:1rem;justify-content:flex-end">
-            \${isMarking ? \`
+            ${isMarking ? `
               <button type="button" class="btn btn-secondary" onclick="window.location.href='/assessments'">Close</button>
               <button type="button" class="btn btn-primary" onclick="saveTutorMarks()" id="saveMarksBtn">Save Marks</button>
-            \` : \`
+            ` : `
               <button type="button" class="btn btn-secondary" onclick="window.location.href='/assessments'">Cancel</button>
               <button type="submit" class="btn btn-primary" id="submitBtn">Submit Assessment</button>
-            \`}
+            `}
           </div>
         </form>
       </div>
     </main>
 
     <script>
-      const templateId = '\${templateId}';
-      const enrolmentId = '\${enrolmentId}';
-      const isMarking = \${isMarking};
-      const entryId = '\${entry?.id || ''}';
+      const templateId = '${templateId}';
+      const enrolmentId = '${enrolmentId}';
+      const isMarking = ${isMarking};
+      const entryId = '${entry?.id || ''}';
 
       async function submitQuiz(e) {
         e.preventDefault();
@@ -8862,7 +8862,7 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
          width: 1.1rem; height: 1.1rem;
       }
     </style>
-  \`));
+  `));
 }
 async function tutorMarkAssessmentEntry(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!identity.user || !isStaffRole(identity.user.role)) return json({ error: "Forbidden" }, 403);
