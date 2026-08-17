@@ -1,0 +1,10 @@
+- [x] Create `0015_it_tickets.sql` migration file
+- [x] Update `src/index.ts` with `it_admin` role
+- [x] Add `ITTicket` and `ITTicketComment` interfaces
+- [x] Update `renderSidebar` with IT Tickets link
+- [x] Add `GET /it-tickets` route handler
+- [x] Add `POST /it-tickets` route handler
+- [x] Add `GET /it-tickets/:id` route handler
+- [x] Add `POST /it-tickets/:id` route handler
+- [x] Apply local and remote DB migrations
+- [x] Verify TypeScript build
