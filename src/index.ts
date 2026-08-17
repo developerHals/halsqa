@@ -8426,17 +8426,17 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
       const div = document.createElement('div');
       div.className = 'lwfb-question-card';
       div.dataset.questionId = 'new_' + Date.now();
-      div.innerHTML = `
+      div.innerHTML = \`
         <div class="lwfb-question-header">
-          <span class="lwfb-q-number">${idx + 1}</span>
+          <span class="lwfb-q-number">\${idx + 1}</span>
           <select class="lwfb-q-type-select" onchange="updateQuestionType(this)">
-            ${questionTypes.map(qt => `<option value="${qt.value}" ${type === qt.value ? "selected" : ""}>${qt.label}</option>`).join("")}
+            \${questionTypes.map(qt => \`<option value="\${qt.value}" \${type === qt.value ? "selected" : ""}>\${qt.label}</option>\`).join("")}
           </select>
-          <label class="lwfb-required-label" style="${isSection ? 'display:none' : ''}">
+          <label class="lwfb-required-label" style="\${isSection ? 'display:none' : ''}">
             <input type="checkbox" class="lwfb-q-required" checked>
             Required
           </label>
-          <div class="lwfb-pts-wrap" style="${activeTmplType !== 'quiz' || isSection ? 'display:none' : ''}">
+          <div class="lwfb-pts-wrap" style="\${activeTmplType !== 'quiz' || isSection ? 'display:none' : ''}">
             <label>Pts: <input type="number" class="lwfb-q-pts" value="1" min="0" style="width:50px"></label>
           </div>
           <div class="lwfb-reorder-btns">
@@ -8446,19 +8446,19 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
            <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>
         </div>
         <div class="lwfb-question-body">
-          <div class="lwfb-section-body ${isSection ? '' : 'hidden'}">
+          <div class="lwfb-section-body \${isSection ? '' : 'hidden'}">
             <input type="text" class="lwfb-q-text" value="" placeholder="Section heading" style="font-weight:600;font-size:1.05rem">
             <input type="text" class="lwfb-q-section-desc" value="" placeholder="Section description (optional)" style="margin-top:0.5rem;color:#64748b">
           </div>
-          <div class="lwfb-normal-body ${isSection ? 'hidden' : ''}">
+          <div class="lwfb-normal-body \${isSection ? 'hidden' : ''}">
             <input type="text" class="lwfb-q-text" value="" placeholder="Enter your question">
-            <div class="lwfb-options-section ${needsOptions ? "" : "hidden"}">
+            <div class="lwfb-options-section \${needsOptions ? "" : "hidden"}">
               <label class="lwfb-options-label">Options (one per line, prefix correct with *):</label>
               <textarea class="lwfb-q-options" rows="3" placeholder="*Option A (correct)\\nOption B\\nOption C"></textarea>
             </div>
           </div>
         </div>
-      `;
+      \`;
       document.getElementById('questionsContainer').appendChild(div);
       updateNumbers();
     }
@@ -8482,7 +8482,7 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
       btn.closest('.lwfb-question-card').remove();
       updateNumbers();
       if (document.querySelectorAll('.lwfb-question-card').length === 0) {
-        document.getElementById('questionsContainer').innerHTML = `<div class="lwfb-empty-state" id="emptyQuestionsMsg">No questions yet. Click the + button below to add your first question.</div>`;
+        document.getElementById('questionsContainer').innerHTML = \`<div class="lwfb-empty-state" id="emptyQuestionsMsg">No questions yet. Click the + button below to add your first question.</div>\`;
       }
     }
     
