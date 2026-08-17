@@ -593,6 +593,12 @@ export default {
 
     if (url.pathname === "/assessments") return renderAssessmentsPageHandler(request, env, identity);
     if (url.pathname === "/tracker") return renderTrackerPageHandler(request, env, identity);
+    if (url.pathname.startsWith("/assessments/quiz/")) return renderQuizPageHandler(request, env, identity);
+
+    // Assessment Templates Builder
+    if (url.pathname === "/assessments/templates/build" || url.pathname.match(/^\/assessments\/templates\/[^/]+\/build$/)) {
+      return renderAssessmentTemplateBuilder(request, env, identity);
+    }
 
     // Assessment Templates API
     if (url.pathname === "/api/assessment/templates" && request.method === "GET") return listAssessmentTemplates(request, env, identity);
@@ -606,6 +612,7 @@ export default {
 
     // Assessment Entries API
     if (url.pathname === "/api/assessment/entries" && request.method === "POST") return submitAssessmentEntry(request, env, identity);
+    if (url.pathname.match(/^\/api\/assessment\/entries\/[^/]+\/mark$/) && request.method === "POST") return tutorMarkAssessmentEntry(request, env, identity);
     if (url.pathname === "/api/assessment/entries" && request.method === "GET") return listAssessmentEntries(request, env, identity);
 
     // Tracker API
@@ -6810,6 +6817,7 @@ async function saveAssessmentTemplate(request: Request, env: Env, identity: Iden
   const body = await request.json() as {
     title?: string; description?: string; template_type?: string;
     category?: string; pass_percentage?: number;
+    course_id?: string; apply_to_all?: number;
     questions?: Array<{ question_text: string; question_type: string; options?: unknown; points?: number; correct_answer?: string; has_text_entry?: boolean; text_entry_label?: string; is_required?: boolean; sort_order?: number }>;
   };
   if (!body.title?.trim()) return json({ error: "title required" }, 400);
@@ -6819,9 +6827,9 @@ async function saveAssessmentTemplate(request: Request, env: Env, identity: Iden
   const questions = body.questions ?? [];
   for (const q of questions) maxPoints += (q.points ?? 0);
   await env.esol_marking_db.prepare(`
-    INSERT INTO assessment_templates (id, title, description, template_type, category, max_points, pass_percentage, is_active, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
-  `).bind(tmplId, body.title.trim(), body.description?.trim() ?? null, type, body.category?.trim() ?? "general", maxPoints, body.pass_percentage ?? 70, identity.user.id).run();
+    INSERT INTO assessment_templates (id, title, description, template_type, category, max_points, pass_percentage, is_active, created_by, course_id, apply_to_all)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+  `).bind(tmplId, body.title.trim(), body.description?.trim() ?? null, type, body.category?.trim() ?? "general", maxPoints, body.pass_percentage ?? 70, identity.user.id, body.course_id ?? null, body.apply_to_all ?? 0).run();
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     await env.esol_marking_db.prepare(`
@@ -6834,10 +6842,27 @@ async function saveAssessmentTemplate(request: Request, env: Env, identity: Iden
 
 async function updateAssessmentTemplate(request: Request, env: Env, identity: Identity, id: string): Promise<Response> {
   if (!identity.user || !isStaffRole(identity.user.role)) return json({ error: "Forbidden" }, 403);
-  const body = await request.json() as { title?: string; description?: string; category?: string; pass_percentage?: number; is_active?: number };
+  const body = await request.json() as { title?: string; description?: string; category?: string; pass_percentage?: number; is_active?: number; course_id?: string; apply_to_all?: number; questions?: any[] };
+  let maxPoints = 0;
+  if (body.questions) {
+    for (const q of body.questions) maxPoints += (q.points ?? 0);
+  }
   await env.esol_marking_db.prepare(`
-    UPDATE assessment_templates SET title=COALESCE(?,title), description=COALESCE(?,description), category=COALESCE(?,category), pass_percentage=COALESCE(?,pass_percentage), is_active=COALESCE(?,is_active), updated_at=CURRENT_TIMESTAMP WHERE id=?
-  `).bind(body.title ?? null, body.description ?? null, body.category ?? null, body.pass_percentage ?? null, body.is_active ?? null, id).run();
+    UPDATE assessment_templates SET title=COALESCE(?,title), description=COALESCE(?,description), category=COALESCE(?,category), pass_percentage=COALESCE(?,pass_percentage), is_active=COALESCE(?,is_active), course_id=COALESCE(?,course_id), apply_to_all=COALESCE(?,apply_to_all), max_points=COALESCE(?,max_points), updated_at=CURRENT_TIMESTAMP WHERE id=?
+  `).bind(body.title ?? null, body.description ?? null, body.category ?? null, body.pass_percentage ?? null, body.is_active ?? null, body.course_id ?? null, body.apply_to_all ?? null, body.questions ? maxPoints : null, id).run();
+  
+  if (body.questions) {
+    // Delete old questions
+    await env.esol_marking_db.prepare("DELETE FROM assessment_template_questions WHERE template_id=?").bind(id).run();
+    // Insert new questions
+    for (let i = 0; i < body.questions.length; i++) {
+      const q = body.questions[i];
+      await env.esol_marking_db.prepare(`
+        INSERT INTO assessment_template_questions (id, template_id, question_text, question_type, options, points, correct_answer, has_text_entry, text_entry_label, is_required, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(generateId(), id, q.question_text, q.question_type ?? "text", q.options ? JSON.stringify(q.options) : null, q.points ?? 0, q.correct_answer ?? null, q.has_text_entry ? 1 : 0, q.text_entry_label ?? null, q.is_required ? 1 : 0, q.sort_order ?? i).run();
+    }
+  }
   return json({ success: true });
 }
 
@@ -6871,12 +6896,21 @@ async function submitAssessmentEntry(request: Request, env: Env, identity: Ident
   const answers = body.answers ?? {};
   let earned = 0;
   let maxScore = 0;
+  let needsManualMarking = false;
+  
   for (const q of questions) {
     maxScore += q.points;
-    if (q.correct_answer && answers[q.id] === q.correct_answer) earned += q.points;
-    else if (!q.correct_answer && q.points > 0 && answers[q.id]) earned += q.points; // manual score later
+    if (q.question_type === 'yes_no' || q.question_type === 'single_choice' || q.question_type === 'multiple_choice' || q.question_type === 'dropdown') {
+       if (q.correct_answer && answers[q.id] === q.correct_answer) earned += q.points;
+    } else {
+       if (q.points > 0) {
+         needsManualMarking = true;
+         // Manual score is not awarded initially unless answers object explicitly has a tutor score, but that's for update
+       }
+    }
   }
   const percentage = maxScore > 0 ? Math.round((earned / maxScore) * 100) : 0;
+  const status = (tmpl.template_type === 'quiz' && needsManualMarking) ? 'pending_marking' : 'completed';
 
   // Upsert entry
   const existing = await env.esol_marking_db.prepare("SELECT id FROM assessment_entries WHERE template_id=? AND enrolment_id=?").bind(body.template_id, body.enrolment_id).first<{ id: string }>();
@@ -6885,13 +6919,13 @@ async function submitAssessmentEntry(request: Request, env: Env, identity: Ident
 
   await env.esol_marking_db.prepare(`
     INSERT INTO assessment_entries (id, template_id, enrolment_id, learner_id, course_instance_id, status, score_earned, max_score, percentage, answers_json, completed_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(template_id, enrolment_id) DO UPDATE SET
-      status='completed', score_earned=excluded.score_earned, max_score=excluded.max_score,
+      status=excluded.status, score_earned=excluded.score_earned, max_score=excluded.max_score,
       percentage=excluded.percentage, answers_json=excluded.answers_json, completed_at=excluded.completed_at, updated_at=CURRENT_TIMESTAMP
-  `).bind(entryId, body.template_id, body.enrolment_id, enrolment.learner_id, enrolment.course_instance_id, earned, maxScore, percentage, JSON.stringify(answers), now).run();
+  `).bind(entryId, body.template_id, body.enrolment_id, enrolment.learner_id, enrolment.course_instance_id, status, earned, maxScore, percentage, JSON.stringify(answers), now).run();
 
-  return json({ success: true, id: entryId, score_earned: earned, max_score: maxScore, percentage });
+  return json({ success: true, id: entryId, score_earned: earned, max_score: maxScore, percentage, status });
 }
 
 async function listAssessmentEntries(request: Request, env: Env, identity: Identity): Promise<Response> {
@@ -7240,8 +7274,9 @@ function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTem
               const entry = entryMap.get(t.id + "_" + en.id);
               if (!entry) return `<td><span class="meta-chip chip-grey">—</span></td>`;
               const pct = entry.percentage;
-              const cls = pct >= (t.pass_percentage ?? 70) ? "chip-green" : "chip-amber";
-              return `<td><span class="meta-chip ${cls}">${entry.score_earned}/${entry.max_score}</span></td>`;
+              let cls = pct >= (t.pass_percentage ?? 70) ? "chip-green" : "chip-amber";
+              if (entry.status === 'pending_marking') cls = "chip-amber"; // override for pending marking
+              return `<td><a href="/assessments/quiz/${entry.template_id}?enrolmentId=${entry.enrolment_id}" class="meta-chip ${cls}" style="text-decoration:none" title="${entry.status === 'pending_marking' ? 'Pending Tutor Marking' : 'View Submission'}">${entry.score_earned}/${entry.max_score}</a></td>`;
             }).join("");
             return `<tr>
               <td><strong>${escapeHtml(en.student_label)}</strong></td>
@@ -7266,7 +7301,7 @@ function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTem
               <button class="btn btn-primary" type="submit">Search</button>
               ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncClass()">Sync Class</button>` : ""}
             </form>
-            ${isAdmin ? `<button class="btn btn-pink" onclick="openTemplateBuilder()">+ New Template</button>` : ""}
+            ${isAdmin ? `<a class="btn btn-pink" href="/assessments/templates/build">+ New Template</a>` : ""}
           </div>
           ${syncMsg ? `<div class="alert alert-info">${escapeHtml(syncMsg)}</div>` : ""}
           ${courseInstanceId && enrolments.length === 0 ? `<div class="alert alert-warn">No enrolments found for course ID <strong>${escapeHtml(courseInstanceId)}</strong>. Try syncing first.</div>` : ""}
@@ -8114,3 +8149,771 @@ ${ragSelector("clos_achieved_rag", tracker.clos_achieved_rag)}
 
 
 
+async function renderAssessmentTemplateBuilder(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const isAdmin = isStaffRole(identity.user!.role);
+  if (!isAdmin) return htmlResponse(renderForbiddenPage(identity), 403);
+  const url = new URL(request.url);
+  
+  // Extract template ID if in edit mode (e.g. /assessments/templates/123/build)
+  const match = url.pathname.match(/^\/assessments\/templates\/([^/]+)\/build$/);
+  const templateId = match ? match[1] : null;
+  let template: TemplateWithQuestions | null = null;
+  
+  if (templateId) {
+    const t = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE id=?").bind(templateId).first<AssessmentTemplate>();
+    if (t) {
+      const q = await env.esol_marking_db.prepare("SELECT * FROM assessment_template_questions WHERE template_id=? ORDER BY sort_order ASC").bind(templateId).all<TemplateQuestion>();
+      template = { ...t, questions: q.results, commentCategories: [], structure: "" } as unknown as TemplateWithQuestions;
+    }
+  }
+
+  return htmlResponse(renderAssessmentTemplateBuilderPage(identity, template));
+}
+
+function renderAssessmentTemplateBuilderPage(identity: Identity, template: any | null): string {
+  const isEdit = !!template;
+  const templateId = template?.id ?? "";
+  const title = template?.title ?? "";
+  const description = template?.description ?? "";
+  const tmplType = template?.template_type ?? "quiz"; // default to quiz
+  const passPercentage = template?.pass_percentage ?? 70;
+  const courseId = template?.course_id ?? "";
+  const applyToAll = template?.apply_to_all === 1;
+  let questions = template?.questions ?? [];
+
+  const questionTypes = [
+    { value: "yes_no", label: "Yes/No", icon: "✔", desc: "Simple yes or no choice" },
+    { value: "single_choice", label: "MCQ (One Answer)", icon: "○", desc: "Multiple choice, single select" },
+    { value: "multiple_choice", label: "Choices (Multiple)", icon: "☐", desc: "Tick multiple options" },
+    { value: "dropdown", label: "Dropdown", icon: "▼", desc: "Select from dropdown" },
+    { value: "text", label: "Text", icon: "T", desc: "Short text answer" },
+    { value: "textarea", label: "Long Text", icon: "¶", desc: "Paragraph response" },
+    { value: "date", label: "Date", icon: "📅", desc: "Date picker" },
+    { value: "number", label: "Number", icon: "#", desc: "Numeric input" },
+    { value: "section", label: "Section Header", icon: "▬", desc: "Heading & description divider" },
+  ];
+
+  const renderQuestionCard = (q: any, index: number) => {
+    const isSection = q.question_type === "section";
+    const cardClass = "lwfb-question-card";
+    const needsOptions = ["single_choice", "multiple_choice", "dropdown"].includes(q.question_type);
+    
+    // Parse options for MCQ
+    let parsedOptions = [];
+    if (q.options) {
+      try {
+        parsedOptions = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
+      } catch (e) {
+        parsedOptions = [];
+      }
+    }
+
+    return \`
+    <div class="\${cardClass}" data-question-id="\${q.id}" data-sort-order="\${q.sort_order}">
+      <div class="lwfb-question-header">
+        <span class="lwfb-q-number">\${index + 1}</span>
+        <select class="lwfb-q-type-select" onchange="updateQuestionType(this)">
+          \${questionTypes.map(t => \`<option value="\${t.value}" \${q.question_type === t.value ? "selected" : ""}>\${t.label}</option>\`).join("")}
+        </select>
+        <label class="lwfb-required-label" style="\${isSection ? 'display:none' : ''}">
+          <input type="checkbox" class="lwfb-q-required" \${q.is_required ? "checked" : ""}>
+          Required
+        </label>
+        <div class="lwfb-pts-wrap" style="\${tmplType !== 'quiz' || isSection ? 'display:none' : ''}">
+          <label>Pts: <input type="number" class="lwfb-q-pts" value="\${q.points || 1}" min="0" style="width:50px"></label>
+        </div>
+        <div class="lwfb-reorder-btns">
+           <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">▲</button>
+           <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'down')" title="Move down">▼</button>
+         </div>
+         <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>
+      </div>
+      <div class="lwfb-question-body">
+        <div class="lwfb-section-body \${isSection ? '' : 'hidden'}">
+          <input type="text" class="lwfb-q-text" value="\${escapeHtml(q.question_text)}" placeholder="Section heading" style="font-weight:600;font-size:1.05rem">
+          <input type="text" class="lwfb-q-section-desc" value="\${escapeHtml(q.text_entry_label || '')}" placeholder="Section description (optional)" style="margin-top:0.5rem;color:#64748b">
+        </div>
+        <div class="lwfb-normal-body \${isSection ? 'hidden' : ''}">
+          <input type="text" class="lwfb-q-text" value="\${escapeHtml(q.question_text)}" placeholder="Enter your question">
+          <div class="lwfb-options-section \${needsOptions ? "" : "hidden"}">
+            <label class="lwfb-options-label">Options (one per line, prefix correct with *):</label>
+            <textarea class="lwfb-q-options" rows="3" placeholder="*Option A (correct)\\nOption B\\nOption C">\${parsedOptions.map((o: any) => (o.correct || o.value === q.correct_answer ? '*' : '') + escapeHtml(o.label)).join("\\n")}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>\`;
+  };
+
+  const questionsHtml = questions.length > 0
+    ? questions.map((q: any, i: number) => renderQuestionCard(q, i)).join("")
+    : \`<div class="lwfb-empty-state" id="emptyQuestionsMsg">No questions yet. Click the + button below to add your first question.</div>\`;
+
+  return pageShell(isEdit ? "Edit Assessment Template" : "New Assessment Template", \`
+    <main class="lwfb-popup-overlay" id="templateBuilderPopup" style="display:flex;">
+      <div class="lwfb-popup-container">
+        <div class="lwfb-popup-header">
+          <div>
+            <p class="lwfb-eyebrow">Assessment Template Builder</p>
+            <h1 class="lwfb-title">\${isEdit ? "Edit Template" : "Create New Template"}</h1>
+          </div>
+          <button type="button" class="lwfb-close-btn" onclick="window.location.href='/assessments'" title="Close">×</button>
+        </div>
+
+        <div class="lwfb-popup-content">
+          <div class="lwfb-section-card" id="tmplTypeSelection" style="\${isEdit ? 'display:none;' : ''}">
+             <h3 class="lwfb-section-title">What would you like to create?</h3>
+             <div style="display:flex;gap:1.5rem;margin-top:1rem;">
+               <label style="cursor:pointer;padding:1rem;border:2px solid #e2e8f0;border-radius:8px;flex:1;text-align:center;" onclick="selectTmplType('form', this)">
+                 <div style="font-size:2rem;margin-bottom:0.5rem">📝</div>
+                 <strong>Form</strong>
+                 <div style="font-size:0.875rem;color:#64748b;margin-top:0.5rem">No points or scores.</div>
+                 <input type="radio" name="ui_tmplType" value="tracker" style="display:none">
+               </label>
+               <label style="cursor:pointer;padding:1rem;border:2px solid var(--primary);background:#f8fafc;border-radius:8px;flex:1;text-align:center;" onclick="selectTmplType('quiz', this)" id="defaultQuizType">
+                 <div style="font-size:2rem;margin-bottom:0.5rem">🎯</div>
+                 <strong>Quiz</strong>
+                 <div style="font-size:0.875rem;color:#64748b;margin-top:0.5rem">Includes points and auto-marking.</div>
+                 <input type="radio" name="ui_tmplType" value="quiz" checked style="display:none">
+               </label>
+             </div>
+          </div>
+
+          <!-- Template Settings -->
+          <div class="lwfb-section-card">
+            <h3 class="lwfb-section-title">Template Settings</h3>
+            <div style="margin-bottom:1rem;">
+              <input type="text" id="templateTitle" class="lwfb-title-input" value="\${escapeHtml(title)}" placeholder="Template Title *">
+            </div>
+            <div style="margin-bottom:1rem;">
+              <textarea id="templateDescription" class="lwfb-desc-input" rows="2" placeholder="Template description (optional)">\${escapeHtml(description)}</textarea>
+            </div>
+            
+            <div style="display:flex;gap:1rem;margin-bottom:1rem;align-items:center;">
+              <div style="flex:1;">
+                <label class="form-label" style="font-weight:600;display:block;margin-bottom:0.25rem;">Course ID</label>
+                <input type="text" id="templateCourseId" class="form-input" value="\${escapeHtml(courseId)}" placeholder="e.g. 10508" \${applyToAll ? 'disabled' : ''} onblur="fetchCourseTitle()">
+              </div>
+              <div style="flex:1;display:flex;align-items:center;padding-top:1.5rem;">
+                <label style="display:flex;align-items:center;gap:0.5rem;font-weight:600;cursor:pointer;">
+                  <input type="checkbox" id="templateApplyToAll" \${applyToAll ? 'checked' : ''} onchange="toggleApplyToAll()">
+                  Apply to all classes & students
+                </label>
+              </div>
+            </div>
+            <div style="margin-bottom:1rem;" id="courseTitleWrap" class="\${applyToAll ? 'hidden' : ''}">
+              <label class="form-label" style="font-weight:600;display:block;margin-bottom:0.25rem;">Course Title (Auto-populated)</label>
+              <input type="text" id="templateCourseTitle" class="form-input" placeholder="Will populate from LearnerTrack..." readonly style="background:#f1f5f9;">
+            </div>
+
+            <div class="form-group" id="tmplPassGroup" style="\${tmplType === 'tracker' ? 'display:none;' : ''}">
+              <label class="form-label" style="font-weight:600;display:block;margin-bottom:0.25rem;">Pass Percentage (%)</label>
+              <input class="form-input" id="tmplPass" type="number" value="\${passPercentage}" min="0" max="100">
+            </div>
+          </div>
+
+          <!-- Fixed Fields Info -->
+          <div class="lwfb-section-card" style="background:#f0fdfa;border:1px solid #ccfbf1;">
+             <h4 style="margin:0 0 0.5rem;color:#0f766e;">Standard Fields Included</h4>
+             <p style="margin:0;font-size:0.875rem;color:#0f766e;">The following fields will automatically be present when a student opens this assessment: <strong>Course ID, Course Title, Student ID, Student Name</strong>.</p>
+          </div>
+
+          <!-- Questions Section -->
+          <div class="lwfb-section-card">
+            <h3 class="lwfb-section-title">Questions</h3>
+            <div id="questionsContainer" class="lwfb-questions-container">
+              \${questionsHtml}
+            </div>
+            <div class="lwfb-add-wrapper" style="position:relative;">
+              <button type="button" class="lwfb-add-btn" onclick="showQuestionTypePicker()">
+                <span class="plus-icon">+</span>
+                <span>Add Question</span>
+              </button>
+            </div>
+
+            <!-- Question Type Picker -->
+            <div id="questionTypePicker" class="lwfb-type-picker hidden">
+              <div class="picker-header">
+                <span>Select Question Type</span>
+                <button type="button" class="close-picker" onclick="hideQuestionTypePicker()">×</button>
+              </div>
+              <div class="picker-grid">
+                \${questionTypes.map(t => \`
+                  <div class="type-option" onclick="addQuestion('\${t.value}')">
+                    <span class="type-icon">\${t.icon}</span>
+                    <span class="type-label">\${t.label}</span>
+                    <span class="type-desc">\${t.desc}</span>
+                  </div>
+                \`).join("")}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="lwfb-popup-footer">
+          <button type="button" class="btn btn-secondary" onclick="window.location.href='/assessments'">Cancel</button>
+          <button type="button" class="btn btn-primary" id="saveTemplateBtn" onclick="saveTemplate()">\${isEdit ? "Update Template" : "Save Template"}</button>
+        </div>
+      </div>
+    </main>
+    <script>
+    let activeTmplType = '\${tmplType}';
+    let questionTypes = \${JSON.stringify(questionTypes)};
+    const isEdit = \${isEdit};
+    const templateId = '\${templateId}';
+
+    function selectTmplType(type, el) {
+      activeTmplType = type === 'quiz' ? 'quiz' : 'tracker';
+      const labels = el.parentElement.querySelectorAll('label');
+      labels.forEach(l => {
+        l.style.borderColor = '#e2e8f0';
+        l.style.background = 'transparent';
+      });
+      el.style.borderColor = 'var(--primary)';
+      el.style.background = '#f8fafc';
+      
+      document.getElementById('tmplPassGroup').style.display = activeTmplType === 'quiz' ? 'block' : 'none';
+      document.querySelectorAll('.lwfb-pts-wrap').forEach(pts => {
+        if (!pts.closest('.lwfb-question-card').querySelector('.lwfb-q-type-select').value.includes('section')) {
+           pts.style.display = activeTmplType === 'quiz' ? 'block' : 'none';
+        }
+      });
+    }
+
+    function toggleApplyToAll() {
+      const apply = document.getElementById('templateApplyToAll').checked;
+      const courseIdInput = document.getElementById('templateCourseId');
+      const courseTitleWrap = document.getElementById('courseTitleWrap');
+      if (apply) {
+        courseIdInput.disabled = true;
+        courseIdInput.value = '';
+        courseTitleWrap.classList.add('hidden');
+      } else {
+        courseIdInput.disabled = false;
+        courseTitleWrap.classList.remove('hidden');
+      }
+    }
+
+    async function fetchCourseTitle() {
+      const courseId = document.getElementById('templateCourseId').value.trim();
+      if (!courseId || document.getElementById('templateApplyToAll').checked) return;
+      try {
+        const r = await fetch('/api/courses/learnertrack?courseinstanceid=' + encodeURIComponent(courseId));
+        if (r.ok) {
+           const data = await r.json();
+           if (data && data.length > 0) {
+              document.getElementById('templateCourseTitle').value = data[0].CourseTitle || '';
+           } else {
+              document.getElementById('templateCourseTitle').value = 'Course not found';
+           }
+        }
+      } catch(e) {}
+    }
+    
+    // UI Helpers
+    function showQuestionTypePicker() { document.getElementById('questionTypePicker').classList.remove('hidden'); }
+    function hideQuestionTypePicker() { document.getElementById('questionTypePicker').classList.add('hidden'); }
+    
+    function addQuestion(type) {
+      hideQuestionTypePicker();
+      const emptyMsg = document.getElementById('emptyQuestionsMsg');
+      if (emptyMsg) emptyMsg.remove();
+      
+      const idx = document.querySelectorAll('.lwfb-question-card').length;
+      const t = questionTypes.find(x => x.value === type);
+      const isSection = type === 'section';
+      const needsOptions = ['single_choice', 'multiple_choice', 'dropdown'].includes(type);
+      
+      const div = document.createElement('div');
+      div.className = 'lwfb-question-card';
+      div.dataset.questionId = 'new_' + Date.now();
+      div.innerHTML = \`
+        <div class="lwfb-question-header">
+          <span class="lwfb-q-number">\${idx + 1}</span>
+          <select class="lwfb-q-type-select" onchange="updateQuestionType(this)">
+            \${questionTypes.map(qt => \`<option value="\${qt.value}" \${type === qt.value ? "selected" : ""}>\${qt.label}</option>\`).join("")}
+          </select>
+          <label class="lwfb-required-label" style="\${isSection ? 'display:none' : ''}">
+            <input type="checkbox" class="lwfb-q-required" checked>
+            Required
+          </label>
+          <div class="lwfb-pts-wrap" style="\${activeTmplType !== 'quiz' || isSection ? 'display:none' : ''}">
+            <label>Pts: <input type="number" class="lwfb-q-pts" value="1" min="0" style="width:50px"></label>
+          </div>
+          <div class="lwfb-reorder-btns">
+             <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">▲</button>
+             <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'down')" title="Move down">▼</button>
+           </div>
+           <button type="button" class="lwfb-delete-q" onclick="deleteQuestion(this)" title="Remove question">×</button>
+        </div>
+        <div class="lwfb-question-body">
+          <div class="lwfb-section-body \${isSection ? '' : 'hidden'}">
+            <input type="text" class="lwfb-q-text" value="" placeholder="Section heading" style="font-weight:600;font-size:1.05rem">
+            <input type="text" class="lwfb-q-section-desc" value="" placeholder="Section description (optional)" style="margin-top:0.5rem;color:#64748b">
+          </div>
+          <div class="lwfb-normal-body \${isSection ? 'hidden' : ''}">
+            <input type="text" class="lwfb-q-text" value="" placeholder="Enter your question">
+            <div class="lwfb-options-section \${needsOptions ? "" : "hidden"}">
+              <label class="lwfb-options-label">Options (one per line, prefix correct with *):</label>
+              <textarea class="lwfb-q-options" rows="3" placeholder="*Option A (correct)\\nOption B\\nOption C"></textarea>
+            </div>
+          </div>
+        </div>
+      \`;
+      document.getElementById('questionsContainer').appendChild(div);
+      updateNumbers();
+    }
+    
+    function updateQuestionType(select) {
+      const card = select.closest('.lwfb-question-card');
+      const type = select.value;
+      const isSection = type === 'section';
+      const needsOptions = ['single_choice', 'multiple_choice', 'dropdown'].includes(type);
+      
+      card.querySelector('.lwfb-section-body').classList.toggle('hidden', !isSection);
+      card.querySelector('.lwfb-normal-body').classList.toggle('hidden', isSection);
+      card.querySelector('.lwfb-required-label').style.display = isSection ? 'none' : '';
+      card.querySelector('.lwfb-options-section').classList.toggle('hidden', !needsOptions);
+      
+      const ptsWrap = card.querySelector('.lwfb-pts-wrap');
+      if (ptsWrap) ptsWrap.style.display = (activeTmplType === 'quiz' && !isSection) ? 'block' : 'none';
+    }
+    
+    function deleteQuestion(btn) {
+      btn.closest('.lwfb-question-card').remove();
+      updateNumbers();
+      if (document.querySelectorAll('.lwfb-question-card').length === 0) {
+        document.getElementById('questionsContainer').innerHTML = \`<div class="lwfb-empty-state" id="emptyQuestionsMsg">No questions yet. Click the + button below to add your first question.</div>\`;
+      }
+    }
+    
+    function moveQuestion(btn, dir) {
+      const card = btn.closest('.lwfb-question-card');
+      if (dir === 'up' && card.previousElementSibling) {
+        card.parentNode.insertBefore(card, card.previousElementSibling);
+      } else if (dir === 'down' && card.nextElementSibling) {
+        card.parentNode.insertBefore(card.nextElementSibling, card);
+      }
+      updateNumbers();
+    }
+    
+    function updateNumbers() {
+      document.querySelectorAll('.lwfb-question-card').forEach((el, i) => {
+        el.querySelector('.lwfb-q-number').textContent = i + 1;
+      });
+    }
+
+    async function saveTemplate() {
+      const title = document.getElementById('templateTitle').value.trim();
+      if (!title) return alert('Please enter a Template Title');
+      const courseId = document.getElementById('templateCourseId').value.trim();
+      const applyToAll = document.getElementById('templateApplyToAll').checked;
+      if (!applyToAll && !courseId) return alert('Please enter a Course ID or check "Apply to all"');
+
+      const qs = [];
+      document.querySelectorAll('.lwfb-question-card').forEach((card, i) => {
+        const type = card.querySelector('.lwfb-q-type-select').value;
+        const isSection = type === 'section';
+        const qTextInputs = card.querySelectorAll('.lwfb-q-text');
+        const text = isSection ? qTextInputs[0].value.trim() : qTextInputs[1].value.trim();
+        if (!text) return;
+
+        let options = null;
+        let correct_answer = null;
+        if (['single_choice', 'multiple_choice', 'dropdown'].includes(type)) {
+          const optsText = card.querySelector('.lwfb-q-options').value;
+          const lines = optsText.split('\\n').map(l => l.trim()).filter(Boolean);
+          options = lines.map(l => { 
+            const isCorrect = l.startsWith('*'); 
+            const label = l.replace(/^\\*/, '').trim(); 
+            const val = label.toLowerCase().replace(/\\s+/g,'_');
+            if (isCorrect) correct_answer = val;
+            return { label, value: val, correct: isCorrect }; 
+          });
+        }
+        
+        const reqEl = card.querySelector('.lwfb-q-required');
+        const ptsEl = card.querySelector('.lwfb-q-pts');
+
+        qs.push({
+          question_text: text,
+          question_type: type,
+          options: options,
+          correct_answer: correct_answer,
+          is_required: isSection ? 0 : (reqEl && reqEl.checked ? 1 : 0),
+          points: isSection ? 0 : (ptsEl ? parseInt(ptsEl.value)||0 : 0),
+          sort_order: i,
+          text_entry_label: isSection ? card.querySelector('.lwfb-q-section-desc').value.trim() : null
+        });
+      });
+
+      if (qs.length === 0) return alert('Please add at least one question');
+
+      const payload = {
+        title,
+        description: document.getElementById('templateDescription').value.trim() || null,
+        template_type: activeTmplType,
+        category: 'general',
+        pass_percentage: parseInt(document.getElementById('tmplPass')?.value) || 70,
+        course_id: courseId,
+        apply_to_all: applyToAll ? 1 : 0,
+        questions: qs
+      };
+
+      const url = isEdit ? '/api/assessment/templates/' + templateId : '/api/assessment/templates';
+      document.getElementById('saveTemplateBtn').disabled = true;
+      document.getElementById('saveTemplateBtn').textContent = 'Saving...';
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const d = await r.json();
+        if (d.success) {
+          window.location.href = '/assessments';
+        } else {
+          alert('Error: ' + (d.error || 'Unknown error'));
+        }
+      } catch (e) {
+        alert('Network error');
+      } finally {
+        document.getElementById('saveTemplateBtn').disabled = false;
+        document.getElementById('saveTemplateBtn').textContent = isEdit ? 'Update Template' : 'Save Template';
+      }
+    }
+    
+    // Auto-fetch if not edit mode and courseId exists
+    if (!isEdit && !document.getElementById('templateApplyToAll').checked && document.getElementById('templateCourseId').value) {
+      fetchCourseTitle();
+    }
+    </script>
+  \`);
+}
+async function renderQuizPageHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return htmlResponse(renderForbiddenPage(identity), 403);
+  
+  const url = new URL(request.url);
+  const match = url.pathname.match(/^\/assessments\/quiz\/([^/]+)$/);
+  if (!match) return htmlResponse(pageShell("Not Found", "<h2>Not Found</h2>"), 404);
+  const templateId = match[1];
+  
+  const enrolmentId = url.searchParams.get("enrolmentId") || url.searchParams.get("enrolId");
+  if (!enrolmentId) return htmlResponse(pageShell("Error", "<h2>Enrolment ID required</h2>"), 400);
+
+  const isStaff = isStaffRole(identity.user.role);
+  
+  const tmpl = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE id=?").bind(templateId).first<AssessmentTemplate>();
+  if (!tmpl) return htmlResponse(pageShell("Not Found", "<h2>Template Not Found</h2>"), 404);
+
+  const enrolment = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE id=?").bind(enrolmentId).first<StudentEnrolment>();
+  if (!enrolment) return htmlResponse(pageShell("Not Found", "<h2>Enrolment Not Found</h2>"), 404);
+
+  const { results: questions } = await env.esol_marking_db.prepare("SELECT * FROM assessment_template_questions WHERE template_id=? ORDER BY sort_order").bind(templateId).all<AssessmentTemplateQuestion>();
+  
+  const entry = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE template_id=? AND enrolment_id=?").bind(templateId, enrolmentId).first<AssessmentEntry>();
+  
+  let answers = {};
+  if (entry && entry.answers_json) {
+    try {
+       answers = JSON.parse(entry.answers_json as string);
+    } catch(e) {}
+  }
+
+  // If student and already completed, show results
+  if (!isStaff && entry && entry.status === 'completed') {
+     return htmlResponse(pageShell(tmpl.title, `
+       <main class="dashboard-shell">
+         <div class="content" style="max-width:800px;margin:2rem auto;padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
+           <h1 style="margin-bottom:1rem">\${escapeHtml(tmpl.title)}</h1>
+           <div style="background:#f8fafc;padding:2rem;border-radius:12px;text-align:center">
+             <h2 style="color:var(--text);margin-bottom:.5rem">Assessment Completed</h2>
+             <p style="color:var(--muted)">Your score: <strong>\${entry.score_earned} / \${entry.max_score} (\${entry.percentage}%)</strong></p>
+             <button class="btn btn-primary" style="margin-top:1rem" onclick="window.location.href='/assessments'">Back to Assessments</button>
+           </div>
+         </div>
+       </main>
+     `));
+  }
+  
+  // If student and pending marking, show waiting
+  if (!isStaff && entry && entry.status === 'pending_marking') {
+     return htmlResponse(pageShell(tmpl.title, `
+       <main class="dashboard-shell">
+         <div class="content" style="max-width:800px;margin:2rem auto;padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
+           <h1 style="margin-bottom:1rem">\${escapeHtml(tmpl.title)}</h1>
+           <div style="background:#fffbeb;padding:2rem;border-radius:12px;text-align:center;border:1px solid #fcd34d">
+             <h2 style="color:#92400e;margin-bottom:.5rem">Pending Marking</h2>
+             <p style="color:#92400e">Your assessment has been submitted and is awaiting tutor marking for open questions.</p>
+             <button class="btn btn-primary" style="margin-top:1rem" onclick="window.location.href='/assessments'">Back to Assessments</button>
+           </div>
+         </div>
+       </main>
+     `));
+  }
+
+  // Render player (student taking it, or tutor viewing/marking it)
+  const isMarking = isStaff && entry;
+  
+  const renderQ = (q: AssessmentTemplateQuestion, index: number) => {
+    let opts = [];
+    if (q.options) {
+      try { opts = typeof q.options === 'string' ? JSON.parse(q.options) : q.options; } catch(e) {}
+    }
+    const val = answers[q.id] ?? '';
+    let inputHtml = '';
+    
+    if (q.question_type === 'section') {
+       return \`
+         <div class="quiz-section-header" style="margin-top:2rem;margin-bottom:1rem">
+           <h3 style="font-size:1.25rem;color:var(--text);border-bottom:2px solid var(--primary);padding-bottom:.5rem">\${escapeHtml(q.question_text)}</h3>
+           \${q.text_entry_label ? \`<p style="color:var(--muted);font-size:.9rem;margin-top:.25rem">\${escapeHtml(q.text_entry_label)}</p>\` : ''}
+         </div>
+       \`;
+    }
+
+    if (q.question_type === 'yes_no') {
+      inputHtml = \`
+        <div class="quiz-options" style="display:flex;gap:1rem;margin-top:.5rem">
+          <label><input type="radio" name="q_\${q.id}" value="yes" \${val==='yes'?'checked':''} \${isMarking?'disabled':''}> Yes</label>
+          <label><input type="radio" name="q_\${q.id}" value="no" \${val==='no'?'checked':''} \${isMarking?'disabled':''}> No</label>
+        </div>
+      \`;
+    } else if (q.question_type === 'single_choice') {
+      inputHtml = \`<div class="quiz-options" style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">\` + opts.map(o => \`
+        <label><input type="radio" name="q_\${q.id}" value="\${escapeHtml(o.value)}" \${val===o.value?'checked':''} \${isMarking?'disabled':''}> \${escapeHtml(o.label)}</label>
+      \`).join('') + \`</div>\`;
+    } else if (q.question_type === 'multiple_choice') {
+      const vals = val ? val.split(',') : [];
+      inputHtml = \`<div class="quiz-options" style="display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem">\` + opts.map(o => \`
+        <label><input type="checkbox" name="q_\${q.id}" value="\${escapeHtml(o.value)}" \${vals.includes(o.value)?'checked':''} \${isMarking?'disabled':''}> \${escapeHtml(o.label)}</label>
+      \`).join('') + \`</div>\`;
+    } else if (q.question_type === 'textarea') {
+      inputHtml = \`<textarea name="q_\${q.id}" class="form-input" rows="4" style="margin-top:.5rem" \${isMarking?'disabled':''}>\${escapeHtml(val)}</textarea>\`;
+    } else {
+      inputHtml = \`<input type="text" name="q_\${q.id}" class="form-input" style="margin-top:.5rem" value="\${escapeHtml(val)}" \${isMarking?'disabled':''}>\`;
+    }
+    
+    let tutorMarkingHtml = '';
+    if (isMarking) {
+       const isAutoMarked = ['yes_no', 'single_choice', 'multiple_choice', 'dropdown'].includes(q.question_type);
+       if (!isAutoMarked && q.points > 0) {
+          // Open question requiring points
+          // Find if points already awarded manually
+          const isAwarded = answers['manual_score_'+q.id] === 1;
+          tutorMarkingHtml = \`
+            <div style="margin-top:1rem;padding:1rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;display:flex;align-items:center;gap:1rem;">
+              <span style="font-weight:600;color:#166534;">Tutor Marking:</span>
+              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;background:#fff;padding:.5rem 1rem;border-radius:20px;border:1px solid #166534;">
+                <input type="checkbox" class="tutor-point-cb" data-qid="\${q.id}" data-points="\${q.points}" \${isAwarded ? 'checked' : ''} onchange="togglePoint(this)">
+                <span style="color:#166534;font-weight:600">Point (\${q.points})</span>
+              </label>
+            </div>
+          \`;
+       } else if (isAutoMarked && q.points > 0) {
+          const correct = q.correct_answer && val === q.correct_answer;
+          tutorMarkingHtml = \`
+            <div style="margin-top:1rem;padding:.5rem 1rem;background:\${correct ? '#f0fdf4' : '#fef2f2'};border:1px solid \${correct ? '#bbf7d0' : '#fecaca'};border-radius:8px;">
+               <span style="color:\${correct ? '#166534' : '#991b1b'};font-weight:600;">\${correct ? 'Correct' : 'Incorrect'} (\${correct ? q.points : 0} / \${q.points} pts)</span>
+            </div>
+          \`;
+       }
+    }
+
+    return \`
+      <div class="quiz-question" style="margin-bottom:2rem;padding-bottom:1rem;border-bottom:1px solid #e2e8f0">
+        <div class="quiz-question-text" style="font-size:1.1rem;font-weight:600;color:var(--text)">
+          \${index + 1}. \${escapeHtml(q.question_text)}
+          \${q.points > 0 ? \`<span style="font-size:.8rem;color:#7c3aed;background:#f5f3ff;padding:.15rem .45rem;border-radius:10px;margin-left:.5rem;vertical-align:middle">\${q.points} pts</span>\` : ''}
+          \${q.is_required && !isMarking ? '<span style="color:#ef4444;margin-left:.25rem">*</span>' : ''}
+        </div>
+        \${inputHtml}
+        \${tutorMarkingHtml}
+      </div>
+    \`;
+  };
+
+  return htmlResponse(pageShell(tmpl.title, \`
+    <main class="dashboard-shell">
+      <div class="content" style="max-width:800px;margin:2rem auto;padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
+        <h1 style="margin-bottom:.5rem;color:var(--text)">\${escapeHtml(tmpl.title)}</h1>
+        <p style="color:var(--muted);margin-bottom:2rem">\${escapeHtml(tmpl.description || '')}</p>
+        
+        <!-- Fixed Info -->
+        <div style="display:flex;gap:1.5rem;margin-bottom:2rem;padding:1rem;background:#f8fafc;border-radius:8px">
+          <div>
+            <span style="font-size:.85rem;color:var(--muted);display:block">Course</span>
+            <strong style="color:var(--text)">\${escapeHtml(enrolment.course_instance_id)} - \${escapeHtml(enrolment.course_title)}</strong>
+          </div>
+          <div>
+            <span style="font-size:.85rem;color:var(--muted);display:block">Student</span>
+            <strong style="color:var(--text)">\${escapeHtml(enrolment.student_label)} (\${escapeHtml(enrolment.learner_id)})</strong>
+          </div>
+        </div>
+
+        <form id="quizForm" onsubmit="submitQuiz(event)">
+          \${questions.map((q, i) => renderQ(q, i)).join('')}
+          
+          <div style="margin-top:2rem;display:flex;gap:1rem;justify-content:flex-end">
+            \${isMarking ? \`
+              <button type="button" class="btn btn-secondary" onclick="window.location.href='/assessments'">Close</button>
+              <button type="button" class="btn btn-primary" onclick="saveTutorMarks()" id="saveMarksBtn">Save Marks</button>
+            \` : \`
+              <button type="button" class="btn btn-secondary" onclick="window.location.href='/assessments'">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="submitBtn">Submit Assessment</button>
+            \`}
+          </div>
+        </form>
+      </div>
+    </main>
+
+    <script>
+      const templateId = '\${templateId}';
+      const enrolmentId = '\${enrolmentId}';
+      const isMarking = \${isMarking};
+      const entryId = '\${entry?.id || ''}';
+
+      async function submitQuiz(e) {
+        e.preventDefault();
+        const form = e.target;
+        const data = new FormData(form);
+        const answers = {};
+        for (const [key, val] of data.entries()) {
+           if (key.startsWith('q_')) {
+              const qId = key.substring(2);
+              if (answers[qId]) {
+                 answers[qId] += ',' + val; // multiple choice
+              } else {
+                 answers[qId] = val;
+              }
+           }
+        }
+        
+        const payload = { template_id: templateId, enrolment_id: enrolmentId, answers };
+        document.getElementById('submitBtn').disabled = true;
+        document.getElementById('submitBtn').textContent = 'Submitting...';
+
+        try {
+          const r = await fetch('/api/assessment/entries', {
+             method: 'POST',
+             headers: {'Content-Type': 'application/json'},
+             body: JSON.stringify(payload)
+          });
+          const d = await r.json();
+          if (d.success) {
+             window.location.reload();
+          } else {
+             alert('Error: ' + d.error);
+          }
+        } catch(err) {
+          alert('Network error');
+        } finally {
+          document.getElementById('submitBtn').disabled = false;
+          document.getElementById('submitBtn').textContent = 'Submit Assessment';
+        }
+      }
+
+      function togglePoint(cb) {
+         if (cb.checked) {
+            cb.parentElement.style.background = '#dcfce7';
+         } else {
+            cb.parentElement.style.background = '#fff';
+         }
+      }
+
+      async function saveTutorMarks() {
+         const btn = document.getElementById('saveMarksBtn');
+         btn.disabled = true;
+         btn.textContent = 'Saving...';
+         
+         const marks = [];
+         document.querySelectorAll('.tutor-point-cb').forEach(cb => {
+            marks.push({
+               question_id: cb.dataset.qid,
+               points: cb.checked ? parseInt(cb.dataset.points) : 0
+            });
+         });
+
+         try {
+            const r = await fetch('/api/assessment/entries/' + entryId + '/mark', {
+               method: 'POST',
+               headers: {'Content-Type': 'application/json'},
+               body: JSON.stringify({ marks })
+            });
+            const d = await r.json();
+            if (d.success) {
+               window.location.href = '/assessments';
+            } else {
+               alert('Error: ' + d.error);
+               btn.disabled = false;
+               btn.textContent = 'Save Marks';
+            }
+         } catch(e) {
+            alert('Network error');
+            btn.disabled = false;
+            btn.textContent = 'Save Marks';
+         }
+      }
+    </script>
+    <style>
+      .quiz-options label {
+         display:flex;align-items:center;gap:.5rem;padding:.5rem;border-radius:8px;border:1px solid transparent;
+      }
+      .quiz-options label:hover {
+         background:#f8fafc;
+      }
+      .quiz-options input[type=radio], .quiz-options input[type=checkbox] {
+         accent-color: var(--primary);
+         width: 1.1rem; height: 1.1rem;
+      }
+    </style>
+  \`));
+}
+async function tutorMarkAssessmentEntry(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user || !isStaffRole(identity.user.role)) return json({ error: "Forbidden" }, 403);
+  const url = new URL(request.url);
+  const match = url.pathname.match(/^\/api\/assessment\/entries\/([^/]+)\/mark$/);
+  if (!match) return json({ error: "Invalid ID" }, 400);
+  const entryId = match[1];
+  
+  const body = await request.json() as { marks: { question_id: string, points: number }[] };
+  
+  const entry = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE id=?").bind(entryId).first<AssessmentEntry>();
+  if (!entry) return json({ error: "Entry not found" }, 404);
+
+  const tmpl = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE id=?").bind(entry.template_id).first<AssessmentTemplate>();
+  const { results: questions } = await env.esol_marking_db.prepare("SELECT * FROM assessment_template_questions WHERE template_id=?").bind(entry.template_id).all<AssessmentTemplateQuestion>();
+
+  let answers: Record<string, any> = {};
+  try {
+     answers = JSON.parse(entry.answers_json as string || "{}");
+  } catch(e) {}
+
+  // Apply tutor marks
+  for (const mark of body.marks) {
+     if (mark.points > 0) {
+        answers['manual_score_' + mark.question_id] = 1; // 1 means awarded manually
+     } else {
+        delete answers['manual_score_' + mark.question_id];
+     }
+  }
+
+  // Recalculate score
+  let earned = 0;
+  let maxScore = 0;
+  for (const q of questions) {
+    maxScore += q.points;
+    const isAutoMarked = ['yes_no', 'single_choice', 'multiple_choice', 'dropdown'].includes(q.question_type);
+    if (isAutoMarked) {
+       if (q.correct_answer && answers[q.id] === q.correct_answer) earned += q.points;
+    } else {
+       if (answers['manual_score_' + q.id] === 1) {
+          earned += q.points;
+       }
+    }
+  }
+  const percentage = maxScore > 0 ? Math.round((earned / maxScore) * 100) : 0;
+  
+  await env.esol_marking_db.prepare(`
+    UPDATE assessment_entries
+    SET score_earned=?, max_score=?, percentage=?, answers_json=?, status='completed', updated_at=CURRENT_TIMESTAMP
+    WHERE id=?
+  `).bind(earned, maxScore, percentage, JSON.stringify(answers), entryId).run();
+
+  return json({ success: true, score_earned: earned, max_score: maxScore, percentage });
+}
