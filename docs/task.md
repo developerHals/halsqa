@@ -1,10 +1,7 @@
-- [x] Create `0015_it_tickets.sql` migration file
-- [x] Update `src/index.ts` with `it_admin` role
-- [x] Add `ITTicket` and `ITTicketComment` interfaces
-- [x] Update `renderSidebar` with IT Tickets link
-- [x] Add `GET /it-tickets` route handler
-- [x] Add `POST /it-tickets` route handler
-- [x] Add `GET /it-tickets/:id` route handler
-- [x] Add `POST /it-tickets/:id` route handler
-- [x] Apply local and remote DB migrations
-- [x] Verify TypeScript build
+- [x] Update `renderSidebar` to move "IT Tickets" below "Quality Calendar"
+- [x] Implement `renderNewITTicketPage()` mirroring IQA form style
+- [x] Update `renderITTicketsPage()` to mirror Learning Walks list view with custom borders
+- [x] Update `handleITTicketsRequest` with `/it-tickets/new` route
+- [x] Implement Search filtering in `GET /it-tickets`
+- [x] Run `npx tsc` to verify build
+- [x] Deploy to Cloudflare

@@ -1,48 +1,26 @@
-# Goal: Implement IT Tickets Module
+# UI Refinements for IT Tickets Module
 
-We will implement the IT Tickets system in two stages as requested. This plan covers Stage 1: Database Migration, Role-Based Access Control, and Route Handlers. 
-
-## Open Questions
-- Should the "IT admin" role be considered a "staff" role (i.e. able to access staff dashboards) or purely restricted to IT Tickets? I will assume it is a staff role and will add it to the `isStaffRole` check.
-- Should the "IT Tickets" link be available to Students as well as Staff? Yes, standard users (including students) can view tickets they submitted. I will add the link to both sidebars.
+Based on your provided screenshots and instructions, I will completely refactor the IT Tickets pages to seamlessly match the native visual language of the HALSQA application (using the existing `list-stack`, `list-card`, and `search-form-inline` CSS classes).
 
 ## Proposed Changes
 
-### Database Migration
-#### [NEW] `migrations/0015_it_tickets.sql`
-- Create `it_tickets` table with fields for email, name, description, status, and timestamps.
-- Create `it_ticket_comments` table with fields for ticket_id, author details, comment text, and timestamps.
-- Use `ON DELETE CASCADE` for comments to maintain referential integrity.
+### 1. Sidebar Navigation Placement
+- Move the `IT Tickets` link from the bottom of the menu to **directly below `Quality Calendar`** and above `Users` in the staff sidebar.
 
-### API & Core Application Logic
-#### [MODIFY] `src/index.ts`
-1. **Roles & RBAC**
-   - Update `type Role` to include `"it_admin"`.
-   - Update `isStaffRole` helper to include `"it_admin"`.
-   - Update `renderSidebar` to include the "IT Tickets" navigation link for all users (both students and staff).
-2. **Interfaces**
-   - Add `ITTicket` and `ITTicketComment` interfaces mapping to the new tables.
-3. **Route Handlers (Stage 1)**
-   - Define `GET /it-tickets` logic:
-     - Check if user is `superuser` or `it_admin` -> fetch all tickets.
-     - Else -> fetch tickets `WHERE user_email = ?`.
-     - Forward to `renderITTicketsPage(tickets)` (UI template to be built in Stage 2).
-   - Define `POST /it-tickets` logic (New Ticket Form submission):
-     - Insert into `it_tickets` with pending status.
-     - Redirect to `/it-tickets`.
-   - Define `GET /it-tickets/:id` logic:
-     - Fetch ticket and verify access (must be admin/superuser or the ticket creator).
-     - Fetch associated comments.
-     - Forward to `renderITTicketDetailPage(ticket, comments)` (UI template to be built in Stage 2).
-   - Define `POST /it-tickets/:id` logic (Status Update & Commenting):
-     - Verify access.
-     - Update ticket status and timestamps if status changed.
-     - Insert comment if comment text provided.
-     - Redirect to `/it-tickets/:id`.
-4. **Router Wiring**
-   - Add the new route handlers to the main `fetch` switch statement in `src/index.ts`.
+### 2. Tickets List View (`/it-tickets`) -> Matches Picture 1
+- **Top Header**: Use the exact `.eyebrow` styling but with Hot Pink (`#e11d48`) text reading `IT SUPPORT TICKETS`.
+- **Search Bar**: Add an inline search bar (`<form class="search-form-inline">`) placeholder `Search by user, email, status...` and a solid pink `Search` button.
+- **Primary Action**: A solid pink `+ New IT Ticket` button linking to a dedicated route `/it-tickets/new`.
+- **Ticket Tiles**: Rebuild the list to use the standard `<article class="list-card">` and `<div class="list-stack">` wrappers so they look identical to Learning Walks, while retaining the custom left-border color coding (Pending=Blue, In Progress=Amber, Closed=Green).
 
-## Verification Plan
-1. **Database**: Run `npm run db:migrate:local` and `db:migrate:remote` to verify the schema is created without errors.
-2. **Types**: Run `npx tsc --noEmit` to ensure TypeScript definitions align with the database queries.
-3. **Stage 1 Completion**: We will wait for your confirmation before moving to Stage 2, which will focus entirely on implementing the complex HTML/CSS UI matching the Learning Walks dashboard.
+### 3. Dedicated "New Ticket" Page (`/it-tickets/new`) -> Matches Picture 2
+- Remove the inline JavaScript form from the list page.
+- Create a brand new route `GET /it-tickets/new` which renders a full standalone page.
+- **Header**: Pink eyebrow `NEW IT TICKET ENTRY` followed by a large black headline `Submit an IT Ticket`.
+- **Form Styling**: Replicate the clean section headers, thin-bordered inputs, and white spacing seen in the `IQA Forms` builder view for the Name and Description inputs.
+
+### 4. Route Handling (`src/index.ts`)
+- Add `GET /it-tickets/new` to route to the new `renderNewITTicketPage`.
+- Update the `GET /it-tickets` route to accept and process an optional `?q=` search parameter to filter tickets by user name, email, or description.
+
+Let me know if you approve this approach and I will execute the changes!

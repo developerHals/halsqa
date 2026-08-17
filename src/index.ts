@@ -8941,145 +8941,135 @@ interface ITTicketComment {
   created_at: string;
 }
 
-// --- IT TICKETS STYLES ---
-const itTicketsCSS = `
-  .itt-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
-  .itt-header h2 { color: #E11D48; text-transform: uppercase; font-weight: 700; margin: 0; font-size: 1.5rem; letter-spacing: 0.05em; }
-  .itt-btn-primary { background: #E11D48; color: #fff; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; text-decoration: none; transition: background 0.15s; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; }
-  .itt-btn-primary:hover { background: #BE123C; }
-  
-  .itt-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 1.25rem 1.5rem; margin-bottom: 1rem; cursor: pointer; transition: transform 0.1s, box-shadow 0.1s; display: flex; flex-direction: column; gap: 0.5rem; position: relative; border: 1px solid #e2e8f0; text-decoration: none; color: inherit; }
-  .itt-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-  
-  .itt-card-pending { border-left: 6px solid #0284C7; }
-  .itt-card-in_progress { border-left: 6px solid #F59E0B; }
-  .itt-card-closed { border-left: 6px solid #16A34A; }
-  
-  .itt-badge { padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
-  .itt-badge-pending { background: #E0F2FE; color: #0369A1; }
-  .itt-badge-in_progress { background: #FEF3C7; color: #B45309; }
-  .itt-badge-closed { background: #DCFCE7; color: #15803D; }
-
-  .itt-card-top { display: flex; justify-content: space-between; align-items: flex-start; }
-  .itt-card-title { font-weight: 700; color: #0F172A; font-size: 1rem; margin: 0; }
-  .itt-card-desc { color: #475569; font-size: 0.95rem; line-height: 1.5; margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .itt-card-meta { font-size: 0.8rem; color: #64748B; margin-top: 0.5rem; display: flex; gap: 1rem; flex-wrap: wrap; }
-  
-  .itt-form-view { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 2rem; border: 1px solid #e2e8f0; max-width: 800px; }
-  .itt-form-group { margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
-  .itt-form-group label { font-weight: 600; color: #0F172A; font-size: 0.9rem; }
-  .itt-form-group input, .itt-form-group textarea, .itt-form-group select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem; font-family: inherit; font-size: 1rem; color: #0F172A; }
-  .itt-form-group input:read-only { background: #f8fafc; color: #64748B; cursor: not-allowed; }
-  
-  .itt-thread { display: flex; flex-direction: column; gap: 1rem; margin-top: 2rem; margin-bottom: 2rem; }
-  .itt-comment { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem; }
-  .itt-comment-header { display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.85rem; }
-  .itt-comment-author { font-weight: 700; color: #0F172A; }
-  .itt-comment-role { background: #e2e8f0; color: #475569; padding: 0.1rem 0.5rem; border-radius: 4px; font-size: 0.7rem; text-transform: uppercase; font-weight: 700; margin-left: 0.5rem; }
-  .itt-comment-time { color: #64748B; }
-  .itt-comment-body { color: #334155; line-height: 1.5; white-space: pre-wrap; font-size: 0.95rem; margin: 0; }
-  
-  .itt-detail-info { background: #f8fafc; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 2rem; }
-  .itt-detail-info p { margin: 0 0 0.5rem 0; color: #334155; }
-  .itt-detail-info strong { color: #0F172A; }
-`;
+// --- IT TICKETS ---
+function renderITTStatusBadge(status: string): string {
+  if (status === 'pending') return '<span class="rag-badge" style="background:#e0f2fe;color:#0369a1;">Pending</span>';
+  if (status === 'in_progress') return '<span class="rag-badge" style="background:#fef3c7;color:#b45309;">In Progress</span>';
+  if (status === 'closed') return '<span class="rag-badge" style="background:#dcfce7;color:#15803d;">Closed</span>';
+  return '<span class="rag-badge rag-grey">Unknown</span>';
+}
 
 function formatITTDate(ds: string | null) {
   if (!ds) return "";
-  return new Date(ds).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' });
+  return new Date(ds).toISOString().split('T')[0];
 }
 
-function getStatusBadge(status: string) {
-  const lbl = status === 'in_progress' ? 'In Progress' : status;
-  return `<span class="itt-badge itt-badge-${status}">${lbl}</span>`;
-}
-
-async function renderITTicketsPage(tickets: ITTicket[]): Promise<string> {
+async function renderITTicketsPage(tickets: ITTicket[], search: string): Promise<string> {
   const listHtml = tickets.length === 0 
-    ? `<p style="color:#64748B">No tickets found.</p>`
-    : tickets.map(t => `
-        <a href="/it-tickets/${t.id}" class="itt-card itt-card-${t.status}">
-          <div class="itt-card-top">
-            <h3 class="itt-card-title">Ticket #${t.id} &middot; ${escapeHtml(t.user_name)} (${escapeHtml(t.user_email)})</h3>
-            ${getStatusBadge(t.status)}
-          </div>
-          <p class="itt-card-desc">${escapeHtml(t.description)}</p>
-          <div class="itt-card-meta">
-            <span><strong>Logged:</strong> ${formatITTDate(t.submitted_at)}</span>
-            ${t.in_progress_at ? `<span><strong>In Progress:</strong> ${formatITTDate(t.in_progress_at)}</span>` : ''}
-            ${t.closed_at ? `<span><strong>Closed:</strong> ${formatITTDate(t.closed_at)}</span>` : ''}
-          </div>
-        </a>
-      `).join('');
+    ? renderEmpty("No tickets found")
+    : tickets.map(t => {
+        let borderClass = "";
+        if (t.status === 'pending') borderClass = "style='border-left:4px solid #0284C7'";
+        if (t.status === 'in_progress') borderClass = "style='border-left:4px solid #F59E0B'";
+        if (t.status === 'closed') borderClass = "style='border-left:4px solid #16A34A'";
+
+        return `
+          <article class="list-card" ${borderClass}>
+            <a href="/it-tickets/${t.id}" style="display:block;flex:1;text-decoration:none;">
+              <strong style="color:#0f172a;font-size:1rem;margin-bottom:0.25rem;display:block;">Ticket #${t.id} &middot; ${escapeHtml(t.user_name)} (${escapeHtml(t.user_email)})</strong>
+              <span style="color:#475569;font-size:0.9rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:0.5rem;">${escapeHtml(t.description)}</span>
+              <span style="font-size:0.8rem;color:#64748b;">Logged: ${formatITTDate(t.submitted_at)}${t.in_progress_at ? ' &middot; In Progress: ' + formatITTDate(t.in_progress_at) : ''}${t.closed_at ? ' &middot; Closed: ' + formatITTDate(t.closed_at) : ''}</span>
+            </a>
+            <div style="display:flex;align-items:center;gap:0.5rem">
+              ${renderITTStatusBadge(t.status)}
+            </div>
+          </article>
+        `;
+      }).join('');
 
   return `
-    <style>${itTicketsCSS}</style>
-    
-    <div id="itt-list-view">
-      <div class="itt-header">
-        <h2>IT Support Tickets</h2>
-        <button class="itt-btn-primary" onclick="document.getElementById('itt-list-view').style.display='none';document.getElementById('itt-form-view').style.display='block';">+ New Ticket</button>
-      </div>
-      <div class="itt-tickets-list">
-        ${listHtml}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
+      <p class="eyebrow" style="color:#e11d48;font-size:0.875rem;letter-spacing:0.05em;font-weight:700;text-transform:uppercase;margin:0;">IT SUPPORT TICKETS</p>
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+        <form method="GET" action="/it-tickets" class="search-form-inline" style="display:flex;gap:0.5rem;">
+          <input name="q" value="${escapeHtml(search)}" placeholder="Search by user, email..." style="padding:0.5rem 0.75rem;border:1px solid #cbd5e1;border-radius:6px;font-size:0.9rem;">
+          <button type="submit" class="btn btn-pink" style="padding:0.5rem 1rem;background:#e11d48;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;">Search</button>
+        </form>
+        <a class="btn btn-pink" href="/it-tickets/new" style="padding:0.5rem 1rem;background:#e11d48;color:white;text-decoration:none;border-radius:6px;font-weight:600;font-size:0.9rem;">+ New IT Ticket</a>
       </div>
     </div>
-    
-    <div id="itt-form-view" style="display: none;">
-      <div class="itt-header">
-        <h2>Submit New IT Ticket</h2>
-        <button class="itt-btn-primary" style="background:#64748B" onclick="document.getElementById('itt-form-view').style.display='none';document.getElementById('itt-list-view').style.display='block';">Cancel</button>
-      </div>
-      <form class="itt-form-view" method="POST" action="/it-tickets">
-        <div class="itt-form-group">
-          <label>Name</label>
-          <input type="text" name="user_name" required placeholder="Your full name">
+    <div class="list-stack">
+      ${listHtml}
+    </div>
+  `;
+}
+
+async function renderNewITTicketPage(identity: Identity): Promise<string> {
+  return `
+    <div style="max-width:800px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);padding:2rem;">
+      <p class="eyebrow" style="color:#e11d48;font-size:0.875rem;letter-spacing:0.05em;font-weight:700;text-transform:uppercase;margin:0 0 0.5rem 0;">NEW IT TICKET ENTRY</p>
+      <h1 style="margin:0 0 2rem 0;color:#0f172a;font-size:1.75rem;">Submit an IT Ticket</h1>
+      
+      <form method="POST" action="/it-tickets" style="display:flex;flex-direction:column;gap:1.5rem;">
+        
+        <div style="margin-bottom:1rem;">
+          <h3 style="font-size:1rem;color:#0f172a;margin:0 0 1rem 0;border-bottom:1px solid #e2e8f0;padding-bottom:0.5rem;">User Information</h3>
+          
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div style="display:flex;flex-direction:column;gap:0.35rem;">
+              <label style="font-size:0.875rem;font-weight:600;color:#0f172a;">User Email *</label>
+              <input type="email" name="user_email" value="${escapeHtml(identity.email)}" readonly style="padding:0.65rem;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;color:#64748b;cursor:not-allowed;">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:0.35rem;">
+              <label style="font-size:0.875rem;font-weight:600;color:#0f172a;">Full Name *</label>
+              <input type="text" name="user_name" required placeholder="e.g. John Doe" style="padding:0.65rem;border:1px solid #cbd5e1;border-radius:6px;font-size:0.95rem;">
+            </div>
+          </div>
         </div>
-        <div class="itt-form-group">
-          <label>What is the issue?</label>
-          <textarea name="description" rows="5" required placeholder="Please describe your issue in detail..."></textarea>
+
+        <div style="margin-bottom:1rem;">
+          <h3 style="font-size:1rem;color:#0f172a;margin:0 0 1rem 0;border-bottom:1px solid #e2e8f0;padding-bottom:0.5rem;">Issue Details</h3>
+          
+          <div style="display:flex;flex-direction:column;gap:0.35rem;">
+            <label style="font-size:0.875rem;font-weight:600;color:#0f172a;">What is the issue? *</label>
+            <textarea name="description" required rows="6" placeholder="Please describe your issue in detail..." style="padding:0.65rem;border:1px solid #cbd5e1;border-radius:6px;font-family:inherit;font-size:0.95rem;"></textarea>
+          </div>
         </div>
-        <button type="submit" class="itt-btn-primary">Submit Ticket</button>
+
+        <div style="display:flex;justify-content:flex-end;gap:1rem;margin-top:1rem;">
+          <a href="/it-tickets" style="padding:0.65rem 1.25rem;color:#475569;text-decoration:none;font-weight:600;border:1px solid #cbd5e1;border-radius:6px;background:#fff;">Cancel</a>
+          <button type="submit" style="padding:0.65rem 1.25rem;background:#e11d48;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;">Submit Ticket</button>
+        </div>
+
       </form>
     </div>
   `;
 }
 
-async function renderITTicketDetailPage(ticket: ITTicket, comments: ITTicketComment[], userEmail: string, isStaff: boolean): Promise<string> {
-  const isITAdmin = isStaff; // Based on isStaffRole which now includes it_admin
+async function renderITTicketDetailPage(ticket: ITTicket, comments: ITTicketComment[], identity: Identity, isStaff: boolean): Promise<string> {
+  const isITAdmin = identity.user!.role === 'it_admin' || identity.user!.role === 'superuser';
   
   const commentsHtml = comments.map(c => `
-    <div class="itt-comment">
-      <div class="itt-comment-header">
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:1.25rem;margin-bottom:1rem;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;font-size:0.85rem;">
         <div>
-          <span class="itt-comment-author">${escapeHtml(c.author_name)}</span>
-          <span class="itt-comment-role">${escapeHtml(c.author_role)}</span>
+          <strong style="color:#0f172a;">${escapeHtml(c.author_name)}</strong>
+          <span style="background:#e2e8f0;color:#475569;padding:0.1rem 0.5rem;border-radius:4px;font-size:0.7rem;text-transform:uppercase;font-weight:700;margin-left:0.5rem;">${escapeHtml(c.author_role)}</span>
         </div>
-        <span class="itt-comment-time">${formatITTDate(c.created_at)}</span>
+        <span style="color:#64748b;">${new Date(c.created_at).toLocaleString('en-GB', {dateStyle:'short', timeStyle:'short'})}</span>
       </div>
-      <p class="itt-comment-body">${escapeHtml(c.comment_text)}</p>
+      <p style="color:#334155;line-height:1.5;white-space:pre-wrap;font-size:0.95rem;margin:0;">${escapeHtml(c.comment_text)}</p>
     </div>
   `).join('');
 
   return `
-    <style>${itTicketsCSS}</style>
-    <div class="itt-header">
-      <h2>Ticket #${ticket.id}</h2>
-      <a href="/it-tickets" class="itt-btn-primary" style="background:#64748B">&larr; Back to List</a>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
+      <p class="eyebrow" style="color:#e11d48;font-size:0.875rem;letter-spacing:0.05em;font-weight:700;text-transform:uppercase;margin:0;">TICKET #${ticket.id}</p>
+      <a href="/it-tickets" style="padding:0.5rem 1rem;background:#fff;border:1px solid #cbd5e1;color:#475569;text-decoration:none;border-radius:6px;font-weight:600;font-size:0.9rem;">&larr; Back to List</a>
     </div>
-    
-    <form class="itt-form-view" style="max-width:100%" method="POST" action="/it-tickets/${ticket.id}">
+
+    <form method="POST" action="/it-tickets/${ticket.id}" style="background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);padding:2rem;border:1px solid #e2e8f0;">
       
-      <div class="itt-detail-info">
-        <p><strong>Submitted By:</strong> ${escapeHtml(ticket.user_name)} (${escapeHtml(ticket.user_email)})</p>
-        <p><strong>Logged:</strong> ${formatITTDate(ticket.submitted_at)}</p>
-        <p><strong>Description:</strong></p>
-        <p style="white-space: pre-wrap; margin-top: 0.5rem; border-left: 3px solid #cbd5e1; padding-left: 1rem;">${escapeHtml(ticket.description)}</p>
+      <div style="background:#f8fafc;padding:1.5rem;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:2rem;">
+        <p style="margin:0 0 0.5rem 0;color:#334155;"><strong>Submitted By:</strong> ${escapeHtml(ticket.user_name)} (${escapeHtml(ticket.user_email)})</p>
+        <p style="margin:0 0 0.5rem 0;color:#334155;"><strong>Logged:</strong> ${new Date(ticket.submitted_at).toLocaleString('en-GB', {dateStyle:'short', timeStyle:'short'})}</p>
+        <p style="margin:0 0 0.5rem 0;color:#334155;"><strong>Description:</strong></p>
+        <p style="white-space:pre-wrap;margin-top:0.5rem;border-left:3px solid #cbd5e1;padding-left:1rem;color:#334155;">${escapeHtml(ticket.description)}</p>
       </div>
 
-      <div class="itt-form-group" style="max-width: 300px;">
-        <label>Status</label>
-        <select name="status" ${!isITAdmin ? 'disabled' : ''}>
+      <div style="margin-bottom:2rem;max-width:300px;">
+        <label style="display:block;font-size:0.875rem;font-weight:600;color:#0f172a;margin-bottom:0.35rem;">Status</label>
+        <select name="status" style="width:100%;padding:0.65rem;border:1px solid #cbd5e1;border-radius:6px;font-size:0.95rem;background:#fff;" ${!isITAdmin ? 'disabled' : ''}>
           <option value="pending" ${ticket.status === 'pending' ? 'selected' : ''}>Pending</option>
           <option value="in_progress" ${ticket.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
           <option value="closed" ${ticket.status === 'closed' ? 'selected' : ''}>Closed</option>
@@ -9087,17 +9077,19 @@ async function renderITTicketDetailPage(ticket: ITTicket, comments: ITTicketComm
         ${!isITAdmin ? `<input type="hidden" name="status" value="${ticket.status}">` : ''}
       </div>
       
-      <hr style="border:0; border-top:1px solid #e2e8f0; margin: 2rem 0;">
+      <hr style="border:0;border-top:1px solid #e2e8f0;margin:2rem 0;">
       
-      <h3 style="color:#0F172A; font-size:1.1rem; margin-bottom:1rem;">Communication Thread</h3>
-      ${commentsHtml.length > 0 ? `<div class="itt-thread">${commentsHtml}</div>` : `<p style="color:#64748B; margin-bottom: 2rem;">No comments yet.</p>`}
+      <h3 style="color:#0f172a;font-size:1.1rem;margin-bottom:1rem;">Communication Thread</h3>
+      ${commentsHtml.length > 0 ? `<div>${commentsHtml}</div>` : `<p style="color:#64748b;margin-bottom:2rem;">No comments yet.</p>`}
       
-      <div class="itt-form-group">
-        <label>Add a comment (Optional)</label>
-        <textarea name="comment_text" rows="4" placeholder="Type your reply here..."></textarea>
+      <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:1.5rem;">
+        <label style="font-size:0.875rem;font-weight:600;color:#0f172a;">Add a comment (Optional)</label>
+        <textarea name="comment_text" rows="4" placeholder="Type your reply here..." style="padding:0.65rem;border:1px solid #cbd5e1;border-radius:6px;font-family:inherit;font-size:0.95rem;"></textarea>
       </div>
 
-      <button type="submit" class="itt-btn-primary">Save Changes & Post Comment</button>
+      <div style="display:flex;justify-content:flex-end;">
+        <button type="submit" style="padding:0.65rem 1.25rem;background:#e11d48;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;">Save Changes & Post Comment</button>
+      </div>
     </form>
   `;
 }
@@ -9107,17 +9099,37 @@ async function handleITTicketsRequest(request: Request, env: Env, identity: Iden
   const isStaff = isStaffRole(identity.user!.role);
   const isITAdmin = identity.user!.role === 'it_admin' || identity.user!.role === 'superuser';
 
+  // GET /it-tickets/new
+  if (request.method === "GET" && url.pathname === "/it-tickets/new") {
+    const html = await renderNewITTicketPage(identity);
+    return htmlResponse(pageShell("New IT Ticket", html, identity, "it-tickets"));
+  }
+
   // GET /it-tickets
   if (request.method === "GET" && url.pathname === "/it-tickets") {
+    const search = url.searchParams.get("q")?.trim() || "";
     let tickets: ITTicket[];
-    if (isITAdmin) {
-      const { results } = await env.esol_marking_db.prepare("SELECT * FROM it_tickets ORDER BY submitted_at DESC").all<ITTicket>();
-      tickets = results;
-    } else {
-      const { results } = await env.esol_marking_db.prepare("SELECT * FROM it_tickets WHERE user_email = ? ORDER BY submitted_at DESC").bind(identity.email).all<ITTicket>();
-      tickets = results;
+    
+    let query = "SELECT * FROM it_tickets";
+    let binds: any[] = [];
+
+    if (!isITAdmin) {
+      query += " WHERE user_email = ?";
+      binds.push(identity.email);
     }
-    const html = await renderITTicketsPage(tickets);
+
+    if (search) {
+      query += isITAdmin ? " WHERE " : " AND ";
+      query += "(user_name LIKE ? OR user_email LIKE ? OR description LIKE ?)";
+      binds.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    query += " ORDER BY submitted_at DESC";
+
+    const { results } = await env.esol_marking_db.prepare(query).bind(...binds).all<ITTicket>();
+    tickets = results;
+
+    const html = await renderITTicketsPage(tickets, search);
     return htmlResponse(pageShell("IT Tickets", html, identity, "it-tickets"));
   }
 
@@ -9148,11 +9160,11 @@ async function handleITTicketsRequest(request: Request, env: Env, identity: Iden
 
     const { results: comments } = await env.esol_marking_db.prepare("SELECT * FROM it_ticket_comments WHERE ticket_id = ? ORDER BY created_at ASC").bind(ticketId).all<ITTicketComment>();
 
-    const html = await renderITTicketDetailPage(ticket, comments, identity.email, isStaff);
+    const html = await renderITTicketDetailPage(ticket, comments, identity, isStaff);
     return htmlResponse(pageShell("Ticket #" + ticketId, html, identity, "it-tickets"));
   }
 
-  // POST /it-tickets/:id (Status Update & Commenting)
+  // POST /it-tickets/:id
   if (request.method === "POST" && detailMatch) {
     const ticketId = parseInt(detailMatch[1], 10);
     const ticket = await env.esol_marking_db.prepare("SELECT * FROM it_tickets WHERE id = ?").bind(ticketId).first<ITTicket>();
@@ -9164,7 +9176,6 @@ async function handleITTicketsRequest(request: Request, env: Env, identity: Iden
     const newStatus = fd.get("status")?.toString();
     const commentText = fd.get("comment_text")?.toString().trim();
 
-    // Only IT Admins can change status
     if (isITAdmin && newStatus && newStatus !== ticket.status && ['pending', 'in_progress', 'closed'].includes(newStatus)) {
       let query = "UPDATE it_tickets SET status = ?";
       const binds: any[] = [newStatus];
@@ -9181,7 +9192,6 @@ async function handleITTicketsRequest(request: Request, env: Env, identity: Iden
       await env.esol_marking_db.prepare(query).bind(...binds).run();
     }
 
-    // Add comment if provided
     if (commentText) {
       await env.esol_marking_db.prepare(`
         INSERT INTO it_ticket_comments (ticket_id, author_email, author_name, author_role, comment_text, created_at)
