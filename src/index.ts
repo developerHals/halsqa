@@ -6696,8 +6696,8 @@ function renderSidebar(identity: Identity, active: string) {
       ${navLink("/students", "Students", active === "students")}
       ${navLink("/reports", "Reports", active === "reports")}
       ${canViewReports(user) ? navLink("/quality-calendar", "Quality Calendar", active === "quality-calendar") : ""}
-      ${navLink("https://haringey-learns-blog.pages.dev/", "Trainings", false, true)}
       ${navLink("https://schedupro.pages.dev/", "Todays' classes", false, true)}
+      ${navLink("https://haringey-learns-blog.pages.dev/", "Trainings", false, true)}
       ${navLink("/it-tickets", "IT Tickets", active === "it-tickets")}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
