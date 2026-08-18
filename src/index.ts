@@ -9002,13 +9002,13 @@ async function renderITTicketsPage(tickets: ITTicket[], search: string, isSuperu
             <div id="statusFilterDropdown" style="display:none;position:absolute;left:0;top:100%;margin-top:0.5rem;background:#ffffff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1),0 4px 6px -2px rgba(0,0,0,0.05);padding:1rem;width:200px;z-index:100;">
               <h4 style="margin:0 0 0.75rem 0;font-size:0.875rem;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:0.25rem;font-weight:600;">Filter by Status</h4>
               <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem;">
-                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:#334155;cursor:pointer;">
+                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:#000000 !important;cursor:pointer;font-weight:normal !important;">
                   <input type="checkbox" class="status-filter-checkbox" value="pending" style="cursor:pointer;" checked> Pending
                 </label>
-                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:#334155;cursor:pointer;">
+                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:#000000 !important;cursor:pointer;font-weight:normal !important;">
                   <input type="checkbox" class="status-filter-checkbox" value="in_progress" style="cursor:pointer;" checked> In Progress
                 </label>
-                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:#334155;cursor:pointer;">
+                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:#000000 !important;cursor:pointer;font-weight:normal !important;">
                   <input type="checkbox" class="status-filter-checkbox" value="closed" style="cursor:pointer;" checked> Closed
                 </label>
               </div>
