@@ -8968,7 +8968,7 @@ async function renderITTicketsPage(tickets: ITTicket[], search: string, isSuperu
         if (t.status === 'closed') borderClass = "style='border-left:4px solid #16A34A'";
 
         return `
-          <article class="list-card" ${borderClass}>
+          <article class="list-card" ${borderClass} data-status="${t.status}">
             <a href="/it-tickets/${t.id}" style="display:block;flex:1;text-decoration:none;">
               <strong style="color:#0f172a;font-size:1rem;margin-bottom:0.25rem;display:block;">Ticket #${t.id} &middot; ${escapeHtml(t.user_name)} (${escapeHtml(t.user_email)})</strong>
               <span style="color:#475569;font-size:0.9rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:0.5rem;">${escapeHtml(t.description)}</span>
@@ -8983,19 +8983,187 @@ async function renderITTicketsPage(tickets: ITTicket[], search: string, isSuperu
       }).join('');
 
   return `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
       <p class="eyebrow" style="color:#e11d48;font-size:0.875rem;letter-spacing:0.05em;font-weight:700;text-transform:uppercase;margin:0;">IT SUPPORT TICKETS</p>
       <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
-        <form method="GET" action="/it-tickets" class="search-form-inline" style="display:flex;gap:0.5rem;">
-          <input name="q" value="${escapeHtml(search)}" placeholder="Search by user, email..." style="padding:0.5rem 0.75rem;border:1px solid #cbd5e1;border-radius:6px;font-size:0.9rem;">
-          <button type="submit" class="btn btn-pink" style="padding:0.5rem 1rem;background:#e11d48;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;">Search</button>
-        </form>
+        
+        <!-- Search and Filter Container -->
+        <div style="display:flex;gap:0.5rem;align-items:center;position:relative;">
+          <form method="GET" action="/it-tickets" class="search-form-inline" style="display:flex;gap:0.5rem;margin:0;">
+            <input name="q" value="${escapeHtml(search)}" placeholder="Search by user, email..." style="padding:0.5rem 0.75rem;border:1px solid #cbd5e1;border-radius:6px;font-size:0.9rem;">
+            <button type="submit" class="btn btn-pink" style="padding:0.5rem 1rem;background:#e11d48;color:white;border:none;border-radius:6px;font-weight:600;cursor:pointer;">Search</button>
+          </form>
+          
+          <!-- Excel-like Status Filter Dropdown -->
+          <div style="position:relative;display:inline-block;">
+            <button type="button" id="statusFilterBtn" style="padding:0.5rem 0.75rem;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:0.25rem;font-size:0.9rem;font-weight:600;color:#334155;transition:all 0.15s;" title="Filter Status">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" style="width:1rem;height:1rem;">
+                <path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clip-rule="evenodd" />
+              </svg>
+              Filter
+            </button>
+            <div id="statusFilterDropdown" style="display:none;position:absolute;right:0;top:100%;margin-top:0.5rem;background:#ffffff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1),0 4px 6px -2px rgba(0,0,0,0.05);padding:1rem;width:200px;z-index:100;">
+              <h4 style="margin:0 0 0.75rem 0;font-size:0.875rem;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:0.25rem;font-weight:600;">Filter by Status</h4>
+              <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem;">
+                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:#334155;cursor:pointer;">
+                  <input type="checkbox" class="status-filter-checkbox" value="pending" style="cursor:pointer;" checked> Pending
+                </label>
+                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:#334155;cursor:pointer;">
+                  <input type="checkbox" class="status-filter-checkbox" value="in_progress" style="cursor:pointer;" checked> In Progress
+                </label>
+                <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:#334155;cursor:pointer;">
+                  <input type="checkbox" class="status-filter-checkbox" value="closed" style="cursor:pointer;" checked> Closed
+                </label>
+              </div>
+              <div style="display:flex;gap:0.5rem;justify-content:space-between;border-top:1px solid #e2e8f0;padding-top:0.5rem;">
+                <button type="button" id="applyStatusFilterBtn" style="padding:0.25rem 0.5rem;background:#e11d48;color:white;border:none;border-radius:4px;font-size:0.75rem;font-weight:600;cursor:pointer;">Apply</button>
+                <button type="button" id="clearStatusFilterBtn" style="padding:0.25rem 0.5rem;background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:4px;font-size:0.75rem;font-weight:600;cursor:pointer;">Clear</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Download CSV Button -->
+        <button type="button" id="downloadTicketsCsvBtn" style="padding:0.5rem 1rem;background:#0284c7;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;display:flex;align-items:center;gap:0.25rem;transition:background 0.15s;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" style="width:1.1rem;height:1.1rem;">
+            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+          </svg>
+          Download CSV
+        </button>
+
         <a class="btn btn-pink" href="/it-tickets/new" style="padding:0.5rem 1rem;background:#e11d48;color:white;text-decoration:none;border-radius:6px;font-weight:600;font-size:0.9rem;">+ New IT Ticket</a>
       </div>
     </div>
     <div class="list-stack">
       ${listHtml}
     </div>
+
+    <!-- Hidden json raw tickets data for download -->
+    <script id="tickets-data" type="application/json">${JSON.stringify(tickets)}</script>
+
+    <!-- Excel-like client-side filter and download JS -->
+    <script>
+      (function() {
+        const filterBtn = document.getElementById('statusFilterBtn');
+        const filterDropdown = document.getElementById('statusFilterDropdown');
+        
+        filterBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          filterDropdown.style.display = filterDropdown.style.display === 'none' ? 'block' : 'none';
+        });
+        
+        document.addEventListener('click', (e) => {
+          if (!filterDropdown.contains(e.target) && e.target !== filterBtn) {
+            filterDropdown.style.display = 'none';
+          }
+        });
+
+        const checkboxes = document.querySelectorAll('.status-filter-checkbox');
+        const applyBtn = document.getElementById('applyStatusFilterBtn');
+        const clearBtn = document.getElementById('clearStatusFilterBtn');
+        const ticketCards = document.querySelectorAll('.list-card');
+        
+        let activeFilters = [];
+        try {
+          const stored = localStorage.getItem('it_ticket_status_filters');
+          if (stored) {
+            activeFilters = JSON.parse(stored);
+          }
+        } catch (err) {}
+        
+        if (activeFilters && activeFilters.length > 0) {
+          checkboxes.forEach(cb => {
+            cb.checked = activeFilters.includes(cb.value);
+          });
+          applyFilters(activeFilters);
+          updateFilterBtnHighlight(true);
+        } else {
+          checkboxes.forEach(cb => cb.checked = true);
+        }
+        
+        applyBtn.addEventListener('click', () => {
+          const selected = Array.from(checkboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+          
+          localStorage.setItem('it_ticket_status_filters', JSON.stringify(selected));
+          applyFilters(selected);
+          updateFilterBtnHighlight(selected.length < 3);
+          filterDropdown.style.display = 'none';
+        });
+        
+        clearBtn.addEventListener('click', () => {
+          checkboxes.forEach(cb => cb.checked = true);
+          localStorage.removeItem('it_ticket_status_filters');
+          applyFilters([]);
+          updateFilterBtnHighlight(false);
+          filterDropdown.style.display = 'none';
+        });
+        
+        function applyFilters(selected) {
+          ticketCards.forEach(card => {
+            const status = card.dataset.status;
+            if (!selected || selected.length === 0 || selected.includes(status)) {
+              card.style.display = '';
+            } else {
+              card.style.display = 'none';
+            }
+          });
+        }
+        
+        function updateFilterBtnHighlight(isFiltered) {
+          if (isFiltered) {
+            filterBtn.style.background = '#e11d48';
+            filterBtn.style.color = '#ffffff';
+            filterBtn.style.borderColor = '#e11d48';
+          } else {
+            filterBtn.style.background = '#f1f5f9';
+            filterBtn.style.color = '#334155';
+            filterBtn.style.borderColor = '#cbd5e1';
+          }
+        }
+        
+        const downloadBtn = document.getElementById('downloadTicketsCsvBtn');
+        if (downloadBtn) {
+          downloadBtn.addEventListener('click', () => {
+            try {
+              const ticketsEl = document.getElementById('tickets-data');
+              if (!ticketsEl) return;
+              const tickets = JSON.parse(ticketsEl.textContent);
+              
+              const headers = ['Ticket ID', 'User Email', 'User Name', 'Description', 'Status', 'Submitted At', 'In Progress At', 'Closed At'];
+              const csvRows = [headers.join(',')];
+              
+              tickets.forEach(t => {
+                const row = [
+                  t.id,
+                  '"' + (t.user_email || '').replace(/"/g, '""') + '"',
+                  '"' + (t.user_name || '').replace(/"/g, '""') + '"',
+                  '"' + (t.description || '').replace(/"/g, '""').replace(/\r?\n/g, ' ').replace(/\n/g, ' ') + '"',
+                  t.status,
+                  t.submitted_at || '',
+                  t.in_progress_at || '',
+                  t.closed_at || ''
+                ];
+                csvRows.push(row.join(','));
+              });
+              
+              const csvString = csvRows.join('\r\n');
+              const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement("a");
+              link.setAttribute("href", url);
+              link.setAttribute("download", "it_tickets_export.csv");
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            } catch (err) {
+              alert('Error exporting CSV: ' + err.message);
+            }
+          });
+        }
+      })();
+    </script>
   `;
 }
 
