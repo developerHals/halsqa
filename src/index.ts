@@ -549,7 +549,7 @@ const htmlHeaders = { "content-type": "text/html; charset=utf-8" };
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 const oauthStateCookie = "hlquality_oauth_state";
 const sessionCookie = "hlquality_session";
-const roles: Role[] = ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa"];
+const roles: Role[] = ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa", "it_admin"];
 
 function getCurrentAcademicYear(date = new Date()): number {
   const year = date.getFullYear();
@@ -6695,6 +6695,7 @@ function renderSidebar(identity: Identity, active: string) {
       ${navLink("/students", "Students", active === "students")}
       ${navLink("/reports", "Reports", active === "reports")}
       ${canViewReports(user) ? navLink("/quality-calendar", "Quality Calendar", active === "quality-calendar") : ""}
+      ${navLink("/it-tickets", "IT Tickets", active === "it-tickets")}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
   </aside>`;
@@ -8954,7 +8955,7 @@ function formatITTDate(ds: string | null) {
   return new Date(ds).toISOString().split('T')[0];
 }
 
-async function renderITTicketsPage(tickets: ITTicket[], search: string): Promise<string> {
+async function renderITTicketsPage(tickets: ITTicket[], search: string, isITAdmin: boolean): Promise<string> {
   const listHtml = tickets.length === 0 
     ? renderEmpty("No tickets found")
     : tickets.map(t => {
@@ -8972,6 +8973,7 @@ async function renderITTicketsPage(tickets: ITTicket[], search: string): Promise
             </a>
             <div style="display:flex;align-items:center;gap:0.5rem">
               ${renderITTStatusBadge(t.status)}
+              ${isITAdmin ? `<form method="POST" action="/it-tickets/${t.id}/delete" style="margin:0;" onsubmit="return prompt('Type DELETE to confirm') === 'DELETE';"><button type="submit" style="background:#fef2f2;color:#ef4444;border:1px solid #fca5a5;border-radius:6px;padding:0.25rem 0.5rem;font-size:0.75rem;cursor:pointer;font-weight:600;">Delete</button></form>` : ''}
             </div>
           </article>
         `;
@@ -8996,7 +8998,7 @@ async function renderITTicketsPage(tickets: ITTicket[], search: string): Promise
 
 async function renderNewITTicketPage(identity: Identity): Promise<string> {
   return `
-    <div style="max-width:800px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);padding:2rem;">
+    <div style="width:100%;background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);padding:2rem;">
       <p class="eyebrow" style="color:#e11d48;font-size:0.875rem;letter-spacing:0.05em;font-weight:700;text-transform:uppercase;margin:0 0 0.5rem 0;">NEW IT TICKET ENTRY</p>
       <h1 style="margin:0 0 2rem 0;color:#0f172a;font-size:1.75rem;">Submit an IT Ticket</h1>
       
@@ -9022,7 +9024,7 @@ async function renderNewITTicketPage(identity: Identity): Promise<string> {
           
           <div style="display:flex;flex-direction:column;gap:0.35rem;">
             <label style="font-size:0.875rem;font-weight:600;color:#0f172a;">What is the issue? *</label>
-            <textarea name="description" required rows="6" placeholder="Please describe your issue in detail..." style="padding:0.65rem;border:1px solid #cbd5e1;border-radius:6px;font-family:inherit;font-size:0.95rem;"></textarea>
+            <textarea name="description" required rows="6" placeholder="Please describe your issue in detail..." style="padding:0.65rem;border:1px solid #cbd5e1;border-radius:6px;font-family:inherit;font-size:0.95rem;" oninput="this.style.height='';this.style.height=this.scrollHeight+'px'"></textarea>
           </div>
         </div>
 
@@ -9102,7 +9104,8 @@ async function handleITTicketsRequest(request: Request, env: Env, identity: Iden
   // GET /it-tickets/new
   if (request.method === "GET" && url.pathname === "/it-tickets/new") {
     const html = await renderNewITTicketPage(identity);
-    return htmlResponse(pageShell("New IT Ticket", html, identity, "it-tickets"));
+    const body = `<main class="dashboard-shell">${renderSidebar(identity, "it-tickets")}<section class="content">${renderTopbar(identity, "New IT Ticket")}<section class="panel">${html}</section></section></main>`;
+    return htmlResponse(pageShell("New IT Ticket", body));
   }
 
   // GET /it-tickets
@@ -9129,8 +9132,9 @@ async function handleITTicketsRequest(request: Request, env: Env, identity: Iden
     const { results } = await env.esol_marking_db.prepare(query).bind(...binds).all<ITTicket>();
     tickets = results;
 
-    const html = await renderITTicketsPage(tickets, search);
-    return htmlResponse(pageShell("IT Tickets", html, identity, "it-tickets"));
+    const html = await renderITTicketsPage(tickets, search, isITAdmin);
+    const body = `<main class="dashboard-shell">${renderSidebar(identity, "it-tickets")}<section class="content">${renderTopbar(identity, "IT Tickets")}<section class="panel" style="background:#f8fafc">${html}</section></section></main>`;
+    return htmlResponse(pageShell("IT Tickets", body));
   }
 
   // POST /it-tickets
@@ -9161,7 +9165,17 @@ async function handleITTicketsRequest(request: Request, env: Env, identity: Iden
     const { results: comments } = await env.esol_marking_db.prepare("SELECT * FROM it_ticket_comments WHERE ticket_id = ? ORDER BY created_at ASC").bind(ticketId).all<ITTicketComment>();
 
     const html = await renderITTicketDetailPage(ticket, comments, identity, isStaff);
-    return htmlResponse(pageShell("Ticket #" + ticketId, html, identity, "it-tickets"));
+    const body = `<main class="dashboard-shell">${renderSidebar(identity, "it-tickets")}<section class="content">${renderTopbar(identity, "IT Ticket Detail")}<section class="panel">${html}</section></section></main>`;
+    return htmlResponse(pageShell("Ticket #" + ticketId, body));
+  }
+
+  // POST /it-tickets/:id/delete
+  const deleteMatch = url.pathname.match(/^\/it-tickets\/(\d+)\/delete$/);
+  if (request.method === "POST" && deleteMatch && isITAdmin) {
+    const ticketId = parseInt(deleteMatch[1], 10);
+    await env.esol_marking_db.prepare("DELETE FROM it_ticket_comments WHERE ticket_id = ?").bind(ticketId).run();
+    await env.esol_marking_db.prepare("DELETE FROM it_tickets WHERE id = ?").bind(ticketId).run();
+    return Response.redirect(url.origin + "/it-tickets", 303);
   }
 
   // POST /it-tickets/:id
