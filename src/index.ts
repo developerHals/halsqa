@@ -6679,8 +6679,8 @@ function renderSidebar(identity: Identity, active: string) {
     <nav class="sidebar-nav">
       ${navLink("/assessments", "Assessments", active === "assessments")}
       ${navLink("/tracker", "My Tracker", active === "tracker")}
-      ${navLink("/it-tickets", "IT Tickets", active === "it-tickets")}
       ${navLink("https://schedupro.pages.dev/", "Todays' classes", false, true)}
+      ${navLink("/it-tickets", "IT Tickets", active === "it-tickets")}
     </nav>
   </aside>`;
   }
@@ -6696,9 +6696,9 @@ function renderSidebar(identity: Identity, active: string) {
       ${navLink("/students", "Students", active === "students")}
       ${navLink("/reports", "Reports", active === "reports")}
       ${canViewReports(user) ? navLink("/quality-calendar", "Quality Calendar", active === "quality-calendar") : ""}
-      ${navLink("/it-tickets", "IT Tickets", active === "it-tickets")}
       ${navLink("https://haringey-learns-blog.pages.dev/", "Trainings", false, true)}
       ${navLink("https://schedupro.pages.dev/", "Todays' classes", false, true)}
+      ${navLink("/it-tickets", "IT Tickets", active === "it-tickets")}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
   </aside>`;
@@ -8968,7 +8968,7 @@ async function renderITTicketsPage(tickets: ITTicket[], search: string, isSuperu
         if (t.status === 'closed') borderClass = "style='border-left:4px solid #16A34A'";
 
         return `
-          <article class="list-card" ${borderClass} style="position:relative; padding-right:4rem;">
+          <article class="list-card" ${borderClass}>
             <a href="/it-tickets/${t.id}" style="display:block;flex:1;text-decoration:none;">
               <strong style="color:#0f172a;font-size:1rem;margin-bottom:0.25rem;display:block;">Ticket #${t.id} &middot; ${escapeHtml(t.user_name)} (${escapeHtml(t.user_email)})</strong>
               <span style="color:#475569;font-size:0.9rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:0.5rem;">${escapeHtml(t.description)}</span>
@@ -8976,16 +8976,8 @@ async function renderITTicketsPage(tickets: ITTicket[], search: string, isSuperu
             </a>
             <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.25rem;">
               ${renderITTStatusBadge(t.status)}
+              ${isSuperuser ? `<form method="POST" action="/it-tickets/${t.id}/delete" style="margin:0;" onsubmit="return prompt('Type DELETE to confirm') === 'DELETE';"><button type="submit" style="background:#fef2f2;color:#ef4444;border:1px solid #fca5a5;border-radius:6px;padding:0.25rem 0.5rem;font-size:0.75rem;cursor:pointer;font-weight:600;">Delete</button></form>` : ''}
             </div>
-            ${isSuperuser ? `
-              <div style="position:absolute;right:1.5rem;top:50%;transform:translateY(-50%);">
-                <form method="POST" action="/it-tickets/${t.id}/delete" style="margin:0;" onsubmit="return prompt('Type DELETE to confirm') === 'DELETE';">
-                  <button type="submit" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1.5rem;padding:0.25rem;" title="Delete Ticket">
-                    &#128465;
-                  </button>
-                </form>
-              </div>
-            ` : ''}
           </article>
         `;
       }).join('');
