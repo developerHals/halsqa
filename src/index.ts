@@ -9003,15 +9003,15 @@ async function renderITTicketsPage(tickets: ITTicket[], search: string, isSuperu
               <h4 style="margin:0 0 0.75rem 0;font-size:0.875rem;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:0.25rem;font-weight:600;">Filter by Status</h4>
               <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem;">
                 <label style="display:flex;align-items:center;gap:0.5rem;color:#000000 !important;cursor:pointer;font-weight:normal !important;width:100%;">
-                  <input type="checkbox" class="status-filter-checkbox" value="pending" style="cursor:pointer;width:1.1rem !important;height:1.1rem !important;margin:0 !important;padding:0 !important;border:1px solid #cbd5e1 !important;background:#fff !important;display:inline-block !important;" checked>
+                  <input type="checkbox" class="status-filter-checkbox" value="pending" style="cursor:pointer;width:1.1rem !important;height:1.1rem !important;min-width:auto !important;max-width:none !important;margin:0 !important;padding:0 !important;border:1px solid #cbd5e1 !important;background:#fff !important;display:inline-block !important;" checked>
                   <span style="color:#000000 !important;font-weight:normal !important;font-size:0.875rem !important;display:inline-block !important;">Pending</span>
                 </label>
                 <label style="display:flex;align-items:center;gap:0.5rem;color:#000000 !important;cursor:pointer;font-weight:normal !important;width:100%;">
-                  <input type="checkbox" class="status-filter-checkbox" value="in_progress" style="cursor:pointer;width:1.1rem !important;height:1.1rem !important;margin:0 !important;padding:0 !important;border:1px solid #cbd5e1 !important;background:#fff !important;display:inline-block !important;" checked>
+                  <input type="checkbox" class="status-filter-checkbox" value="in_progress" style="cursor:pointer;width:1.1rem !important;height:1.1rem !important;min-width:auto !important;max-width:none !important;margin:0 !important;padding:0 !important;border:1px solid #cbd5e1 !important;background:#fff !important;display:inline-block !important;" checked>
                   <span style="color:#000000 !important;font-weight:normal !important;font-size:0.875rem !important;display:inline-block !important;">In Progress</span>
                 </label>
                 <label style="display:flex;align-items:center;gap:0.5rem;color:#000000 !important;cursor:pointer;font-weight:normal !important;width:100%;">
-                  <input type="checkbox" class="status-filter-checkbox" value="closed" style="cursor:pointer;width:1.1rem !important;height:1.1rem !important;margin:0 !important;padding:0 !important;border:1px solid #cbd5e1 !important;background:#fff !important;display:inline-block !important;" checked>
+                  <input type="checkbox" class="status-filter-checkbox" value="closed" style="cursor:pointer;width:1.1rem !important;height:1.1rem !important;min-width:auto !important;max-width:none !important;margin:0 !important;padding:0 !important;border:1px solid #cbd5e1 !important;background:#fff !important;display:inline-block !important;" checked>
                   <span style="color:#000000 !important;font-weight:normal !important;font-size:0.875rem !important;display:inline-block !important;">Closed</span>
                 </label>
               </div>
