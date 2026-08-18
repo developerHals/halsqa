@@ -2894,8 +2894,8 @@ function renderEmpty(text: string) {
   return `<div class="empty-state"><strong>${escapeHtml(text)}</strong></div>`;
 }
 
-function navLink(href: string, label: string, active: boolean) {
-  return `<a class="${active ? "nav-active" : ""}" href="${href}">${escapeHtml(label)}</a>`;
+function navLink(href: string, label: string, active: boolean, external: boolean = false) {
+  return `<a class="${active ? "nav-active" : ""}" href="${href}"${external ? ' target="_blank"' : ''}>${escapeHtml(label)}</a>`;
 }
 
 function renderUserRow(user: UserRecord, currentUserId: string) {
@@ -6680,6 +6680,7 @@ function renderSidebar(identity: Identity, active: string) {
       ${navLink("/assessments", "Assessments", active === "assessments")}
       ${navLink("/tracker", "My Tracker", active === "tracker")}
       ${navLink("/it-tickets", "IT Tickets", active === "it-tickets")}
+      ${navLink("https://schedupro.pages.dev/", "Todays' classes", false, true)}
     </nav>
   </aside>`;
   }
@@ -6696,6 +6697,8 @@ function renderSidebar(identity: Identity, active: string) {
       ${navLink("/reports", "Reports", active === "reports")}
       ${canViewReports(user) ? navLink("/quality-calendar", "Quality Calendar", active === "quality-calendar") : ""}
       ${navLink("/it-tickets", "IT Tickets", active === "it-tickets")}
+      ${navLink("https://haringey-learns-blog.pages.dev/", "Trainings", false, true)}
+      ${navLink("https://schedupro.pages.dev/", "Todays' classes", false, true)}
       ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
     </nav>
   </aside>`;
@@ -8955,7 +8958,7 @@ function formatITTDate(ds: string | null) {
   return new Date(ds).toISOString().split('T')[0];
 }
 
-async function renderITTicketsPage(tickets: ITTicket[], search: string, isITAdmin: boolean): Promise<string> {
+async function renderITTicketsPage(tickets: ITTicket[], search: string, isSuperuser: boolean): Promise<string> {
   const listHtml = tickets.length === 0 
     ? renderEmpty("No tickets found")
     : tickets.map(t => {
@@ -8965,16 +8968,24 @@ async function renderITTicketsPage(tickets: ITTicket[], search: string, isITAdmi
         if (t.status === 'closed') borderClass = "style='border-left:4px solid #16A34A'";
 
         return `
-          <article class="list-card" ${borderClass}>
+          <article class="list-card" ${borderClass} style="position:relative; padding-right:4rem;">
             <a href="/it-tickets/${t.id}" style="display:block;flex:1;text-decoration:none;">
               <strong style="color:#0f172a;font-size:1rem;margin-bottom:0.25rem;display:block;">Ticket #${t.id} &middot; ${escapeHtml(t.user_name)} (${escapeHtml(t.user_email)})</strong>
               <span style="color:#475569;font-size:0.9rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:0.5rem;">${escapeHtml(t.description)}</span>
               <span style="font-size:0.8rem;color:#64748b;">Logged: ${formatITTDate(t.submitted_at)}${t.in_progress_at ? ' &middot; In Progress: ' + formatITTDate(t.in_progress_at) : ''}${t.closed_at ? ' &middot; Closed: ' + formatITTDate(t.closed_at) : ''}</span>
             </a>
-            <div style="display:flex;align-items:center;gap:0.5rem">
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.25rem;">
               ${renderITTStatusBadge(t.status)}
-              ${isITAdmin ? `<form method="POST" action="/it-tickets/${t.id}/delete" style="margin:0;" onsubmit="return prompt('Type DELETE to confirm') === 'DELETE';"><button type="submit" style="background:#fef2f2;color:#ef4444;border:1px solid #fca5a5;border-radius:6px;padding:0.25rem 0.5rem;font-size:0.75rem;cursor:pointer;font-weight:600;">Delete</button></form>` : ''}
             </div>
+            ${isSuperuser ? `
+              <div style="position:absolute;right:1.5rem;top:50%;transform:translateY(-50%);">
+                <form method="POST" action="/it-tickets/${t.id}/delete" style="margin:0;" onsubmit="return prompt('Type DELETE to confirm') === 'DELETE';">
+                  <button type="submit" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1.5rem;padding:0.25rem;" title="Delete Ticket">
+                    &#128465;
+                  </button>
+                </form>
+              </div>
+            ` : ''}
           </article>
         `;
       }).join('');
@@ -9132,7 +9143,7 @@ async function handleITTicketsRequest(request: Request, env: Env, identity: Iden
     const { results } = await env.esol_marking_db.prepare(query).bind(...binds).all<ITTicket>();
     tickets = results;
 
-    const html = await renderITTicketsPage(tickets, search, isITAdmin);
+    const html = await renderITTicketsPage(tickets, search, isSuperuser(identity.user!));
     const body = `<main class="dashboard-shell">${renderSidebar(identity, "it-tickets")}<section class="content">${renderTopbar(identity, "IT Tickets")}<section class="panel" style="background:#f8fafc">${html}</section></section></main>`;
     return htmlResponse(pageShell("IT Tickets", body));
   }
@@ -9171,7 +9182,7 @@ async function handleITTicketsRequest(request: Request, env: Env, identity: Iden
 
   // POST /it-tickets/:id/delete
   const deleteMatch = url.pathname.match(/^\/it-tickets\/(\d+)\/delete$/);
-  if (request.method === "POST" && deleteMatch && isITAdmin) {
+  if (request.method === "POST" && deleteMatch && isSuperuser(identity.user!)) {
     const ticketId = parseInt(deleteMatch[1], 10);
     await env.esol_marking_db.prepare("DELETE FROM it_ticket_comments WHERE ticket_id = ?").bind(ticketId).run();
     await env.esol_marking_db.prepare("DELETE FROM it_tickets WHERE id = ?").bind(ticketId).run();
