@@ -551,13 +551,41 @@ const htmlHeaders = { "content-type": "text/html; charset=utf-8" };
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 const oauthStateCookie = "hlquality_oauth_state";
 const sessionCookie = "hlquality_session";
-const defaultRoles: string[] = ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa", "it_admin"];
+const orderedRoles: string[] = [
+  "student",
+  "it_admin",
+  "assessor",
+  "mis_officer",
+  "IQA",
+  "assessor_IQA",
+  "Manager",
+  "superuser"
+];
+const defaultRoles: string[] = orderedRoles;
+
+function sortRoles(roles: string[]): string[] {
+  const orderMap = new Map(orderedRoles.map((r, i) => [r.toLowerCase(), i]));
+  return [...roles].sort((a, b) => {
+    const idxA = orderMap.has(a.toLowerCase()) ? orderMap.get(a.toLowerCase())! : 999;
+    const idxB = orderMap.has(b.toLowerCase()) ? orderMap.get(b.toLowerCase())! : 999;
+    if (idxA !== idxB) return idxA - idxB;
+    return a.localeCompare(b);
+  });
+}
+
+function getDbRoleFallback(role: string): string {
+  if (role === "Manager") return "admin";
+  if (role === "mis_officer") return "eqa";
+  if (role === "IQA") return "iqa";
+  if (role === "assessor_IQA") return "assessor_iqa";
+  return role;
+}
 
 async function getRolesList(env: Env): Promise<string[]> {
   try {
-    const res = await env.esol_marking_db.prepare("SELECT role FROM roles ORDER BY role ASC").all<{ role: string }>();
+    const res = await env.esol_marking_db.prepare("SELECT role FROM roles").all<{ role: string }>();
     if (res.results.length > 0) {
-      return res.results.map(r => r.role);
+      return sortRoles(res.results.map(r => r.role));
     }
   } catch (e) {
     // Fallback if roles table is not migrated yet
@@ -566,16 +594,17 @@ async function getRolesList(env: Env): Promise<string[]> {
 }
 
 function getDefaultFunctionalitiesForRole(role: string): string[] {
-  if (role === "superuser" || role === "admin") {
+  const normalized = getDbRoleFallback(role);
+  if (normalized === "superuser" || normalized === "admin") {
     return ["learning-walks", "iqa-forms", "assessments", "tracker", "courses", "my-class", "students", "reports", "quality-calendar", "todays-classes", "trainings", "it-tickets", "users"];
   }
-  if (["assessor", "iqa", "eqa", "assessor_iqa"].includes(role)) {
+  if (["assessor", "iqa", "eqa", "assessor_iqa"].includes(normalized)) {
     return ["learning-walks", "iqa-forms", "assessments", "tracker", "courses", "my-class", "students", "todays-classes", "trainings", "it-tickets"];
   }
-  if (role === "it_admin") {
+  if (normalized === "it_admin") {
     return ["todays-classes", "trainings", "it-tickets"];
   }
-  if (role === "student") {
+  if (normalized === "student") {
     return ["assessments", "tracker", "todays-classes", "it-tickets"];
   }
   return [];
@@ -2759,21 +2788,22 @@ async function getIdentity(email: string, name: string | null, env: Env): Promis
   const user = await env.esol_marking_db.prepare("SELECT id, email, role, stage, custom_role FROM users WHERE lower(email) = lower(?) LIMIT 1").bind(email).first<UserRecord>();
   const identity: Identity = { email, name, user, isKnownUser: Boolean(user) };
   if (user) {
-    if (user.custom_role) {
-      user.role = user.custom_role;
-    }
+    const activeRole = user.custom_role || user.role;
     let functionalities: string[] = [];
     try {
-      const roleRecord = await env.esol_marking_db.prepare("SELECT functionalities FROM roles WHERE role = ?").bind(user.role).first<{ functionalities: string }>();
+      const roleRecord = await env.esol_marking_db.prepare("SELECT functionalities FROM roles WHERE role = ?").bind(activeRole).first<{ functionalities: string }>();
       if (roleRecord) {
         functionalities = JSON.parse(roleRecord.functionalities);
       } else {
-        functionalities = getDefaultFunctionalitiesForRole(user.role);
+        functionalities = getDefaultFunctionalitiesForRole(activeRole);
       }
     } catch (e) {
-      functionalities = getDefaultFunctionalitiesForRole(user.role);
+      functionalities = getDefaultFunctionalitiesForRole(activeRole);
     }
     identity.functionalities = functionalities;
+    
+    // Normalize casing and aliases for legacy compatibility
+    user.role = getDbRoleFallback(activeRole) as Role;
   }
   return identity;
 }
@@ -2788,8 +2818,8 @@ async function createUser(request: Request, env: Env, identity: Identity): Promi
   if (!email || !rolesList.includes(role)) return json({ error: "Invalid user" }, 400);
 
   const isStandard = defaultRoles.includes(role);
-  const dbRole = isStandard ? role : "assessor";
-  const customRole = isStandard ? null : role;
+  const dbRole = isStandard ? getDbRoleFallback(role) : "assessor";
+  const customRole = isStandard ? (role === getDbRoleFallback(role) ? null : role) : role;
 
   await env.esol_marking_db.prepare("INSERT INTO users (id, email, role, stage, custom_role) VALUES (?, ?, ?, ?, ?)").bind(crypto.randomUUID(), email, dbRole, stages.includes(stage as Stage) ? stage : null, customRole).run();
   return Response.redirect(new URL("/users", request.url).toString(), 303);
@@ -2814,8 +2844,8 @@ async function updateUser(request: Request, env: Env, identity: Identity): Promi
   }
 
   const isStandard = defaultRoles.includes(role);
-  const dbRole = isStandard ? role : "assessor";
-  const customRole = isStandard ? null : role;
+  const dbRole = isStandard ? getDbRoleFallback(role) : "assessor";
+  const customRole = isStandard ? (role === getDbRoleFallback(role) ? null : role) : role;
 
   const userStage = stage && stages.includes(stage as Stage) ? stage : roleToStage(dbRole as Role);
 
@@ -2909,15 +2939,22 @@ async function importUsers(request: Request, env: Env, identity: Identity): Prom
     }
 
     // Validate role
-    if (!rolesList.includes(role)) {
+    let matchedRole = "";
+    for (const r of rolesList) {
+      if (r.toLowerCase() === role.toLowerCase()) {
+        matchedRole = r;
+        break;
+      }
+    }
+    if (!matchedRole) {
       results.errors.push({ row: rowNum, message: `Invalid role '${role}'. Must be one of: ${rolesList.join(", ")}` });
       continue;
     }
 
     // Determine stage
-    const isStandard = defaultRoles.includes(role);
-    const dbRole = isStandard ? role : "assessor";
-    const customRole = isStandard ? null : role;
+    const isStandard = defaultRoles.includes(matchedRole);
+    const dbRole = isStandard ? getDbRoleFallback(matchedRole) : "assessor";
+    const customRole = isStandard ? (matchedRole === getDbRoleFallback(matchedRole) ? null : matchedRole) : matchedRole;
 
     let userStage: Stage | null = null;
     if (stage && stages.includes(stage as Stage)) {
@@ -2998,7 +3035,7 @@ function renderUsers(identity: Identity, users: UserRecord[], rolesList: string[
           <p class="eyebrow">Create user</p>
           <form method="POST" action="/api/users" class="form-grid">
             <label>Email<input name="email" type="email" required placeholder="staff@example.org"></label>
-            <label>Role<select name="role">${rolesList.map((role) => `<option value="${role}">${role === "assessor_iqa" ? "Assessor / IQA" : role}</option>`).join("")}</select></label>
+            <label>Role<select name="role">${rolesList.map((role) => `<option value="${role}">${(role === "assessor_iqa" || role === "assessor_IQA") ? "Assessor / IQA" : role}</option>`).join("")}</select></label>
             <label>Stage<select name="stage"><option value="">Auto</option>${stages.map((stage) => `<option value="${stage}">${stage}</option>`).join("")}</select></label>
             <button type="submit">Create user</button>
           </form>
@@ -3074,7 +3111,7 @@ function renderUsers(identity: Identity, users: UserRecord[], rolesList: string[
           <div style="margin-bottom:1rem">
             <label style="display:block;font-size:0.875rem;font-weight:600;margin-bottom:0.5rem">Role</label>
             <select id="editUserRole" name="role" style="width:100%">
-              ${rolesList.map(r => `<option value="${r}">${r === "assessor_iqa" ? "Assessor / IQA" : r}</option>`).join("")}
+              ${rolesList.map(r => `<option value="${r}">${(r === "assessor_iqa" || r === "assessor_IQA") ? "Assessor / IQA" : r}</option>`).join("")}
             </select>
           </div>
           <div style="margin-bottom:1.5rem">
@@ -3128,7 +3165,7 @@ function navLink(href: string, label: string, active: boolean, external: boolean
 
 function renderUserRow(user: UserRecord, currentUserId: string) {
   const isCurrentUser = user.id === currentUserId;
-  const roleDisplay = user.role === "assessor_iqa" ? "Assessor / IQA" : user.role;
+  const roleDisplay = (user.role === "assessor_iqa" || user.role === "assessor_IQA") ? "Assessor / IQA" : user.role;
   const stageDisplay = user.stage ? ` (${user.stage})` : "";
   
   return `<div class="user-row" data-email="${escapeHtml(user.email.toLowerCase())}" data-role="${escapeHtml(user.role)}">
