@@ -667,7 +667,11 @@ export default {
       requiredFunctionality = "quality-calendar";
     } else if (url.pathname.startsWith("/it-tickets") || url.pathname.startsWith("/api/it-tickets")) {
       requiredFunctionality = "it-tickets";
-    } else if (url.pathname.startsWith("/users") || url.pathname.startsWith("/roles") || url.pathname.startsWith("/api/users") || url.pathname.startsWith("/api/roles")) {
+    } else if (url.pathname.startsWith("/roles") || url.pathname.startsWith("/api/roles")) {
+      if (!isSuperuser(identity.user!)) {
+        return htmlResponse(renderForbiddenPage(identity), 403);
+      }
+    } else if (url.pathname.startsWith("/users") || url.pathname.startsWith("/api/users")) {
       requiredFunctionality = "users";
     }
 
@@ -7204,6 +7208,17 @@ async function renderDashboardPage(request: Request, env: Env, identity: Identit
   ];
 
   const allowedTiles = allTiles.filter(tile => allowed.includes(tile.key));
+
+  if (user.role === "superuser") {
+    allowedTiles.push({
+      key: "roles",
+      href: "/roles",
+      title: "Roles Management",
+      desc: "Manage system roles, permissions, and sidebar visibility.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+      external: false
+    });
+  }
 
   const tilesHtml = allowedTiles.map(tile => `
     <a href="${tile.href}" class="homepage-tile" ${tile.external ? 'target="_blank"' : ''}>
