@@ -22,7 +22,7 @@ interface Env {
   ASSETS?: { fetch(request: Request): Promise<Response> };
 }
 
-type Role = "superuser" | "admin" | "assessor" | "iqa" | "eqa" | "assessor_iqa" | "student" | "it_admin";
+type Role = string;
 
 // ── Student Enrolment (synced from LearnerTrack) ──────────────────────────────
 type StudentEnrolment = {
@@ -146,6 +146,7 @@ type UserRecord = {
   role: Role;
   stage: Stage | null;
   created_at?: string;
+  custom_role?: string | null;
 };
 
 type Identity = {
@@ -153,6 +154,7 @@ type Identity = {
   name: string | null;
   user: UserRecord | null;
   isKnownUser: boolean;
+  functionalities?: string[];
 };
 
 type MicrosoftUser = {
@@ -549,15 +551,49 @@ const htmlHeaders = { "content-type": "text/html; charset=utf-8" };
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 const oauthStateCookie = "hlquality_oauth_state";
 const sessionCookie = "hlquality_session";
-const roles: Role[] = ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa", "it_admin"];
+const defaultRoles: string[] = ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa", "it_admin"];
 
+async function getRolesList(env: Env): Promise<string[]> {
+  try {
+    const res = await env.esol_marking_db.prepare("SELECT role FROM roles ORDER BY role ASC").all<{ role: string }>();
+    if (res.results.length > 0) {
+      return res.results.map(r => r.role);
+    }
+  } catch (e) {
+    // Fallback if roles table is not migrated yet
+  }
+  return defaultRoles;
+}
+
+function getDefaultFunctionalitiesForRole(role: string): string[] {
+  if (role === "superuser" || role === "admin") {
+    return ["learning-walks", "iqa-forms", "assessments", "tracker", "courses", "my-class", "students", "reports", "quality-calendar", "todays-classes", "trainings", "it-tickets", "users"];
+  }
+  if (["assessor", "iqa", "eqa", "assessor_iqa"].includes(role)) {
+    return ["learning-walks", "iqa-forms", "assessments", "tracker", "courses", "my-class", "students", "todays-classes", "trainings", "it-tickets"];
+  }
+  if (role === "it_admin") {
+    return ["todays-classes", "trainings", "it-tickets"];
+  }
+  if (role === "student") {
+    return ["assessments", "tracker", "todays-classes", "it-tickets"];
+  }
+  return [];
+}
+
+function hasPermission(identity: Identity, key: string): boolean {
+  if (!identity.user) return false;
+  const allowed = identity.functionalities || getDefaultFunctionalitiesForRole(identity.user.role);
+  return allowed.includes(key);
+}
+
+function canViewReports(user: UserRecord): boolean {
+  return user.role === "admin" || user.role === "superuser";
+}
 function getCurrentAcademicYear(date = new Date()): number {
   const year = date.getFullYear();
   const month = date.getMonth() + 1;
   return month >= 9 ? year : year - 1;
-}
-function canViewReports(user: UserRecord): boolean {
-  return user.role === "admin" || user.role === "superuser";
 }
 const stages: Stage[] = ["assess", "iqa", "eqa"];
 
@@ -583,6 +619,9 @@ export default {
     if (url.pathname === "/dashboard") return Response.redirect(`${url.origin}/${identity.user.role === "student" ? "assessments" : "learning-walks"}`, 302);
     if (url.pathname.startsWith("/it-tickets")) return handleITTicketsRequest(request, env, identity);
     if (url.pathname === "/users") return renderUsersPage(request, env, identity);
+    if (url.pathname === "/roles") return renderRolesPage(request, env, identity);
+    if (url.pathname === "/api/roles/save" && request.method === "POST") return saveRolePermissions(request, env, identity);
+    if (url.pathname === "/api/roles/add" && request.method === "POST") return addRole(request, env, identity);
 
 
     if (url.pathname === "/courses") return renderCoursesPageHandler(request, env, identity);
@@ -734,7 +773,13 @@ export default {
 
 async function renderUsersPage(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!isSuperuser(identity.user!)) return htmlResponse(renderForbiddenPage(identity), 403);
-  const users = await env.esol_marking_db.prepare("SELECT id, email, role, stage, created_at FROM users ORDER BY created_at DESC, email ASC").all<UserRecord>();
+  const users = await env.esol_marking_db.prepare("SELECT id, email, role, stage, custom_role, created_at FROM users ORDER BY created_at DESC, email ASC").all<UserRecord>();
+  const rolesList = await getRolesList(env);
+
+  const mappedUsers = users.results.map(u => ({
+    ...u,
+    role: u.custom_role || u.role
+  }));
 
   // Parse import result from query params
   const url = new URL(request.url);
@@ -747,7 +792,154 @@ async function renderUsersPage(request: Request, env: Env, identity: Identity): 
       }
     : undefined;
 
-  return htmlResponse(renderUsers(identity, users.results, importResult));
+  return htmlResponse(renderUsers(identity, mappedUsers, rolesList, importResult));
+}
+
+async function renderRolesPage(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!isSuperuser(identity.user!)) return htmlResponse(renderForbiddenPage(identity), 403);
+  
+  const rolesData = await env.esol_marking_db.prepare("SELECT role, functionalities FROM roles ORDER BY role ASC").all<{ role: string; functionalities: string }>();
+  const url = new URL(request.url);
+  const selectedRole = url.searchParams.get("role") || (rolesData.results[0]?.role ?? "");
+
+  const functionalitiesList = [
+    { key: "learning-walks", label: "Learning Walks" },
+    { key: "iqa-forms", label: "IQA Forms" },
+    { key: "assessments", label: "Assessments" },
+    { key: "tracker", label: "Progress Tracker" },
+    { key: "courses", label: "Our Courses" },
+    { key: "my-class", label: "My Class" },
+    { key: "students", label: "Students" },
+    { key: "reports", label: "Reports" },
+    { key: "quality-calendar", label: "Quality Calendar" },
+    { key: "todays-classes", label: "Todays' classes" },
+    { key: "trainings", label: "Trainings" },
+    { key: "it-tickets", label: "IT Tickets" },
+    { key: "users", label: "Users" }
+  ];
+
+  const page = pageShell("Roles Management", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "users")}
+      <section class="content">
+        ${renderTopbar(identity, "Roles Management")}
+        
+        <section class="panel">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+            <div>
+              <p class="eyebrow" style="margin:0">Configure Role Permissions</p>
+              <h2 style="margin:0.25rem 0 0 0; font-size:1.5rem; font-weight:700;">Manage Roles & Sidebar Visibility</h2>
+            </div>
+            <div>
+              <button type="button" class="btn btn-pink" onclick="openAddRoleModal()" style="padding:0.5rem 1rem; background:#ff005a; color:white; border:none; border-radius:8px; font-weight:600; cursor:pointer;">Add Role</button>
+            </div>
+          </div>
+
+          <form method="POST" action="/api/roles/save" style="max-width:600px;">
+            <div style="margin-bottom:1.5rem;">
+              <label style="display:block; font-weight:600; margin-bottom:0.5rem; font-size:0.9rem;">Select Role</label>
+              <select id="roleSelect" name="role" onchange="onRoleSelectChange()" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:8px; font-size:1rem; background:#fff;">
+                ${rolesData.results.map(r => `<option value="${escapeHtml(r.role)}" ${r.role === selectedRole ? "selected" : ""}>${escapeHtml(r.role)}</option>`).join("")}
+              </select>
+            </div>
+
+            <p style="font-weight:600; margin-bottom:1rem; font-size:0.9rem; border-bottom:1px solid #e2e8f0; padding-bottom:0.5rem;">Sidebar Functionalities</p>
+            <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:1rem; margin-bottom:2rem;">
+              ${functionalitiesList.map(f => `
+                <label style="display:flex; align-items:center; gap:0.75rem; cursor:pointer; padding:0.5rem; border-radius:6px; hover:background:#f8fafc;">
+                  <input type="checkbox" name="functionalities" value="${f.key}" class="func-checkbox" style="width:18px; height:18px; cursor:pointer;">
+                  <span style="font-size:0.95rem; color:#1e293b; font-weight:500;">${f.label}</span>
+                </label>
+              `).join("")}
+            </div>
+
+            <button type="submit" class="btn" style="padding:0.6rem 1.5rem; background:#1e293b; color:white; border:none; border-radius:8px; font-weight:600; cursor:pointer;">Save Permissions</button>
+          </form>
+        </section>
+      </section>
+    </main>
+
+    <!-- Add Role Modal -->
+    <div id="addRoleModal" class="modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center;">
+      <div class="modal-box" style="background:#fff; border-radius:12px; padding:2rem; max-width:400px; width:92%; box-shadow:0 12px 48px rgba(0,0,0,0.22);">
+        <h2 style="margin-top:0; font-size:1.25rem;">Add New Role</h2>
+        <form method="POST" action="/api/roles/add">
+          <div style="margin-bottom:1.5rem;">
+            <label style="display:block; font-size:0.875rem; font-weight:600; margin-bottom:0.5rem;">Role Name</label>
+            <input type="text" name="role_name" required placeholder="e.g. guest_inspector" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:8px;">
+          </div>
+          <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+            <button type="button" class="secondary-btn" onclick="closeAddRoleModal()" style="padding:0.5rem 1rem; border:1px solid #cbd5e1; background:white; border-radius:8px; cursor:pointer; font-size:0.9rem;">Cancel</button>
+            <button type="submit" class="primary-btn" style="padding:0.5rem 1rem; background:#ff005a; color:white; border:none; border-radius:8px; font-weight:600; cursor:pointer; font-size:0.9rem;">Add Role</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      const rolesData = ${JSON.stringify(rolesData.results)};
+      
+      function onRoleSelectChange() {
+        const select = document.getElementById('roleSelect');
+        const role = select.value;
+        const roleRecord = rolesData.find(r => r.role === role);
+        if (roleRecord) {
+          let functionalities = [];
+          try {
+            functionalities = JSON.parse(roleRecord.functionalities);
+          } catch(e) {}
+          const checkboxes = document.querySelectorAll('.func-checkbox');
+          checkboxes.forEach(cb => {
+            cb.checked = functionalities.includes(cb.value);
+          });
+        }
+      }
+
+      function openAddRoleModal() {
+        document.getElementById('addRoleModal').style.display = 'flex';
+      }
+
+      function closeAddRoleModal() {
+        document.getElementById('addRoleModal').style.display = 'none';
+      }
+
+      // Initial check on page load
+      window.addEventListener('DOMContentLoaded', onRoleSelectChange);
+    </script>
+  `);
+
+  return htmlResponse(page);
+}
+
+async function saveRolePermissions(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!isSuperuser(identity.user!)) return json({ error: "Forbidden" }, 403);
+  const body = await request.formData();
+  const role = String(body.get("role") ?? "").trim();
+  const functionalities = body.getAll("functionalities").map(String);
+  
+  if (!role) return json({ error: "Role name is required" }, 400);
+  
+  await env.esol_marking_db.prepare("UPDATE roles SET functionalities = ? WHERE role = ?").bind(JSON.stringify(functionalities), role).run();
+  
+  return Response.redirect(new URL(`/roles?role=${encodeURIComponent(role)}`, request.url).toString(), 303);
+}
+
+async function addRole(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!isSuperuser(identity.user!)) return json({ error: "Forbidden" }, 403);
+  const body = await request.formData();
+  const roleName = String(body.get("role_name") ?? "").trim().toLowerCase();
+  
+  if (!roleName) return json({ error: "Role name is required" }, 400);
+  
+  // Create role with default functionalities (empty array by default)
+  const defaultFuncs = JSON.stringify([]);
+  
+  try {
+    await env.esol_marking_db.prepare("INSERT INTO roles (id, role, functionalities) VALUES (?, ?, ?)").bind(crypto.randomUUID(), roleName, defaultFuncs).run();
+    return Response.redirect(new URL(`/roles?role=${encodeURIComponent(roleName)}`, request.url).toString(), 303);
+  } catch (err: any) {
+    return Response.redirect(new URL(`/roles?error=${encodeURIComponent(err.message || "Failed to add role")}`, request.url).toString(), 303);
+  }
 }
 
 async function fetchLearnerTrackCourses(request: Request, env: Env, identity: Identity): Promise<Response> {
@@ -2564,18 +2756,42 @@ async function requireIdentity(request: Request, env: Env): Promise<Identity | n
 }
 
 async function getIdentity(email: string, name: string | null, env: Env): Promise<Identity> {
-  const user = await env.esol_marking_db.prepare("SELECT id, email, role, stage FROM users WHERE lower(email) = lower(?) LIMIT 1").bind(email).first<UserRecord>();
-  return { email, name, user, isKnownUser: Boolean(user) };
+  const user = await env.esol_marking_db.prepare("SELECT id, email, role, stage, custom_role FROM users WHERE lower(email) = lower(?) LIMIT 1").bind(email).first<UserRecord>();
+  const identity: Identity = { email, name, user, isKnownUser: Boolean(user) };
+  if (user) {
+    if (user.custom_role) {
+      user.role = user.custom_role;
+    }
+    let functionalities: string[] = [];
+    try {
+      const roleRecord = await env.esol_marking_db.prepare("SELECT functionalities FROM roles WHERE role = ?").bind(user.role).first<{ functionalities: string }>();
+      if (roleRecord) {
+        functionalities = JSON.parse(roleRecord.functionalities);
+      } else {
+        functionalities = getDefaultFunctionalitiesForRole(user.role);
+      }
+    } catch (e) {
+      functionalities = getDefaultFunctionalitiesForRole(user.role);
+    }
+    identity.functionalities = functionalities;
+  }
+  return identity;
 }
 
 async function createUser(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!isSuperuser(identity.user!)) return json({ error: "Forbidden" }, 403);
   const body = await request.formData();
   const email = String(body.get("email") ?? "").trim().toLowerCase();
-  const role = String(body.get("role") ?? "assessor") as Role;
+  const role = String(body.get("role") ?? "assessor");
   const stage = String(body.get("stage") || roleToStage(role));
-  if (!email || !roles.includes(role)) return json({ error: "Invalid user" }, 400);
-  await env.esol_marking_db.prepare("INSERT INTO users (id, email, role, stage) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), email, role, stages.includes(stage as Stage) ? stage : null).run();
+  const rolesList = await getRolesList(env);
+  if (!email || !rolesList.includes(role)) return json({ error: "Invalid user" }, 400);
+
+  const isStandard = defaultRoles.includes(role);
+  const dbRole = isStandard ? role : "assessor";
+  const customRole = isStandard ? null : role;
+
+  await env.esol_marking_db.prepare("INSERT INTO users (id, email, role, stage, custom_role) VALUES (?, ?, ?, ?, ?)").bind(crypto.randomUUID(), email, dbRole, stages.includes(stage as Stage) ? stage : null, customRole).run();
   return Response.redirect(new URL("/users", request.url).toString(), 303);
 }
 
@@ -2587,7 +2803,8 @@ async function updateUser(request: Request, env: Env, identity: Identity): Promi
   const role = String(body.get("role") ?? "");
   const stage = String(body.get("stage") ?? "");
 
-  if (!id || !roles.includes(role as Role)) {
+  const rolesList = await getRolesList(env);
+  if (!id || !rolesList.includes(role)) {
     return Response.redirect(new URL("/users?update=error&message=Invalid+user+or+role", request.url).toString(), 303);
   }
 
@@ -2596,12 +2813,16 @@ async function updateUser(request: Request, env: Env, identity: Identity): Promi
     return Response.redirect(new URL("/users?update=error&message=Cannot+modify+own+account", request.url).toString(), 303);
   }
 
-  const userStage = stage && stages.includes(stage as Stage) ? stage : roleToStage(role as Role);
+  const isStandard = defaultRoles.includes(role);
+  const dbRole = isStandard ? role : "assessor";
+  const customRole = isStandard ? null : role;
+
+  const userStage = stage && stages.includes(stage as Stage) ? stage : roleToStage(dbRole as Role);
 
   try {
     await env.esol_marking_db.prepare(
-      "UPDATE users SET role = ?, stage = ? WHERE id = ?"
-    ).bind(role, userStage, id).run();
+      "UPDATE users SET role = ?, stage = ?, custom_role = ? WHERE id = ?"
+    ).bind(dbRole, userStage, customRole, id).run();
     return Response.redirect(new URL("/users?update=success", request.url).toString(), 303);
   } catch (err: any) {
     return Response.redirect(new URL(`/users?update=error&message=${encodeURIComponent(err?.message || "Update failed")}`, request.url).toString(), 303);
@@ -2654,6 +2875,7 @@ async function importUsers(request: Request, env: Env, identity: Identity): Prom
   // Get existing emails for duplicate checking
   const existingUsers = await env.esol_marking_db.prepare("SELECT lower(email) as email FROM users").all<{ email: string }>();
   const existingEmails = new Set(existingUsers.results.map(u => u.email));
+  const rolesList = await getRolesList(env);
 
   for (let i = 1; i < lines.length; i++) {
     const rowNum = i + 1;
@@ -2687,23 +2909,27 @@ async function importUsers(request: Request, env: Env, identity: Identity): Prom
     }
 
     // Validate role
-    if (!roles.includes(role as Role)) {
-      results.errors.push({ row: rowNum, message: `Invalid role '${role}'. Must be one of: ${roles.join(", ")}` });
+    if (!rolesList.includes(role)) {
+      results.errors.push({ row: rowNum, message: `Invalid role '${role}'. Must be one of: ${rolesList.join(", ")}` });
       continue;
     }
 
     // Determine stage
+    const isStandard = defaultRoles.includes(role);
+    const dbRole = isStandard ? role : "assessor";
+    const customRole = isStandard ? null : role;
+
     let userStage: Stage | null = null;
     if (stage && stages.includes(stage as Stage)) {
       userStage = stage as Stage;
     } else {
-      userStage = roleToStage(role as Role);
+      userStage = roleToStage(dbRole as Role);
     }
 
     try {
       await env.esol_marking_db.prepare(
-        "INSERT INTO users (id, email, role, stage) VALUES (?, ?, ?, ?)"
-      ).bind(crypto.randomUUID(), email, role, userStage).run();
+        "INSERT INTO users (id, email, role, stage, custom_role) VALUES (?, ?, ?, ?, ?)"
+      ).bind(crypto.randomUUID(), email, dbRole, userStage, customRole).run();
       results.created++;
       existingEmails.add(email);
     } catch (err: any) {
@@ -2750,7 +2976,7 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-function renderUsers(identity: Identity, users: UserRecord[], importResult?: { status: string; summary: string; details?: string }) {
+function renderUsers(identity: Identity, users: UserRecord[], rolesList: string[], importResult?: { status: string; summary: string; details?: string }) {
   const importSection = importResult?.status === "success"
     ? `<div class="alert alert-success">
         <strong>Import Complete:</strong> ${importResult.summary}
@@ -2760,17 +2986,19 @@ function renderUsers(identity: Identity, users: UserRecord[], importResult?: { s
     ? `<div class="alert alert-error"><strong>Import Failed:</strong> ${escapeHtml(importResult.summary)}</div>`
     : "";
 
+  const rolesButtonHtml = `<a href="/roles" class="btn btn-pink" style="padding:0.4rem 0.8rem;background:#ff005a;color:white;text-decoration:none;border-radius:8px;font-weight:600;font-size:0.9rem;display:inline-flex;align-items:center;justify-content:center;">Roles</a>`;
+
   return pageShell("Users", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "users")}
       <section class="content">
-        ${renderTopbar(identity, "Users")}
+        ${renderTopbar(identity, "Users", rolesButtonHtml)}
         ${importSection}
         <section class="panel">
           <p class="eyebrow">Create user</p>
           <form method="POST" action="/api/users" class="form-grid">
             <label>Email<input name="email" type="email" required placeholder="staff@example.org"></label>
-            <label>Role<select name="role">${roles.map((role) => `<option value="${role}">${role === "assessor_iqa" ? "Assessor / IQA" : role}</option>`).join("")}</select></label>
+            <label>Role<select name="role">${rolesList.map((role) => `<option value="${role}">${role === "assessor_iqa" ? "Assessor / IQA" : role}</option>`).join("")}</select></label>
             <label>Stage<select name="stage"><option value="">Auto</option>${stages.map((stage) => `<option value="${stage}">${stage}</option>`).join("")}</select></label>
             <button type="submit">Create user</button>
           </form>
@@ -2812,7 +3040,7 @@ function renderUsers(identity: Identity, users: UserRecord[], importResult?: { s
               <input type="text" id="filter-user-name" placeholder="Search by email..." style="padding:0.4rem; border:1px solid #ccc; border-radius:4px;" oninput="applyUserFilters()">
               <select id="filter-user-role" style="padding:0.4rem; border:1px solid #ccc; border-radius:4px;" onchange="applyUserFilters()">
                 <option value="">All Roles</option>
-                ${roles.map(r => `<option value="${r}">${r}</option>`).join("")}
+                ${rolesList.map(r => `<option value="${r}">${r}</option>`).join("")}
                 <option value="student">student</option>
               </select>
             </div>
@@ -2846,7 +3074,7 @@ function renderUsers(identity: Identity, users: UserRecord[], importResult?: { s
           <div style="margin-bottom:1rem">
             <label style="display:block;font-size:0.875rem;font-weight:600;margin-bottom:0.5rem">Role</label>
             <select id="editUserRole" name="role" style="width:100%">
-              ${roles.map(r => `<option value="${r}">${r === "assessor_iqa" ? "Assessor / IQA" : r}</option>`).join("")}
+              ${rolesList.map(r => `<option value="${r}">${r === "assessor_iqa" ? "Assessor / IQA" : r}</option>`).join("")}
             </select>
           </div>
           <div style="margin-bottom:1.5rem">
@@ -6672,40 +6900,73 @@ function pageShell(title: string, body: string) {
 
 function renderSidebar(identity: Identity, active: string) {
   const user = identity.user!;
-  const isStudent = user.role === "student";
-  if (isStudent) {
-    return `<aside class="sidebar">
-    <div class="sidebar-brand"><div class="brand-mark"><img src="/favicon.svg" width="36" height="36" style="object-fit:contain;display:block"></div><div><strong>HALSQ</strong><span>Student Portal</span></div></div>
-    <nav class="sidebar-nav">
-      ${navLink("/assessments", "Assessments", active === "assessments")}
-      ${navLink("/tracker", "My Tracker", active === "tracker")}
-      ${navLink("https://schedupro.pages.dev/", "Todays' classes", false, true)}
-      ${navLink("/it-tickets", "IT Tickets", active === "it-tickets")}
-    </nav>
-  </aside>`;
+  const allowed = identity.functionalities || getDefaultFunctionalitiesForRole(user.role);
+  
+  const links: string[] = [];
+  
+  if (allowed.includes("learning-walks")) {
+    links.push(navLink("/learning-walks", "Learning Walks", active === "learning-walks"));
   }
+  if (allowed.includes("iqa-forms")) {
+    links.push(navLink("/iqa-forms", "IQA Forms", active === "iqa-forms"));
+  }
+  if (allowed.includes("assessments")) {
+    links.push(navLink("/assessments", "Assessments", active === "assessments"));
+  }
+  if (allowed.includes("tracker")) {
+    const label = user.role === "student" ? "My Tracker" : "Progress Tracker";
+    links.push(navLink("/tracker", label, active === "tracker"));
+  }
+  if (allowed.includes("courses")) {
+    links.push(navLink("/courses", "Our Courses", active === "courses"));
+  }
+  if (allowed.includes("my-class")) {
+    links.push(navLink("/my-class", "My Class", active === "my-class"));
+  }
+  if (allowed.includes("students")) {
+    links.push(navLink("/students", "Students", active === "students"));
+  }
+  if (allowed.includes("reports")) {
+    links.push(navLink("/reports", "Reports", active === "reports"));
+  }
+  if (allowed.includes("quality-calendar")) {
+    links.push(navLink("/quality-calendar", "Quality Calendar", active === "quality-calendar"));
+  }
+  if (allowed.includes("todays-classes")) {
+    links.push(navLink("https://schedupro.pages.dev/", "Todays' classes", false, true));
+  }
+  if (allowed.includes("trainings")) {
+    links.push(navLink("https://haringey-learns-blog.pages.dev/", "Trainings", false, true));
+  }
+  if (allowed.includes("it-tickets")) {
+    links.push(navLink("/it-tickets", "IT Tickets", active === "it-tickets"));
+  }
+  if (allowed.includes("users")) {
+    links.push(navLink("/users", "Users", active === "users"));
+  }
+
+  const portalLabel = user.role === "student" ? "Student Portal" : (user.role === "assessor_iqa" ? "Assessor / IQA" : user.role);
+
   return `<aside class="sidebar">
-    <div class="sidebar-brand"><div class="brand-mark"><img src="/favicon.svg" width="36" height="36" style="object-fit:contain;display:block"></div><div><strong>HALSQ</strong><span>${escapeHtml(user.role === "assessor_iqa" ? "Assessor / IQA" : user.role)}</span></div></div>
+    <div class="sidebar-brand">
+      <div class="brand-mark"><img src="/favicon.svg" width="36" height="36" style="object-fit:contain;display:block"></div>
+      <div><strong>HALSQ</strong><span>${escapeHtml(portalLabel)}</span></div>
+    </div>
     <nav class="sidebar-nav">
-      ${navLink("/learning-walks", "Learning Walks", active === "learning-walks")}
-      ${navLink("/iqa-forms", "IQA Forms", active === "iqa-forms")}
-      ${navLink("/assessments", "Assessments", active === "assessments")}
-      ${navLink("/tracker", "Progress Tracker", active === "tracker")}
-      ${navLink("/courses", "Our Courses", active === "courses")}
-      ${navLink("/my-class", "My Class", active === "my-class")}
-      ${navLink("/students", "Students", active === "students")}
-      ${navLink("/reports", "Reports", active === "reports")}
-      ${canViewReports(user) ? navLink("/quality-calendar", "Quality Calendar", active === "quality-calendar") : ""}
-      ${navLink("https://schedupro.pages.dev/", "Todays' classes", false, true)}
-      ${navLink("https://haringey-learns-blog.pages.dev/", "Trainings", false, true)}
-      ${navLink("/it-tickets", "IT Tickets", active === "it-tickets")}
-      ${isSuperuser(user) ? navLink("/users", "Users", active === "users") : ""}
+      ${links.join("\n")}
     </nav>
   </aside>`;
 }
 
-function renderTopbar(identity: Identity, title: string) {
-  return `<header class="topbar"><div><p class="eyebrow">Dashboard</p><h1>${escapeHtml(title)}</h1></div><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></header>`;
+function renderTopbar(identity: Identity, title: string, extraActions?: string) {
+  return `<header class="topbar">
+    <div><p class="eyebrow">Dashboard</p><h1>${escapeHtml(title)}</h1></div>
+    <div style="display:flex;align-items:center;gap:1rem;">
+      <div class="profile-pill">${escapeHtml(identity.email)}</div>
+      ${extraActions || ""}
+      <a class="logout-link" href="/logout">Sign out</a>
+    </div>
+  </header>`;
 }
 
 function escapeHtml(value: string | null | undefined) { if (value == null) return ""; return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }

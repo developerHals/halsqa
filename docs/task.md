@@ -1,7 +1,7 @@
-- [x] Update `renderSidebar` to move "IT Tickets" below "Quality Calendar"
-- [x] Implement `renderNewITTicketPage()` mirroring IQA form style
-- [x] Update `renderITTicketsPage()` to mirror Learning Walks list view with custom borders
-- [x] Update `handleITTicketsRequest` with `/it-tickets/new` route
-- [x] Implement Search filtering in `GET /it-tickets`
-- [x] Run `npx tsc` to verify build
-- [x] Deploy to Cloudflare
+- [x] Create D1 SQL migration 0017 to add the `roles` table, prepopulate default roles, and drop the `users` table constraint.
+- [x] Update `src/index.ts` data structures: `Identity` type, remove `Role` union constraints, implement dynamic `getRolesList(env)` utility.
+- [x] Add `hasPermission` helper and refactor `renderSidebar` to dynamically map nav link visibility based on checked functionalities.
+- [x] Update topbar (`renderTopbar`) to accept actions, and insert the pink "Roles" button inside `/users` topbar.
+- [x] Add routing and handler methods in `src/index.ts` for `/roles`, `/api/roles/save`, and `/api/roles/add`.
+- [x] Update user forms/dialogs and validations (`createUser`, `updateUser`, `importUsers`) to fetch and use roles dynamically from the DB.
+- [x] Test, run typescript compile, and verify.
