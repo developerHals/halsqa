@@ -827,9 +827,12 @@ async function renderUsersPage(request: Request, env: Env, identity: Identity): 
 async function renderRolesPage(request: Request, env: Env, identity: Identity): Promise<Response> {
   if (!isSuperuser(identity.user!)) return htmlResponse(renderForbiddenPage(identity), 403);
   
-  const rolesData = await env.esol_marking_db.prepare("SELECT role, functionalities FROM roles ORDER BY role ASC").all<{ role: string; functionalities: string }>();
+  const rolesData = await env.esol_marking_db.prepare("SELECT role, functionalities FROM roles").all<{ role: string; functionalities: string }>();
+  const sortedRolesList = sortRoles(rolesData.results.map(r => r.role));
+  const sortedResults = sortedRolesList.map(rName => rolesData.results.find(r => r.role === rName)!).filter(Boolean);
+
   const url = new URL(request.url);
-  const selectedRole = url.searchParams.get("role") || (rolesData.results[0]?.role ?? "");
+  const selectedRole = url.searchParams.get("role") || (sortedResults[0]?.role ?? "");
 
   const functionalitiesList = [
     { key: "learning-walks", label: "Learning Walks" },
@@ -868,7 +871,7 @@ async function renderRolesPage(request: Request, env: Env, identity: Identity): 
             <div style="margin-bottom:1.5rem;">
               <label style="display:block; font-weight:600; margin-bottom:0.5rem; font-size:0.9rem;">Select Role</label>
               <select id="roleSelect" name="role" onchange="onRoleSelectChange()" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:8px; font-size:1rem; background:#fff;">
-                ${rolesData.results.map(r => `<option value="${escapeHtml(r.role)}" ${r.role === selectedRole ? "selected" : ""}>${escapeHtml(r.role)}</option>`).join("")}
+                ${sortedResults.map(r => `<option value="${escapeHtml(r.role)}" ${r.role === selectedRole ? "selected" : ""}>${escapeHtml(r.role)}</option>`).join("")}
               </select>
             </div>
 
@@ -3078,7 +3081,6 @@ function renderUsers(identity: Identity, users: UserRecord[], rolesList: string[
               <select id="filter-user-role" style="padding:0.4rem; border:1px solid #ccc; border-radius:4px;" onchange="applyUserFilters()">
                 <option value="">All Roles</option>
                 ${rolesList.map(r => `<option value="${r}">${r}</option>`).join("")}
-                <option value="student">student</option>
               </select>
             </div>
           </div>
