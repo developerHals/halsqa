@@ -8290,6 +8290,10 @@ function renderTrackerTile(
 function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string, activeEnrolmentId: string): string {
   const enrolment = enrolments.find(e => e.id === activeEnrolmentId) ?? enrolments[0] ?? null;
 
+  const learnerProfileTile = renderTrackerTile("profile", "👤", "Learner Profile",
+    `<p class="muted-text">Learner demographic and support profile details.</p>`,
+    "✏️ Edit", "#", "new");
+
   const closTile = renderTrackerTile("clos", "📚", "Course Learning Objectives",
     formatObjectiveListHtml(tracker?.course_learning_objectives),
     "✏️ Edit", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=clos`, getCloStatus(tracker));
@@ -8333,6 +8337,10 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
     tracker?.destination_type ? `<p><strong>${escapeHtml(formatDestinationType(tracker.destination_type))}</strong></p><p>${escapeHtml(tracker.destination_notes ?? "")}</p>` : "",
     "✏️ Edit", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=destination`, tracker?.destination_status || "new");
 
+  const courseFeedbackTile = renderTrackerTile("feedback", "💬", "Course feedback",
+    `<p class="muted-text">End of course feedback survey.</p>`,
+    "✏️ Edit", "#", "new");
+
   return pageShell("My Progress Tracker", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "tracker")}
@@ -8342,10 +8350,17 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
           ${!learnerId ? `<div class="alert alert-warn">Could not determine your learner ID from your email.</div>` : ""}
           ${enrolment ? `<div class="tracker-course-banner"><strong>${escapeHtml(enrolment.course_title)}</strong> <span class="meta-chip">${escapeHtml(enrolment.course_code)}</span></div>` : ""}
           <div class="tracker-tiles">
+            ${learnerProfileTile}
             ${closTile}
+            ${diagnosticTile}
             ${purposeTile}
             ${goalsTile}
-            ${outcomesTile}${diagnosticTile}${termTile(1)}${termTile(2)}${termTile(3)}${destinationTile}
+            ${termTile(1)}
+            ${termTile(2)}
+            ${termTile(3)}
+            ${outcomesTile}
+            ${destinationTile}
+            ${courseFeedbackTile}
           </div>
         </section>
       </div>
@@ -8532,7 +8547,7 @@ OTH4: Not known.`;
         <div style="display:flex; flex-direction:column; gap:0.75rem; margin-bottom:1.5rem">
           ${purposeOptions.map(opt => `
             <label class="radio-option-label" style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; background:#fff">
-              <input type="radio" name="tailored_purpose" value="${opt.id}" ${tracker?.tailored_purpose === opt.id ? "checked" : ""} ${isLocked ? "disabled" : ""} required>
+              <input type="radio" name="tailored_purpose" value="${opt.id}" ${tracker?.tailored_purpose === opt.id ? "checked" : ""} ${isLocked ? "disabled" : ""} required style="width: 1.25rem; height: 1.25rem; flex-shrink: 0; margin: 0;">
               <span>${escapeHtml(opt.text)}</span>
             </label>
           `).join("")}
@@ -8630,7 +8645,7 @@ OTH4: Not known.`;
         <div style="display:flex; flex-direction:column; gap:0.75rem; margin-bottom:1.5rem">
           ${outcomesOptions.map(opt => `
             <label class="radio-option-label" style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; background:#fff">
-              <input type="radio" name="tailored_outcomes" value="${opt.id}" ${tracker?.tailored_outcomes === opt.id ? "checked" : ""} ${isLocked ? "disabled" : ""} required>
+              <input type="radio" name="tailored_outcomes" value="${opt.id}" ${tracker?.tailored_outcomes === opt.id ? "checked" : ""} ${isLocked ? "disabled" : ""} required style="width: 1.25rem; height: 1.25rem; flex-shrink: 0; margin: 0;">
               <span>${escapeHtml(opt.text)}</span>
             </label>
           `).join("")}
@@ -8650,7 +8665,7 @@ OTH4: Not known.`;
         <div style="display:flex; flex-direction:column; gap:0.75rem; margin-bottom:1.5rem">
           ${destinationOptions.map(opt => `
             <label class="radio-option-label" style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; background:#fff">
-              <input type="radio" name="destination_type" value="${opt.id}" ${tracker?.destination_type === opt.id ? "checked" : ""} ${isLocked ? "disabled" : ""} required>
+              <input type="radio" name="destination_type" value="${opt.id}" ${tracker?.destination_type === opt.id ? "checked" : ""} ${isLocked ? "disabled" : ""} required style="width: 1.25rem; height: 1.25rem; flex-shrink: 0; margin: 0;">
               <span>${escapeHtml(opt.text)}</span>
             </label>
           `).join("")}
