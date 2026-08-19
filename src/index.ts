@@ -126,6 +126,10 @@ type StudentTracker = {
   goals_status: "new" | "draft" | "completed" | null;
   outcomes_status: "new" | "draft" | "completed" | null;
   destination_status: "new" | "draft" | "completed" | null;
+  learner_profile_json: string | null;
+  profile_status: "new" | "draft" | "completed" | null;
+  course_feedback_json: string | null;
+  feedback_status: "new" | "draft" | "completed" | null;
   created_at: string;
   updated_at: string;
 };
@@ -8226,6 +8230,7 @@ function formatDestinationType(val: string): string {
 
 function getTileTitle(tile: string): string {
   const map: Record<string, string> = {
+    profile: "Learner Profile",
     clos: "Course Learning Objectives",
     purpose: "Tailored Learning Purpose",
     goals: "SMART Goals",
@@ -8234,7 +8239,8 @@ function getTileTitle(tile: string): string {
     diagnostic: "Initial Assessment & Diagnostic",
     term1: "Term 1 Review",
     term2: "Term 2 Review",
-    term3: "Term 3 Review"
+    term3: "Term 3 Review",
+    feedback: "Course feedback"
   };
   return map[tile] || "Progress Tracker";
 }
@@ -8292,7 +8298,7 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
 
   const learnerProfileTile = renderTrackerTile("profile", "👤", "Learner Profile",
     `<p class="muted-text">Learner demographic and support profile details.</p>`,
-    "✏️ Edit", "#", "new");
+    "✏️ Edit", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=profile`, tracker?.profile_status || "new");
 
   const closTile = renderTrackerTile("clos", "📚", "Course Learning Objectives",
     formatObjectiveListHtml(tracker?.course_learning_objectives),
@@ -8339,7 +8345,7 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
 
   const courseFeedbackTile = renderTrackerTile("feedback", "💬", "Course feedback",
     `<p class="muted-text">End of course feedback survey.</p>`,
-    "✏️ Edit", "#", "new");
+    "✏️ Edit", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=feedback`, tracker?.feedback_status || "new");
 
   return pageShell("My Progress Tracker", `
     <main class="dashboard-shell">
@@ -8395,8 +8401,8 @@ async function renderTrackerEditPageHandler(request: Request, env: Env, identity
   if (!tracker) {
     const trackerId = generateId();
     await env.esol_marking_db.prepare(`
-      INSERT INTO student_trackers (id, enrolment_id, learner_id, course_instance_id, clos_status, purpose_status, goals_status, outcomes_status, destination_status)
-      VALUES (?, ?, ?, ?, 'new', 'new', 'new', 'new', 'new')
+      INSERT INTO student_trackers (id, enrolment_id, learner_id, course_instance_id, clos_status, purpose_status, goals_status, outcomes_status, destination_status, profile_status, feedback_status)
+      VALUES (?, ?, ?, ?, 'new', 'new', 'new', 'new', 'new', 'new', 'new')
     `).bind(trackerId, enrolmentId, enrolment.learner_id, enrolment.course_instance_id).run();
     tracker = await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(enrolmentId).first<StudentTracker>();
   }
@@ -8413,6 +8419,8 @@ async function renderTrackerEditPageHandler(request: Request, env: Env, identity
   else if (tile === "goals") statusVal = tracker?.goals_status ?? null;
   else if (tile === "outcomes") statusVal = tracker?.outcomes_status ?? null;
   else if (tile === "destination") statusVal = tracker?.destination_status ?? null;
+  else if (tile === "profile") statusVal = tracker?.profile_status ?? null;
+  else if (tile === "feedback") statusVal = tracker?.feedback_status ?? null;
 
   const isLocked = isStudent && statusVal === "completed";
 
@@ -8691,6 +8699,343 @@ OTH4: Not known.`;
         </div>
       ` : ""}
     `;
+  } else if (tile === "profile") {
+    const data = JSON.parse(tracker?.learner_profile_json || "{}");
+    const disabledAttr = (isLocked || !isStudent) ? "disabled" : "";
+    const showFormActions = isStudent && !isLocked;
+
+    const get1to5Options = (name: string, val: string) => `
+      <select name="${name}" class="form-input" ${disabledAttr} required style="max-width: 150px;">
+        <option value="">Select…</option>
+        ${[1,2,3,4,5].map(n => `<option value="${n}" ${val === String(n) ? "selected" : ""}>${n}</option>`).join("")}
+      </select>
+    `;
+
+    formHtml = `
+      <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=profile">
+        <p class="muted-text" style="margin-bottom:1.5rem">Please complete the Group Profile questionnaire below.</p>
+        
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">1. What is your Class ID?</label>
+          <input type="text" name="q1" class="form-input" value="${escapeHtml(data.q1 || "")}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">2. What is your email address?</label>
+          <input type="email" name="q2" class="form-input" value="${escapeHtml(data.q2 || identity.email)}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">3. What is your Learner ID number?</label>
+          <input type="text" name="q3" class="form-input" value="${escapeHtml(data.q3 || enrolment.learner_id)}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">4. What is your full name?</label>
+          <input type="text" name="q4" class="form-input" value="${escapeHtml(data.q4 || enrolment.student_label)}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">5. What devices do you have access to at home? (e.g. laptop, smartphone, tablet, iOS device, Windows device)</label>
+          <input type="text" name="q5" class="form-input" value="${escapeHtml(data.q5 || "")}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">6. What internet connection do you have access to at home? (e.g. Wi-Fi, mobile data, slow or fast connection)</label>
+          <input type="text" name="q6" class="form-input" value="${escapeHtml(data.q6 || "")}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">7. From 1 to 5, how digitally literate are you?</label>
+          <p class="form-hint" style="color:var(--muted);font-size:0.85rem;margin:-0.25rem 0 0.5rem 0">
+            Digital literacy can be defined as "the ability to identify and use technology confidently, creatively and critically to meet the demands and challenges of living, learning and working in a digital society".
+          </p>
+          ${get1to5Options("q7", data.q7 || "")}
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">8. From 1 to 5, how comfortable are you with using the internet and staying safe online? How do you use it outside of education?</label>
+          <div style="display:flex;gap:1rem;align-items:center;margin-bottom:0.5rem">
+            <span style="font-size:0.9rem">Comfort Level:</span>
+            ${get1to5Options("q8_rating", data.q8_rating || "")}
+          </div>
+          <input type="text" name="q8_desc" class="form-input" placeholder="How do you use it outside of education?" value="${escapeHtml(data.q8_desc || "")}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">9. Have you previously learned with Haringey Learns?</label>
+          <div style="display:flex;flex-direction:column;gap:0.5rem">
+            ${["Yes", "No", "Not sure"].map(opt => `
+              <label class="radio-option-label" style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;background:#fff">
+                <input type="radio" name="q9" value="${opt}" ${data.q9 === opt ? "checked" : ""} ${disabledAttr} required style="width: 1.25rem; height: 1.25rem; flex-shrink: 0; margin: 0;">
+                <span>${opt}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">10. Have you previously learned online?</label>
+          <p class="form-hint" style="color:var(--muted);font-size:0.85rem;margin:-0.25rem 0 0.5rem 0">
+            This doesn't have to be formal. You may have watched instructional videos for recipes, researched a holiday, planned a route, or learned a dance.
+          </p>
+          <div style="display:flex;flex-direction:column;gap:0.5rem">
+            ${["Yes", "No"].map(opt => `
+              <label class="radio-option-label" style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;background:#fff">
+                <input type="radio" name="q10" value="${opt}" ${data.q10 === opt ? "checked" : ""} ${disabledAttr} required style="width: 1.25rem; height: 1.25rem; flex-shrink: 0; margin: 0;">
+                <span>${opt}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">11. From 1 to 5, how good are you with time management, personal planning, and independent learning?</label>
+          ${get1to5Options("q11", data.q11 || "")}
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">12. What is your employment status?</label>
+          <div style="display:flex;flex-direction:column;gap:0.5rem">
+            ${[
+              { id: "A", text: "Employed" },
+              { id: "B", text: "Unemployed" },
+              { id: "C", text: "Self-employed" },
+              { id: "D", text: "Volunteer" },
+              { id: "E", text: "Retired" }
+            ].map(opt => `
+              <label class="radio-option-label" style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;background:#fff">
+                <input type="radio" name="q12" value="${opt.id}" ${data.q12 === opt.id ? "checked" : ""} ${disabledAttr} required style="width: 1.25rem; height: 1.25rem; flex-shrink: 0; margin: 0;">
+                <span>${opt.id} - ${opt.text}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">13. Do you have any qualifications and/or have you attended any previous courses? (Enter level if known.)</label>
+          <textarea name="q13" class="form-input" rows="3" ${disabledAttr} required placeholder="Describe previous qualifications/courses...">${escapeHtml(data.q13 || "")}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">14. What are your future goals?</label>
+          <textarea name="q14" class="form-input" rows="3" ${disabledAttr} required placeholder="What do you want to achieve next?">${escapeHtml(data.q14 || "")}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">15. Do you have children and/or other care responsibilities?</label>
+          <div style="display:flex;flex-direction:column;gap:0.5rem">
+            ${["Yes", "No"].map(opt => `
+              <label class="radio-option-label" style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;background:#fff">
+                <input type="radio" name="q15" value="${opt}" ${data.q15 === opt ? "checked" : ""} ${disabledAttr} required style="width: 1.25rem; height: 1.25rem; flex-shrink: 0; margin: 0;">
+                <span>${opt}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">16. Do you have any learning difficulties or disabilities you would like to let your tutor know about?</label>
+          <textarea name="q16" class="form-input" rows="2" ${disabledAttr} placeholder="Learning difficulties or disabilities (optional)...">${escapeHtml(data.q16 || "")}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">17. Is English your first language?</label>
+          <div style="display:flex;flex-direction:column;gap:0.5rem">
+            ${["Yes", "No"].map(opt => `
+              <label class="radio-option-label" style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;background:#fff">
+                <input type="radio" name="q17" value="${opt}" ${data.q17 === opt ? "checked" : ""} ${disabledAttr} required style="width: 1.25rem; height: 1.25rem; flex-shrink: 0; margin: 0;">
+                <span>${opt}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">18. What languages do you speak?</label>
+          <input type="text" name="q18" class="form-input" value="${escapeHtml(data.q18 || "")}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">19. What is your nationality?</label>
+          <input type="text" name="q19" class="form-input" value="${escapeHtml(data.q19 || "")}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">20. What is your reason for joining this course?</label>
+          <textarea name="q20" class="form-input" rows="3" ${disabledAttr} required placeholder="Why did you register for this course?">${escapeHtml(data.q20 || "")}</textarea>
+        </div>
+
+        <div style="padding: 1rem 0; font-weight: 600; color: var(--muted)">
+          Thanks for completing this form.
+        </div>
+
+        ${showFormActions ? `
+          <div style="margin-top:2rem; display:flex; gap:1rem; margin-bottom: 2rem;">
+            <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+            <button type="submit" name="action" value="save" class="btn btn-primary">Save</button>
+          </div>
+        ` : `
+          <div class="alert alert-info" style="margin-top:2rem; margin-bottom: 2rem;">
+            ${isStudent ? "This section has been submitted and is locked." : "This section is read-only."}
+          </div>
+        `}
+      </form>
+    `;
+  } else if (tile === "feedback") {
+    const data = JSON.parse(tracker?.course_feedback_json || "{}");
+    const disabledAttr = (isLocked || !isStudent) ? "disabled" : "";
+    const showFormActions = isStudent && !isLocked;
+
+    const renderRadioGroup = (name: string, options: string[], currentVal: string) => `
+      <div style="display:flex; flex-direction:column; gap:0.5rem;">
+        ${options.map(opt => `
+          <label class="radio-option-label" style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; background:#fff">
+            <input type="radio" name="${name}" value="${opt}" ${currentVal === opt ? "checked" : ""} ${disabledAttr} required style="width: 1.25rem; height: 1.25rem; flex-shrink: 0; margin: 0;">
+            <span>${opt}</span>
+          </label>
+        `).join("")}
+      </div>
+    `;
+
+    formHtml = `
+      <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=feedback">
+        <p class="muted-text" style="margin-bottom:2rem">Please complete the End of Course Learner Feedback questionnaire below.</p>
+        
+        <!-- SECTION 1: Course Information -->
+        <h3 style="font-size:1.15rem; font-weight:700; margin-bottom:1rem; border-bottom: 2px solid var(--border); padding-bottom:0.5rem; color:var(--text);">Course Information</h3>
+        
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">1. Course Code</label>
+          <input type="text" name="q1" class="form-input" value="${escapeHtml(data.q1 || enrolment.course_code)}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">2. Course Title</label>
+          <input type="text" name="q2" class="form-input" value="${escapeHtml(data.q2 || enrolment.course_title)}" ${disabledAttr} required>
+        </div>
+
+        <div class="form-group" style="margin-bottom:2.5rem">
+          <label class="form-label" style="font-weight:600">3. Your Name (Optional)</label>
+          <input type="text" name="q3" class="form-input" value="${escapeHtml(data.q3 || "")}" ${disabledAttr}>
+        </div>
+
+        <!-- SECTION 2: About the Course -->
+        <h3 style="font-size:1.15rem; font-weight:700; margin-bottom:1rem; border-bottom: 2px solid var(--border); padding-bottom:0.5rem; color:var(--text);">About the Course</h3>
+        
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">4. Did you enjoy this course?</label>
+          ${renderRadioGroup("q4", ["Yes", "A little", "No"], data.q4 || "")}
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">5. Did your tutor explain things clearly?</label>
+          ${renderRadioGroup("q5", ["Always", "Usually", "Sometimes", "Never"], data.q5 || "")}
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">6. Were the lessons easy to follow?</label>
+          ${renderRadioGroup("q6", ["Yes", "Mostly", "Sometimes", "No"], data.q6 || "")}
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">7. Was the speed of the lessons right for you?</label>
+          ${renderRadioGroup("q7", ["Too fast", "About right", "Too slow"], data.q7 || "")}
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">8. How did your tutor help you learn and make progress?</label>
+          <textarea name="q8" class="form-input" rows="3" ${disabledAttr} required placeholder="Describe tutor support...">${escapeHtml(data.q8 || "")}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:2.5rem">
+          <label class="form-label" style="font-weight:600">9. Did your tutor help you understand your mistakes and answer your questions?</label>
+          ${renderRadioGroup("q9", ["Always", "Usually", "Sometimes", "Never"], data.q9 || "")}
+        </div>
+
+        <!-- SECTION 3: Your Learning -->
+        <h3 style="font-size:1.15rem; font-weight:700; margin-bottom:1rem; border-bottom: 2px solid var(--border); padding-bottom:0.5rem; color:var(--text);">Your Learning</h3>
+        
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">10. What have you learned or improved on this course?</label>
+          <textarea name="q10" class="form-input" rows="3" ${disabledAttr} required placeholder="Describe your learnings...">${escapeHtml(data.q10 || "")}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">11. Do you think you have made progress?</label>
+          ${renderRadioGroup("q11", ["A lot", "A little", "Not sure", "No"], data.q11 || "")}
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">12. Did the activities help you learn?</label>
+          ${renderRadioGroup("q12", ["Always", "Usually", "Sometimes", "Never"], data.q12 || "")}
+        </div>
+
+        <div class="form-group" style="margin-bottom:2.5rem">
+          <label class="form-label" style="font-weight:600">13. What are your goals? How has this course helped you?</label>
+          <textarea name="q13" class="form-input" rows="3" ${disabledAttr} required placeholder="Your next steps...">${escapeHtml(data.q13 || "")}</textarea>
+        </div>
+
+        <!-- SECTION 4: Inclusion and Support -->
+        <h3 style="font-size:1.15rem; font-weight:700; margin-bottom:1rem; border-bottom: 2px solid var(--border); padding-bottom:0.5rem; color:var(--text);">Inclusion and Support</h3>
+        
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">14. Did you feel welcome, listened to and respected in class?</label>
+          ${renderRadioGroup("q14", ["Always", "Usually", "Sometimes", "Never"], data.q14 || "")}
+        </div>
+
+        <div class="form-group" style="margin-bottom:2.5rem">
+          <label class="form-label" style="font-weight:600">15. If you missed a lesson, did you get help to catch up?</label>
+          ${renderRadioGroup("q15", ["Yes", "Sometimes", "No", "Not applicable"], data.q15 || "")}
+        </div>
+
+        <!-- SECTION 5: Safety and Wellbeing -->
+        <h3 style="font-size:1.15rem; font-weight:700; margin-bottom:1rem; border-bottom: 2px solid var(--border); padding-bottom:0.5rem; color:var(--text);">Safety and Wellbeing</h3>
+        
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">16. Do you feel safe in class and know where to get help if you are worried?</label>
+          ${renderRadioGroup("q16", ["Yes", "Not sure", "No"], data.q16 || "")}
+        </div>
+
+        <div class="form-group" style="margin-bottom:2.5rem">
+          <label class="form-label" style="font-weight:600">17. Do you know how to stay safe online?</label>
+          ${renderRadioGroup("q17", ["Yes", "A little", "No"], data.q17 || "")}
+        </div>
+
+        <!-- SECTION 6: Your Feedback -->
+        <h3 style="font-size:1.15rem; font-weight:700; margin-bottom:1rem; border-bottom: 2px solid var(--border); padding-bottom:0.5rem; color:var(--text);">Your Feedback</h3>
+        
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">18. What did you like most about the course?</label>
+          <textarea name="q18" class="form-input" rows="3" ${disabledAttr} required placeholder="Best parts of the course...">${escapeHtml(data.q18 || "")}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">19. What could we improve?</label>
+          <textarea name="q19" class="form-input" rows="3" ${disabledAttr} required placeholder="Suggestions for improvement...">${escapeHtml(data.q19 || "")}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600">20. Would you recommend this course to a friend?</label>
+          ${renderRadioGroup("q20", ["Yes", "Maybe", "No"], data.q20 || "")}
+        </div>
+
+        <div style="padding: 1rem 0; font-weight: 600; color: var(--muted)">
+          Thank you for your feedback. Your comments help us improve our courses and support future learners. 😊
+        </div>
+
+        ${showFormActions ? `
+          <div style="margin-top:2rem; display:flex; gap:1rem; margin-bottom: 2rem;">
+            <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+            <button type="submit" name="action" value="save" class="btn btn-primary">Save</button>
+          </div>
+        ` : `
+          <div class="alert alert-info" style="margin-top:2rem; margin-bottom: 2rem;">
+            ${isStudent ? "This section has been submitted and is locked." : "This section is read-only."}
+          </div>
+        `}
+      </form>
+    `;
   } else if (tile === "diagnostic") {
     formHtml = `
       <div style="padding:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#f8fafc; margin-bottom:1.5rem">
@@ -8862,6 +9207,22 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
       await env.esol_marking_db.prepare(`
         UPDATE student_trackers SET destination_type=?, destination_notes=?, destination_status=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
       `).bind(destType, destNotes, statusVal, enrolmentId).run();
+    } else if (tile === "profile") {
+      const qObj: Record<string, string> = {};
+      for (const key of ["q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8_rating", "q8_desc", "q9", "q10", "q11", "q12", "q13", "q14", "q15", "q16", "q17", "q18", "q19", "q20"]) {
+        qObj[key] = (formData.get(key) as string || "").trim();
+      }
+      await env.esol_marking_db.prepare(`
+        UPDATE student_trackers SET learner_profile_json=?, profile_status=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
+      `).bind(JSON.stringify(qObj), statusVal, enrolmentId).run();
+    } else if (tile === "feedback") {
+      const qObj: Record<string, string> = {};
+      for (const key of ["q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9", "q10", "q11", "q12", "q13", "q14", "q15", "q16", "q17", "q18", "q19", "q20"]) {
+        qObj[key] = (formData.get(key) as string || "").trim();
+      }
+      await env.esol_marking_db.prepare(`
+        UPDATE student_trackers SET course_feedback_json=?, feedback_status=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
+      `).bind(JSON.stringify(qObj), statusVal, enrolmentId).run();
     }
 
   } else {
@@ -8911,12 +9272,48 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       <button class="rag-btn ${current === 'red' ? 'rag-btn--active-red' : ""}" onclick="setRag('${field}','red')">🔴 Behind Target</button>
     </div>`;
 
+  let profileSummary = "";
+  let feedbackSummary = "";
+  if (tracker && selectedEnrolment) {
+    const profileData = JSON.parse(tracker.learner_profile_json || "{}");
+    const hasProfile = Object.keys(profileData).length > 0;
+    profileSummary = hasProfile ? `
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; font-size:0.9375rem">
+        <div style="margin-bottom:0.5rem"><strong>Full Name:</strong> ${escapeHtml(profileData.q4 || "")}</div>
+        <div style="margin-bottom:0.5rem"><strong>Learner ID:</strong> ${escapeHtml(profileData.q3 || "")}</div>
+        <div style="margin-bottom:0.5rem"><strong>Class ID:</strong> ${escapeHtml(profileData.q1 || "")}</div>
+        <div style="margin-bottom:0.5rem"><strong>Employment Status:</strong> ${escapeHtml(profileData.q12 || "")}</div>
+        <div><strong>Reason for Joining:</strong> ${escapeHtml(profileData.q20 || "")}</div>
+      </div>
+    ` : "<em class='muted-text'>Not filled in by student yet.</em>";
+
+    const feedbackData = JSON.parse(tracker.course_feedback_json || "{}");
+    const hasFeedback = Object.keys(feedbackData).length > 0;
+    feedbackSummary = hasFeedback ? `
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; font-size:0.9375rem">
+        <div style="margin-bottom:0.5rem"><strong>Enjoyed Course?</strong> ${escapeHtml(feedbackData.q4 || "")}</div>
+        <div style="margin-bottom:0.5rem"><strong>Liked Most:</strong> ${escapeHtml(feedbackData.q18 || "")}</div>
+        <div style="margin-bottom:0.5rem"><strong>Improvement:</strong> ${escapeHtml(feedbackData.q19 || "")}</div>
+        <div><strong>Recommend to Friend?</strong> ${escapeHtml(feedbackData.q20 || "")}</div>
+      </div>
+    ` : "<em class='muted-text'>Not filled in by student yet.</em>";
+  }
+
   const detailHtml = !tracker || !selectedEnrolment ? "<p class='muted-text' style='padding:2rem'>Select a student from the roster to view their tracker.</p>" : `
     <div class="tracker-detail">
       <div class="tracker-detail-header">
         <h2>${escapeHtml(selectedEnrolment.student_label)}</h2>
         <span class="meta-chip">${escapeHtml(selectedEnrolment.course_title)}</span>
         <span class="meta-chip">${escapeHtml(selectedEnrolment.learner_id)}</span>
+      </div>
+
+      <!-- Learner Profile (Read-only for staff, with view/discuss links) -->
+      <div class="tracker-section">
+        <h3>👤 Learner Profile (Group Profile)</h3>
+        ${profileSummary}
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=profile" style="text-decoration:none;display:inline-block">👁️ View Complete Questionnaire & Discuss</a>
+        </div>
       </div>
 
       <!-- Student Goals (Read-only for staff, with edit/discuss links) -->
@@ -9017,6 +9414,15 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         </div>
         <div style="margin-top:0.75rem">
           <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=destination" style="text-decoration:none;display:inline-block">💬 Discuss Destination</a>
+        </div>
+      </div>
+
+      <!-- Course Feedback (Read-only for staff, with view/discuss links) -->
+      <div class="tracker-section">
+        <h3>💬 Course feedback (End of Course Feedback)</h3>
+        ${feedbackSummary}
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=feedback" style="text-decoration:none;display:inline-block">👁️ View Complete Feedback & Discuss</a>
         </div>
       </div>
 
