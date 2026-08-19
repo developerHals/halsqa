@@ -645,6 +645,38 @@ export default {
     if (!identity) return wantsJson(request) ? json({ error: "Not authenticated" }, 401) : Response.redirect(`${url.origin}/login`, 302);
     if (!identity.user) return htmlResponse(renderAccessPendingPage(identity), 403);
 
+    // Enforce path-based functionality permissions
+    let requiredFunctionality: string | null = null;
+    if (url.pathname.startsWith("/learning-walks") || url.pathname.startsWith("/api/learning-walks") || url.pathname.startsWith("/api/lw-entries")) {
+      requiredFunctionality = "learning-walks";
+    } else if (url.pathname.startsWith("/iqa-forms") || url.pathname.startsWith("/api/iqa")) {
+      requiredFunctionality = "iqa-forms";
+    } else if (url.pathname.startsWith("/assessments") || url.pathname.startsWith("/api/assessment")) {
+      requiredFunctionality = "assessments";
+    } else if (url.pathname.startsWith("/tracker") || url.pathname.startsWith("/api/tracker")) {
+      requiredFunctionality = "tracker";
+    } else if (url.pathname.startsWith("/courses") || url.pathname.startsWith("/api/courses")) {
+      requiredFunctionality = "courses";
+    } else if (url.pathname.startsWith("/my-class") || url.pathname === "/api/enrolment") {
+      requiredFunctionality = "my-class";
+    } else if (url.pathname.startsWith("/students") || url.pathname === "/api/enrolment/student") {
+      requiredFunctionality = "students";
+    } else if (url.pathname.startsWith("/reports") || url.pathname.startsWith("/api/reports")) {
+      requiredFunctionality = "reports";
+    } else if (url.pathname.startsWith("/quality-calendar")) {
+      requiredFunctionality = "quality-calendar";
+    } else if (url.pathname.startsWith("/it-tickets") || url.pathname.startsWith("/api/it-tickets")) {
+      requiredFunctionality = "it-tickets";
+    } else if (url.pathname.startsWith("/users") || url.pathname.startsWith("/roles") || url.pathname.startsWith("/api/users") || url.pathname.startsWith("/api/roles")) {
+      requiredFunctionality = "users";
+    }
+
+    if (requiredFunctionality && !hasPermission(identity, requiredFunctionality)) {
+      return wantsJson(request) 
+        ? json({ error: "Forbidden: You do not have permission to access this resource" }, 403) 
+        : htmlResponse(renderForbiddenPage(identity), 403);
+    }
+
     if (url.pathname === "/dashboard") return renderDashboardPage(request, env, identity);
     if (url.pathname.startsWith("/it-tickets")) return handleITTicketsRequest(request, env, identity);
     if (url.pathname === "/users") return renderUsersPage(request, env, identity);
