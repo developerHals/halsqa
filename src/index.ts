@@ -8075,22 +8075,41 @@ async function renderTrackerPageHandler(request: Request, env: Env, identity: Id
   const url = new URL(request.url);
 
   if (isStudent) {
-    const learnerId = identity.email.split("@")[0].replace(/[^0-9]/g, "");
+    const rawLearnerId = identity.email.split("@")[0].replace(/[^0-9]/g, "");
+    const learnerId = rawLearnerId || "test_student";
     let enrolments: StudentEnrolment[] = [];
     let tracker: StudentTracker | null = null;
     let comments: AssessmentComment[] = [];
-    if (learnerId) {
-      const r1 = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE learner_id=?").bind(learnerId).all<StudentEnrolment>();
-      enrolments = r1.results;
-      if (enrolments.length > 0) {
-        const enrolmentId = url.searchParams.get("enrolId") ?? enrolments[0].id;
-        tracker = await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(enrolmentId).first<StudentTracker>();
-        const r3 = await env.esol_marking_db.prepare("SELECT * FROM assessment_comments WHERE entity_id=? AND entity_type='tracker' ORDER BY created_at ASC").bind(enrolmentId).all<AssessmentComment>();
-        comments = r3.results;
-      }
+
+    const r1 = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE learner_id=?").bind(learnerId).all<StudentEnrolment>();
+    enrolments = r1.results;
+
+    if (enrolments.length === 0) {
+      const mockEnrolmentId = `${learnerId}_mock_course`;
+      await env.esol_marking_db.prepare(`
+        INSERT OR IGNORE INTO student_enrolments (id, learner_id, student_label, course_code, course_instance_id, course_title, academic_year)
+        VALUES (?, ?, ?, 'ES25/MOCK', 'mock_course', 'ESOL: Mock Development Course', 2025)
+      `).bind(mockEnrolmentId, learnerId, identity.email.split("@")[0]).run();
+
+      const trackerId = generateId();
+      await env.esol_marking_db.prepare(`
+        INSERT OR IGNORE INTO student_trackers (id, enrolment_id, learner_id, course_instance_id, clos_status, purpose_status, goals_status, outcomes_status, destination_status)
+        VALUES (?, ?, ?, 'mock_course', 'new', 'new', 'new', 'new', 'new')
+      `).bind(trackerId, mockEnrolmentId, learnerId).run();
+
+      const r2 = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE learner_id=?").bind(learnerId).all<StudentEnrolment>();
+      enrolments = r2.results;
     }
+
+    if (enrolments.length > 0) {
+      const enrolmentId = url.searchParams.get("enrolId") ?? enrolments[0].id;
+      tracker = await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(enrolmentId).first<StudentTracker>();
+      const r3 = await env.esol_marking_db.prepare("SELECT * FROM assessment_comments WHERE entity_id=? AND entity_type='tracker' ORDER BY created_at ASC").bind(enrolmentId).all<AssessmentComment>();
+      comments = r3.results;
+    }
+
     const requestedEnrolId = url.searchParams.get("enrolId") ?? enrolments[0]?.id ?? "";
-    return htmlResponse(renderStudentTrackerPage(identity, enrolments, tracker, comments, learnerId, requestedEnrolId));
+    return htmlResponse(renderStudentTrackerPage(identity, enrolments, tracker, comments, rawLearnerId, requestedEnrolId));
   } else {
     // Staff view
 
