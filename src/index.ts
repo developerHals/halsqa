@@ -8400,12 +8400,21 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
     <main class="dashboard-shell">
       ${renderSidebar(identity, "tracker")}
       <div class="content">
-        ${renderTopbar(identity, "My Progress Tracker", undefined, classSearchForm)}
+        ${renderTopbar(identity, "My Progress Tracker")}
         <section class="page-section">
           ${error ? `<div class="alert alert-danger">${escapeHtml(error)}</div>` : ""}
           ${success ? `<div class="alert alert-success">${escapeHtml(success)}</div>` : ""}
           ${!learnerId ? `<div class="alert alert-warn">Could not determine your learner ID from your email.</div>` : ""}
-          ${enrolment ? `<div class="tracker-course-banner"><strong>${escapeHtml(enrolment.course_title)}</strong> <span class="meta-chip">${escapeHtml(enrolment.course_code)}</span></div>` : ""}
+          ${enrolment ? `
+            <div class="tracker-course-banner" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding:.5rem 1.5rem;">
+              <div><strong>${escapeHtml(enrolment.course_title)}</strong> <span class="meta-chip">${escapeHtml(enrolment.course_code)}</span></div>
+              ${classSearchForm}
+            </div>
+          ` : `
+            <div class="tracker-course-banner" style="display:flex; align-items:center; justify-content:flex-end; padding:.5rem 1.5rem;">
+              ${classSearchForm}
+            </div>
+          `}
           <div class="tracker-tiles">
             ${learnerProfileTile}
             ${closTile}
