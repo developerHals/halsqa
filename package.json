@@ -7,8 +7,8 @@
     "dev": "wrangler dev",
     "build": "wrangler types",
     "deploy": "wrangler deploy",
-    "db:migrate": "wrangler d1 migrations apply esol_marking_db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply esol_marking_db --remote"
+    "db:migrate": "wrangler d1 migrations apply esol-marking-db-v3 --local",
+    "db:migrate:remote": "wrangler d1 migrations apply esol-marking-db-v3 --remote"
   },
   "keywords": [
     "cloudflare",

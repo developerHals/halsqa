@@ -121,6 +121,11 @@ type StudentTracker = {
   destination_by: string | null;
   course_learning_objectives: string | null;
   clos_achieved_rag: "green" | "amber" | "red" | "na" | null;
+  clos_status: "new" | "draft" | "completed" | null;
+  purpose_status: "new" | "draft" | "completed" | null;
+  goals_status: "new" | "draft" | "completed" | null;
+  outcomes_status: "new" | "draft" | "completed" | null;
+  destination_status: "new" | "draft" | "completed" | null;
   created_at: string;
   updated_at: string;
 };
@@ -698,6 +703,8 @@ export default {
 
     if (url.pathname === "/assessments") return renderAssessmentsPageHandler(request, env, identity);
     if (url.pathname === "/tracker") return renderTrackerPageHandler(request, env, identity);
+    if (url.pathname === "/tracker/edit" && request.method === "GET") return renderTrackerEditPageHandler(request, env, identity);
+    if (url.pathname === "/tracker/edit" && request.method === "POST") return saveTrackerEditHandler(request, env, identity);
     if (url.pathname.startsWith("/assessments/quiz/")) return renderQuizPageHandler(request, env, identity);
 
     // Assessment Templates Builder
@@ -8112,39 +8119,173 @@ async function renderTrackerPageHandler(request: Request, env: Env, identity: Id
   }
 }
 
-function renderTrackerTile(id: string, emoji: string, title: string, content: string, editable: boolean, editAction: string): string {
-  const hasContent = content.trim().length > 0;
+function formatObjectiveListHtml(jsonStr: string | null): string {
+  if (!jsonStr) return "";
+  try {
+    const list = JSON.parse(jsonStr);
+    if (Array.isArray(list) && list.length > 0) {
+      return `<ul style="margin:0;padding-left:1.2rem;list-style-type:disc">
+        ${list.map((item: any) => `
+          <li style="margin-bottom:0.25rem;${item.achieved === true || item.achieved === "true" ? "text-decoration:line-through;color:var(--muted)" : ""}">
+            ${escapeHtml(item.text)}
+            ${item.achieved === true || item.achieved === "true" ? " <span style='font-size:0.75rem;color:var(--success);font-weight:600'>(Achieved)</span>" : ""}
+          </li>
+        `).join("")}
+      </ul>`;
+    }
+  } catch (e) {}
+  return `<p>${escapeHtml(jsonStr)}</p>`;
+}
+
+function getCloStatus(tracker: StudentTracker | null): "new" | "draft" | "completed" | "Achieved" | "Partial" {
+  if (!tracker || !tracker.clos_status || tracker.clos_status === "new") return "new";
+  if (tracker.clos_status === "draft") return "draft";
+  try {
+    const list = JSON.parse(tracker.course_learning_objectives || "[]");
+    if (!Array.isArray(list) || list.length === 0) return "completed";
+    const allAchieved = list.every((item: any) => item.achieved === true || item.achieved === "true");
+    const someAchieved = list.some((item: any) => item.achieved === true || item.achieved === "true");
+    if (allAchieved) return "Achieved";
+    if (someAchieved) return "Partial";
+  } catch (e) {}
+  return "completed";
+}
+
+function getGoalsStatus(tracker: StudentTracker | null): "new" | "draft" | "completed" | "Achieved" | "Partial" {
+  if (!tracker || !tracker.goals_status || tracker.goals_status === "new") return "new";
+  if (tracker.goals_status === "draft") return "draft";
+  try {
+    const list = JSON.parse(tracker.smart_goals || "[]");
+    if (!Array.isArray(list) || list.length === 0) return "completed";
+    const allAchieved = list.every((item: any) => item.achieved === true || item.achieved === "true");
+    const someAchieved = list.some((item: any) => item.achieved === true || item.achieved === "true");
+    if (allAchieved) return "Achieved";
+    if (someAchieved) return "Partial";
+  } catch (e) {}
+  return "completed";
+}
+
+function formatPurposeType(val: string): string {
+  const map: Record<string, string> = {
+    "1": "(1) Engaging and/or building confidence",
+    "2": "(2) Preparation for further learning",
+    "3": "(3) Preparation for employment",
+    "4": "(4) Improving essential skills (English, ESOL, maths, and digital)",
+    "5": "(5) Equipping parents/carers to support children's learning",
+    "6": "(6) Health and well-being",
+    "7": "(7) Developing stronger communities"
+  };
+  return map[val] || val;
+}
+
+function formatOutcomeType(val: string): string {
+  const map: Record<string, string> = {
+    "1": "(1) Increased confidence",
+    "2": "(2) Improved skills for progressing to further learning",
+    "3": "(3) Improved skills for work",
+    "4": "(4) Improved essential skills",
+    "5": "(5) Improved ability to support a child's learning",
+    "6": "(6) Improved physical health",
+    "7": "(7) Improved mental health and well-being",
+    "8": "(8) Improved skills to participate in community life",
+    "9": "(9) Increased understanding of democratic values",
+    "10": "(10) Improved skills for Independent Living",
+    "11": "(11) No outcome area 1-10 achieved"
+  };
+  return map[val] || val;
+}
+
+function formatDestinationType(val: string): string {
+  const map: Record<string, string> = {
+    "1": "(1) EMP: Starting new job",
+    "2": "(2) EDU; New course",
+    "3": "(3) SDE: Looking for work",
+    "4": "(4) OTH: Other destination"
+  };
+  return map[val] || val;
+}
+
+function getTileTitle(tile: string): string {
+  const map: Record<string, string> = {
+    clos: "Course Learning Objectives",
+    purpose: "Tailored Learning Purpose",
+    goals: "SMART Goals",
+    outcomes: "Tailored Learning Outcomes",
+    destination: "Destination & Progression",
+    diagnostic: "Initial Assessment & Diagnostic",
+    term1: "Term 1 Review",
+    term2: "Term 2 Review",
+    term3: "Term 3 Review"
+  };
+  return map[tile] || "Progress Tracker";
+}
+
+function renderTrackerTile(
+  id: string,
+  emoji: string,
+  title: string,
+  content: string,
+  actionLabel: string | null,
+  actionHref: string | null,
+  status: "new" | "draft" | "completed" | "Achieved" | "Partial" | null
+): string {
+  let badgeClass = "rag-grey";
+  let badgeLabel = "New";
+
+  if (status === "draft") {
+    badgeClass = "rag-amber";
+    badgeLabel = "Pending";
+  } else if (status === "completed") {
+    badgeClass = "rag-green";
+    badgeLabel = "Completed";
+  } else if (status === "Achieved") {
+    badgeClass = "rag-green";
+    badgeLabel = "Achieved";
+  } else if (status === "Partial") {
+    badgeClass = "rag-blue";
+    badgeLabel = "Partial";
+  } else if (status === "pending") {
+    badgeClass = "rag-amber";
+    badgeLabel = "Pending";
+  } else if (!status) {
+    const hasContent = content.trim().length > 0;
+    badgeClass = hasContent ? "rag-green" : "rag-grey";
+    badgeLabel = hasContent ? "Completed" : "New";
+  }
+
   return `
-  <div class="tracker-tile ${hasContent ? "tracker-tile--done" : ""}" id="tile-${escapeHtml(id)}">
+  <style>
+    .rag-blue { background: #dbeafe; color: #1e40af; }
+  </style>
+  <div class="tracker-tile" id="tile-${escapeHtml(id)}">
     <div class="tracker-tile-header">
       <span class="tracker-tile-emoji">${emoji}</span>
       <h3>${escapeHtml(title)}</h3>
-      ${hasContent ? "<span class='rag-badge rag-green' style='margin-left:auto'>Completed</span>" : "<span class='rag-badge rag-grey' style='margin-left:auto'>Pending</span>"}
+      <span class='rag-badge ${badgeClass}' style='margin-left:auto'>${badgeLabel}</span>
     </div>
     <div class="tracker-tile-body">${content || `<p class="muted-text">Not filled in yet.</p>`}</div>
-    ${editable ? `<div class="tracker-tile-footer"><button class="btn btn-secondary" onclick="${editAction}">✏️ Edit</button></div>` : ""}
+    ${actionHref && actionLabel ? `<div class="tracker-tile-footer"><a class="btn btn-secondary" href="${actionHref}" style="text-decoration:none;display:inline-block;text-align:center">${escapeHtml(actionLabel)}</a></div>` : ""}
   </div>`;
 }
-
 
 function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string, activeEnrolmentId: string): string {
   const enrolment = enrolments.find(e => e.id === activeEnrolmentId) ?? enrolments[0] ?? null;
 
-  
   const closTile = renderTrackerTile("clos", "📚", "Course Learning Objectives",
-    tracker?.course_learning_objectives ? `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(tracker.course_learning_objectives)}</pre>` : "",
-    true, "openStudentEdit('clos')");
-const purposeTile = renderTrackerTile("purpose", "🎯", "Tailored Learning Purpose",
-    tracker?.tailored_purpose ? `<p>${escapeHtml(tracker.tailored_purpose)}</p>` : "",
-    true, "openStudentEdit('purpose')");
+    formatObjectiveListHtml(tracker?.course_learning_objectives),
+    "✏️ Edit", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=clos`, getCloStatus(tracker));
+
+  const purposeTile = renderTrackerTile("purpose", "🎯", "Tailored Learning Purpose",
+    tracker?.tailored_purpose ? `<p>${escapeHtml(formatPurposeType(tracker.tailored_purpose))}</p>` : "",
+    "✏️ Edit", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=purpose`, tracker?.purpose_status || "new");
 
   const goalsTile = renderTrackerTile("goals", "📋", "SMART Goals",
-    tracker?.smart_goals ? `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(tracker.smart_goals)}</pre>` : "",
-    true, "openStudentEdit('goals')");
+    formatObjectiveListHtml(tracker?.smart_goals),
+    "✏️ Edit", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=goals`, getGoalsStatus(tracker));
 
   const outcomesTile = renderTrackerTile("outcomes", "✨", "Tailored Learning Outcomes",
-    tracker?.tailored_outcomes ? `<p>${escapeHtml(tracker.tailored_outcomes)}</p>` : "",
-    true, "openStudentEdit('outcomes')");
+    tracker?.tailored_outcomes ? `<p>${escapeHtml(formatOutcomeType(tracker.tailored_outcomes))}</p>` : "",
+    "✏️ Edit", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=outcomes`, tracker?.outcomes_status || "new");
 
   const diagnosticTile = renderTrackerTile("diagnostic", "🔍", "Initial Assessment & Diagnostic",
     tracker?.initial_assessment_level ? `
@@ -8153,7 +8294,8 @@ const purposeTile = renderTrackerTile("purpose", "🎯", "Tailored Learning Purp
         ${ragBadge(tracker.initial_assessment_rag)}
       </div>
       <p>${escapeHtml(tracker.initial_assessment_notes ?? "")}</p>` : "",
-    false, "");
+    "👁️ View & Discuss", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=diagnostic`,
+    tracker?.initial_assessment_level ? "completed" : "new");
 
   function termTile(n: 1 | 2 | 3) {
     const rag = tracker?.[`term${n}_rag` as keyof StudentTracker] as string | null;
@@ -8164,22 +8306,13 @@ const purposeTile = renderTrackerTile("purpose", "🎯", "Tailored Learning Purp
       : "";
     return renderTrackerTile(`term${n}`, "📊", `Term ${n} Review`,
       tileContent,
-      false, "");
+      "👁️ View & Discuss", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=term${n}`,
+      rag ? "completed" : "new");
   }
 
-  
-  const closAchievedTile = tracker?.clos_achieved_rag ? renderTrackerTile("clos_achieved", "✅", "CLOs Achieved Confirmation",
-    `<div style="display:flex;align-items:center;gap:.75rem;">${ragBadge(tracker.clos_achieved_rag)}</div>`,
-    false, "") : "";
-const destinationTile = renderTrackerTile("destination", "🚀", "Destination & Progression",
-    tracker?.destination_type ? `<p><strong>${escapeHtml(tracker.destination_type)}</strong></p><p>${escapeHtml(tracker.destination_notes ?? "")}</p>` : "",
-    false, "");
-
-  const commentsHtml = comments.map(c => `
-    <div class="comment-row comment-${escapeHtml(c.author_role)}">
-      <div class="comment-meta"><strong>${escapeHtml(c.author_name)}</strong> <span class="meta-chip">${escapeHtml(c.author_role)}</span> <span class="muted-text">${escapeHtml(c.created_at.slice(0,10))}</span></div>
-      <p>${escapeHtml(c.comment)}</p>
-    </div>`).join("");
+  const destinationTile = renderTrackerTile("destination", "🚀", "Destination & Progression",
+    tracker?.destination_type ? `<p><strong>${escapeHtml(formatDestinationType(tracker.destination_type))}</strong></p><p>${escapeHtml(tracker.destination_notes ?? "")}</p>` : "",
+    "✏️ Edit", `/tracker/edit?enrolId=${activeEnrolmentId}&tile=destination`, tracker?.destination_status || "new");
 
   return pageShell("My Progress Tracker", `
     <main class="dashboard-shell">
@@ -8195,88 +8328,536 @@ const destinationTile = renderTrackerTile("destination", "🚀", "Destination & 
             ${goalsTile}
             ${outcomesTile}${diagnosticTile}${termTile(1)}${termTile(2)}${termTile(3)}${destinationTile}
           </div>
-          ${tracker ? `
-          <div class="tracker-comments">
-            <h3>Discussion Thread</h3>
-            <div class="comments-list">${commentsHtml || "<p class='muted-text'>No comments yet.</p>"}</div>
-            <div class="comment-form">
-              <textarea class="form-input" id="newComment" rows="2" placeholder="Add a comment…"></textarea>
-              <button class="btn btn-primary" onclick="postComment('${escapeHtml(tracker?.enrolment_id ?? "")}','tracker')">Post Comment</button>
-            </div>
-          </div>` : ""}
         </section>
       </div>
     </main>
-
-    <!-- Edit Modal -->
-    <div class="modal-overlay" id="studentEditModal" style="display:none">
-      <div class="modal-box">
-        <div class="modal-header"><h2 id="editModalTitle">Edit</h2><button class="modal-close" onclick="closeStudentEdit()">&times;</button></div>
-        <div class="modal-body">
-          <textarea class="form-input" id="editModalValue" rows="6" style="width:100%"></textarea>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" onclick="closeStudentEdit()">Cancel</button>
-          <button class="btn btn-primary" onclick="saveStudentEdit()">Save</button>
-        </div>
-      </div>
-    </div>
-
     <style>
       .tracker-course-banner{padding:.75rem 1.5rem;background:#f0f9ff;border-bottom:1px solid #bfdbfe;font-size:.9375rem}
       .tracker-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.25rem;padding:1.5rem}
       .tracker-tile{background:#fff;border:2px solid #e2e8f0;border-radius:14px;overflow:hidden;transition:border-color .2s}
-      .tracker-tile--done{border-color:#22c55e}
       .tracker-tile-header{display:flex;align-items:center;gap:.75rem;padding:1rem 1.25rem;background:#f8fafc;border-bottom:1px solid #e2e8f0}
       .tracker-tile-emoji{font-size:1.5rem}
       .tracker-tile-header h3{margin:0;font-size:1rem;font-weight:700;flex:1}
       .tracker-tile-body{padding:1rem 1.25rem;font-size:.9375rem;color:var(--text)}
       .tracker-tile-footer{padding:.75rem 1.25rem;border-top:1px solid #e2e8f0;background:#fafafa}
-      .tracker-comments{padding:1.5rem;border-top:2px solid #e2e8f0;margin-top:1rem}
-      .tracker-comments h3{font-size:1.125rem;font-weight:700;margin-bottom:1rem}
-      .comment-row{padding:.75rem 1rem;border-radius:10px;margin-bottom:.75rem}
-      .comment-student{background:#eff6ff;border-left:3px solid #3b82f6}
-      .comment-teacher,.comment-assessor,.comment-admin,.comment-superuser{background:#f0fdf4;border-left:3px solid #22c55e}
-      .comment-meta{font-size:.8125rem;margin-bottom:.35rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
-      .comment-form{display:flex;gap:.75rem;margin-top:1rem;align-items:flex-start}
-      .muted-text{color:var(--muted);font-size:.9rem}
     </style>
+  `);
+}
+
+async function renderTrackerEditPageHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return htmlResponse(renderAccessPendingPage(identity), 403);
+  const user = identity.user;
+  const isStudent = user.role === "student";
+  const url = new URL(request.url);
+  const enrolmentId = url.searchParams.get("enrolId") || "";
+  const tile = url.searchParams.get("tile") || "";
+
+  if (!enrolmentId || !tile) return Response.redirect(`${url.origin}/tracker`, 302);
+
+  const enrolment = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE id=?").bind(enrolmentId).first<StudentEnrolment>();
+  if (!enrolment) return Response.redirect(`${url.origin}/tracker`, 302);
+
+  let tracker = await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(enrolmentId).first<StudentTracker>();
+  if (!tracker) {
+    const trackerId = generateId();
+    await env.esol_marking_db.prepare(`
+      INSERT INTO student_trackers (id, enrolment_id, learner_id, course_instance_id, clos_status, purpose_status, goals_status, outcomes_status, destination_status)
+      VALUES (?, ?, ?, ?, 'new', 'new', 'new', 'new', 'new')
+    `).bind(trackerId, enrolmentId, enrolment.learner_id, enrolment.course_instance_id).run();
+    tracker = await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(enrolmentId).first<StudentTracker>();
+  }
+
+  const entityId = `${enrolmentId}:${tile}`;
+  const r3 = await env.esol_marking_db.prepare("SELECT * FROM assessment_comments WHERE entity_id=? AND entity_type='tracker' ORDER BY created_at ASC").bind(entityId).all<AssessmentComment>();
+  const comments = r3.results;
+
+  const tileTitle = getTileTitle(tile);
+
+  let statusVal: string | null = null;
+  if (tile === "clos") statusVal = tracker?.clos_status ?? null;
+  else if (tile === "purpose") statusVal = tracker?.purpose_status ?? null;
+  else if (tile === "goals") statusVal = tracker?.goals_status ?? null;
+  else if (tile === "outcomes") statusVal = tracker?.outcomes_status ?? null;
+  else if (tile === "destination") statusVal = tracker?.destination_status ?? null;
+
+  const isLocked = isStudent && statusVal === "completed";
+
+  let formHtml = "";
+  let pageScript = "";
+
+  const purposeOptions = [
+    { id: "1", text: "(1) Engaging and/or building confidence" },
+    { id: "2", text: "(2) Preparation for further learning" },
+    { id: "3", text: "(3) Preparation for employment" },
+    { id: "4", text: "(4) Improving essential skills (English, ESOL, maths, and digital)" },
+    { id: "5", text: "(5) Equipping parents/carers to support children's learning" },
+    { id: "6", text: "(6) Health and well-being" },
+    { id: "7", text: "(7) Developing stronger communities" }
+  ];
+
+  const outcomesOptions = [
+    { id: "1", text: "(1) Increased confidence" },
+    { id: "2", text: "(2) Improved skills for progressing to further learning" },
+    { id: "3", text: "(3) Improved skills for work" },
+    { id: "4", text: "(4) Improved essential skills" },
+    { id: "5", text: "(5) Improved ability to support a child's learning" },
+    { id: "6", text: "(6) Improved physical health" },
+    { id: "7", text: "(7) Improved mental health and well-being" },
+    { id: "8", text: "(8) Improved skills to participate in community life" },
+    { id: "9", text: "(9) Increased understanding of democratic values" },
+    { id: "10", text: "(10) Improved skills for Independent Living" },
+    { id: "11", text: "(11) No outcome area 1-10 achieved" }
+  ];
+
+  const destinationOptions = [
+    { id: "1", text: "(1) EMP: Starting new job" },
+    { id: "2", text: "(2) EDU; New course" },
+    { id: "3", text: "(3) SDE: Looking for work" },
+    { id: "4", text: "(4) OTH: Other destination" }
+  ];
+
+  const referenceList = `EMP1: In paid employment for 16 hours or more per week.
+EMP2: In paid employment for less than 16 hours per week.
+EMP3: Self-employed for 16 hours or more per week.
+EMP4: Self-employed for less than 16 hours per week.
+EMP5: Unemployed and looking for work.
+EMP6: Unemployed and not looking for work.
+EDU1: Higher Education.
+EDU2: Further Education.
+EDU3: School Sixth Form or Sixth Form College.
+EDU4: Other training.
+EDU5: Independent Specialist Provider.
+SDE1: Supported Independent Living.
+SDE2: Supported Employment.
+SDE3: Other Social Destination.
+OTH1: Other destination.
+OTH3: Unable to contact learner.
+OTH4: Not known.`;
+
+  if (tile === "clos") {
+    const list = JSON.parse(tracker?.course_learning_objectives || "[]");
+    if (isStudent) {
+      formHtml = `
+        <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=clos">
+          <p class="muted-text" style="margin-bottom:1.5rem">Enter your course learning objectives below. You can add multiple objectives.</p>
+          <div id="objectives-container"></div>
+          ${!isLocked ? `<button type="button" class="btn btn-secondary" onclick="addObjectiveField('')" style="margin-top:0.5rem;display:inline-block">+ Add learning objective</button>` : ""}
+          
+          ${!isLocked ? `
+            <div style="margin-top:2rem; display:flex; gap:1rem;">
+              <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+              <button type="submit" name="action" value="save" class="btn btn-primary">Save</button>
+            </div>
+          ` : `<div class="alert alert-info" style="margin-top:2rem">This section has been submitted and is locked.</div>`}
+        </form>
+      `;
+      pageScript = `
+        <script>
+          const list = ${JSON.stringify(list)};
+          function addObjectiveField(val = "") {
+            const container = document.getElementById('objectives-container');
+            const div = document.createElement('div');
+            div.style = "display:flex; gap:0.75rem; align-items:center; margin-bottom:0.75rem;";
+            
+            const txt = document.createElement('input');
+            txt.type = 'text';
+            txt.name = 'objective_texts[]';
+            txt.value = val;
+            txt.className = 'form-input';
+            txt.style = 'flex:1;';
+            txt.required = true;
+            if (${isLocked}) txt.disabled = true;
+            div.appendChild(txt);
+
+            if (!${isLocked}) {
+              const del = document.createElement('button');
+              del.type = 'button';
+              del.className = 'btn btn-danger';
+              del.innerHTML = '🗑️';
+              del.onclick = () => div.remove();
+              div.appendChild(del);
+            }
+            container.appendChild(div);
+          }
+          if (list.length === 0) {
+            if (!${isLocked}) addObjectiveField("");
+          } else {
+            list.forEach(item => addObjectiveField(item.text));
+          }
+        </script>
+      `;
+    } else {
+      formHtml = `
+        <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=clos">
+          <p class="muted-text" style="margin-bottom:1.5rem">Check the objectives achieved by this student:</p>
+          <div style="margin-bottom:1.5rem">
+            ${list.length > 0 ? list.map((item: any, idx: number) => `
+              <div style="display:flex; align-items:center; gap:1rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:0.75rem; background:#f8fafc;">
+                <span style="font-weight:600;min-width:24px">#${idx+1}</span>
+                <span style="flex:1">${escapeHtml(item.text)}</span>
+                <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:600">
+                  <input type="checkbox" name="achieved_${idx}" value="true" ${item.achieved ? "checked" : ""} style="width:1.2rem; height:1.2rem; accent-color:var(--primary);">
+                  Achieved
+                </label>
+              </div>
+            `).join("") : "<p class='muted-text'>No learning objectives submitted by the student yet.</p>"}
+          </div>
+          ${list.length > 0 ? `<button type="submit" name="action" value="tutor_save" class="btn btn-primary">Save Achievement Status</button>` : ""}
+        </form>
+      `;
+    }
+  } else if (tile === "purpose") {
+    formHtml = `
+      <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=purpose">
+        <p class="muted-text" style="margin-bottom:1.5rem">Select the tailored learning purpose for this course (choose only one option):</p>
+        <div style="display:flex; flex-direction:column; gap:0.75rem; margin-bottom:1.5rem">
+          ${purposeOptions.map(opt => `
+            <label class="radio-option-label" style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; background:#fff">
+              <input type="radio" name="tailored_purpose" value="${opt.id}" ${tracker?.tailored_purpose === opt.id ? "checked" : ""} ${isLocked ? "disabled" : ""} required>
+              <span>${escapeHtml(opt.text)}</span>
+            </label>
+          `).join("")}
+        </div>
+        ${!isLocked ? `
+          <div style="display:flex; gap:1rem;">
+            <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+            <button type="submit" name="action" value="save" class="btn btn-primary">Save</button>
+          </div>
+        ` : `<div class="alert alert-info">This section has been submitted and is locked.</div>`}
+      </form>
+    `;
+  } else if (tile === "goals") {
+    const list = JSON.parse(tracker?.smart_goals || "[]");
+    if (isStudent) {
+      formHtml = `
+        <div class="alert alert-info" style="margin-bottom:1.5rem; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; border-radius:8px; padding:1rem">
+          <h4 style="margin:0 0 0.5rem 0;font-size:1.05rem">What is a SMART Goal?</h4>
+          <p style="margin:0;font-size:0.9rem;line-height:1.4">
+            A SMART goal is one that is <strong>Specific</strong> (clear and defined), <strong>Measurable</strong> (can track progress), <strong>Achievable</strong> (realistic to complete), <strong>Relevant</strong> (aligns with your needs), and <strong>Time-bound</strong> (has a target date).
+          </p>
+        </div>
+        <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=goals">
+          <p class="muted-text" style="margin-bottom:1.5rem">Enter your personal goals for doing the course. These goals must be SMART.</p>
+          <div id="goals-container"></div>
+          ${!isLocked ? `<button type="button" class="btn btn-secondary" onclick="addGoalField('')" style="margin-top:0.5rem;display:inline-block">+ Add SMART Goal</button>` : ""}
+          
+          ${!isLocked ? `
+            <div style="margin-top:2rem; display:flex; gap:1rem;">
+              <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+              <button type="submit" name="action" value="save" class="btn btn-primary">Save</button>
+            </div>
+          ` : `<div class="alert alert-info" style="margin-top:2rem">This section has been submitted and is locked.</div>`}
+        </form>
+      `;
+      pageScript = `
+        <script>
+          const list = ${JSON.stringify(list)};
+          function addGoalField(val = "") {
+            const container = document.getElementById('goals-container');
+            const div = document.createElement('div');
+            div.style = "display:flex; gap:0.75rem; align-items:center; margin-bottom:0.75rem;";
+            
+            const txt = document.createElement('input');
+            txt.type = 'text';
+            txt.name = 'goal_texts[]';
+            txt.value = val;
+            txt.className = 'form-input';
+            txt.style = 'flex:1;';
+            txt.required = true;
+            if (${isLocked}) txt.disabled = true;
+            div.appendChild(txt);
+
+            if (!${isLocked}) {
+              const del = document.createElement('button');
+              del.type = 'button';
+              del.className = 'btn btn-danger';
+              del.innerHTML = '🗑️';
+              del.onclick = () => div.remove();
+              div.appendChild(del);
+            }
+            container.appendChild(div);
+          }
+          if (list.length === 0) {
+            if (!${isLocked}) addGoalField("");
+          } else {
+            list.forEach(item => addGoalField(item.text));
+          }
+        </script>
+      `;
+    } else {
+      formHtml = `
+        <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=goals">
+          <p class="muted-text" style="margin-bottom:1.5rem">Check the SMART goals achieved by this student:</p>
+          <div style="margin-bottom:1.5rem">
+            ${list.length > 0 ? list.map((item: any, idx: number) => `
+              <div style="display:flex; align-items:center; gap:1rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:0.75rem; background:#f8fafc;">
+                <span style="font-weight:600;min-width:24px">#${idx+1}</span>
+                <span style="flex:1">${escapeHtml(item.text)}</span>
+                <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:600">
+                  <input type="checkbox" name="achieved_${idx}" value="true" ${item.achieved ? "checked" : ""} style="width:1.2rem; height:1.2rem; accent-color:var(--primary);">
+                  Achieved
+                </label>
+              </div>
+            `).join("") : "<p class='muted-text'>No SMART goals submitted by the student yet.</p>"}
+          </div>
+          ${list.length > 0 ? `<button type="submit" name="action" value="tutor_save" class="btn btn-primary">Save Achievement Status</button>` : ""}
+        </form>
+      `;
+    }
+  } else if (tile === "outcomes") {
+    formHtml = `
+      <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=outcomes">
+        <p class="muted-text" style="margin-bottom:1.5rem">Select your tailored learning outcome (choose only one option):</p>
+        <div style="display:flex; flex-direction:column; gap:0.75rem; margin-bottom:1.5rem">
+          ${outcomesOptions.map(opt => `
+            <label class="radio-option-label" style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; background:#fff">
+              <input type="radio" name="tailored_outcomes" value="${opt.id}" ${tracker?.tailored_outcomes === opt.id ? "checked" : ""} ${isLocked ? "disabled" : ""} required>
+              <span>${escapeHtml(opt.text)}</span>
+            </label>
+          `).join("")}
+        </div>
+        ${!isLocked ? `
+          <div style="display:flex; gap:1rem;">
+            <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+            <button type="submit" name="action" value="save" class="btn btn-primary">Save</button>
+          </div>
+        ` : `<div class="alert alert-info">This section has been submitted and is locked.</div>`}
+      </form>
+    `;
+  } else if (tile === "destination") {
+    formHtml = `
+      <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=destination">
+        <p class="muted-text" style="margin-bottom:1.5rem">What will you do after completing this course? Select one option and provide details below:</p>
+        <div style="display:flex; flex-direction:column; gap:0.75rem; margin-bottom:1.5rem">
+          ${destinationOptions.map(opt => `
+            <label class="radio-option-label" style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; background:#fff">
+              <input type="radio" name="destination_type" value="${opt.id}" ${tracker?.destination_type === opt.id ? "checked" : ""} ${isLocked ? "disabled" : ""} required>
+              <span>${escapeHtml(opt.text)}</span>
+            </label>
+          `).join("")}
+        </div>
+        
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" style="font-weight:600;margin-bottom:0.5rem;display:block">Enter your answers / additional notes</label>
+          <textarea name="destination_notes" class="form-input" rows="4" style="width:100%" ${isLocked ? "disabled" : ""} placeholder="Describe your plans in detail...">${escapeHtml(tracker?.destination_notes ?? "")}</textarea>
+        </div>
+        
+        ${!isLocked ? `
+          <div style="display:flex; gap:1rem; margin-bottom:2rem;">
+            <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+            <button type="submit" name="action" value="save" class="btn btn-primary">Save</button>
+          </div>
+        ` : `<div class="alert alert-info">This section has been submitted and is locked.</div>`}
+      </form>
+
+      ${!isStudent ? `
+        <div class="alert alert-info" style="margin-top:2.5rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1.25rem">
+          <h4 style="margin:0 0 0.75rem 0;font-size:1.1rem;color:var(--text)">Reference Destination Codes</h4>
+          <pre style="margin:0;font-family:monospace;font-size:0.875rem;white-space:pre-wrap;line-height:1.6;color:#334155">${escapeHtml(referenceList)}</pre>
+        </div>
+      ` : ""}
+    `;
+  } else if (tile === "diagnostic") {
+    formHtml = `
+      <div style="padding:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#f8fafc; margin-bottom:1.5rem">
+        <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1.25rem">
+          <strong>Diagnostic Level:</strong>
+          <span style="font-size:1.1rem; font-weight:700">${escapeHtml(tracker?.initial_assessment_level ?? "Not set yet")}</span>
+          ${ragBadge(tracker?.initial_assessment_rag)}
+        </div>
+        <div style="margin-bottom:1.25rem">
+          <strong>Notes:</strong>
+          <p style="margin:0.25rem 0 0 0; white-space:pre-wrap; line-height:1.5">${escapeHtml(tracker?.initial_assessment_notes ?? "No diagnostic notes entered yet.")}</p>
+        </div>
+        <div style="font-size:0.875rem; color:var(--muted); border-top:1px solid #e2e8f0; padding-top:0.75rem">
+          Assessed on: ${escapeHtml(tracker?.initial_assessment_date ?? "N/A")}
+        </div>
+      </div>
+    `;
+  } else if (tile.startsWith("term")) {
+    const termNum = parseInt(tile.replace("term", "")) || 1;
+    formHtml = `
+      <div style="padding:1.5rem; border:1px solid #e2e8f0; border-radius:12px; background:#f8fafc; margin-bottom:1.5rem">
+        <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1.25rem">
+          <strong>Term Grade:</strong>
+          <span style="font-size:1.1rem; font-weight:700">${escapeHtml(tracker?.[`term${termNum}_grade` as keyof StudentTracker] ?? "Not set yet")}</span>
+          ${ragBadge(tracker?.[`term${termNum}_rag` as keyof StudentTracker] as string)}
+        </div>
+        <div style="margin-bottom:1.25rem">
+          <strong>Comments:</strong>
+          <p style="margin:0.25rem 0 0 0; white-space:pre-wrap; line-height:1.5">${escapeHtml(tracker?.[`term${termNum}_comments` as keyof StudentTracker] as string ?? "No feedback comments entered yet.")}</p>
+        </div>
+        <div style="font-size:0.875rem; color:var(--muted); border-top:1px solid #e2e8f0; padding-top:0.75rem">
+          Reviewed on: ${escapeHtml(tracker?.[`term${termNum}_date` as keyof StudentTracker] as string ?? "N/A")}
+        </div>
+      </div>
+    `;
+  }
+
+  const page = pageShell(`Edit: ${tileTitle}`, `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "tracker")}
+      <div class="content">
+        ${renderTopbar(identity, `My Progress Tracker — ${tileTitle}`)}
+        <section class="page-section" style="padding:2.5rem">
+          <div style="margin-bottom: 2rem;">
+            <a class="btn btn-secondary" href="/tracker?enrolId=${enrolmentId}" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.5rem; padding: 0.5rem 1rem;">
+              ← Back to my tracker
+            </a>
+          </div>
+
+          <section class="panel" style="padding: 2.5rem; border-radius: 12px; margin-bottom: 2.5rem;">
+            <p class="eyebrow" style="margin-bottom: 0.5rem;">${escapeHtml(enrolment.student_label)} (${escapeHtml(enrolment.learner_id)})</p>
+            <h2 style="margin: 0 0 2rem 0; font-size: 1.75rem; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding-bottom: 1rem;">
+              ${escapeHtml(tileTitle)}
+            </h2>
+            ${formHtml}
+          </section>
+
+          <!-- Discussion Thread -->
+          <section class="panel" style="padding: 2.5rem; border-radius: 12px;">
+            <h3 style="margin:0 0 1.5rem 0; font-size:1.25rem; font-weight:700">Discussion Thread</h3>
+            <div class="comments-list" style="max-height: 400px; overflow-y: auto; margin-bottom: 1.5rem; display:flex; flex-direction:column; gap:0.75rem;">
+              ${comments.length > 0 ? comments.map(c => `
+                <div class="comment-row comment-${escapeHtml(c.author_role)}" style="padding: 1rem; border-radius: 8px; background: ${c.author_role === "student" ? "#f0fdf4" : "#f8fafc"}; border: 1px solid ${c.author_role === "student" ? "#bbf7d0" : "#e2e8f0"};">
+                  <div class="comment-meta" style="font-size: 0.8125rem; color: var(--muted); margin-bottom: 0.35rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap">
+                    <strong>${escapeHtml(c.author_name)}</strong> 
+                    <span class="meta-chip" style="background:#e2e8f0; color:#334155; padding:0.1rem 0.5rem; border-radius:10px; font-size:0.75rem; font-weight:600">${escapeHtml(c.author_role)}</span> 
+                    <span class="muted-text" style="font-size:0.8rem">${escapeHtml(c.created_at.slice(0, 19).replace("T", " "))}</span>
+                  </div>
+                  <p style="margin:0; font-size:0.95rem; line-height:1.5; color:var(--text); white-space:pre-wrap;">${escapeHtml(c.comment)}</p>
+                </div>
+              `).join("") : "<p class='muted-text' style='margin:0;color:var(--muted)'>No comments yet. Start the discussion below.</p>"}
+            </div>
+            <div class="comment-form" style="display:flex; gap:1rem; align-items:flex-start">
+              <textarea class="form-input" id="newComment" rows="3" placeholder="Leave some feedback or reply here…" style="flex:1; resize:vertical; padding: 0.75rem; border-radius: 8px;"></textarea>
+              <button class="btn btn-primary" onclick="postComment()" style="height: 42px; padding: 0 1.5rem;">Post Reply</button>
+            </div>
+          </section>
+        </section>
+      </div>
+    </main>
+
+    ${pageScript}
     <script>
-    let editField = '';
-    const enrolmentId = '${escapeHtml(tracker?.enrolment_id ?? "")}'; 
-    const fieldMap = { purpose: ['tailored_purpose','Tailored Learning Purpose'], goals: ['smart_goals','SMART Goals'], outcomes: ['tailored_outcomes','Tailored Learning Outcomes'], clos: ['course_learning_objectives','Course Learning Objectives'] };
-    const currentValues = ${JSON.stringify({ tailored_purpose: tracker?.tailored_purpose ?? "", smart_goals: tracker?.smart_goals ?? "", tailored_outcomes: tracker?.tailored_outcomes ?? "", course_learning_objectives: tracker?.course_learning_objectives ?? "" })};
-    function openStudentEdit(field) {
-      editField = field;
-      const [key, title] = fieldMap[field];
-      document.getElementById('editModalTitle').textContent = 'Edit: ' + title;
-      document.getElementById('editModalValue').value = currentValues[key] || '';
-      document.getElementById('studentEditModal').style.display = 'flex';
-    }
-    function closeStudentEdit() { document.getElementById('studentEditModal').style.display = 'none'; }
-    async function saveStudentEdit() {
-      const [key] = fieldMap[editField];
-      const value = document.getElementById('editModalValue').value.trim();
-      const payload = { enrolment_id: enrolmentId };
-      payload[key] = value;
-      const r = await fetch('/api/tracker/record', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-      const d = await r.json();
-      if (d.success) { closeStudentEdit(); location.reload(); }
-      else alert('Error: ' + (d.error || 'Unknown'));
-    }
-    async function postComment(entityId, entityType) {
-      const comment = document.getElementById('newComment').value.trim();
-      if (!comment) return;
-      const r = await fetch('/api/assessment/comments/' + encodeURIComponent(entityId), {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ comment, entity_type: entityType })
-      });
-      const d = await r.json();
-      if (d.success) location.reload();
-      else alert('Error: ' + (d.error || 'Unknown'));
-    }
+      async function postComment() {
+        const comment = document.getElementById('newComment').value.trim();
+        if (!comment) return;
+        const entityId = '${escapeHtml(entityId)}';
+        const r = await fetch('/api/assessment/comments/' + encodeURIComponent(entityId), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ comment, entity_type: 'tracker' })
+        });
+        const d = await r.json();
+        if (d.success) {
+          location.reload();
+        } else {
+          alert('Error: ' + (d.error || 'Unknown'));
+        }
+      }
     </script>
   `);
+
+  return htmlResponse(page);
+}
+
+async function saveTrackerEditHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return json({ error: "Forbidden" }, 403);
+  const isStudent = identity.user.role === "student";
+  const url = new URL(request.url);
+  const enrolmentId = url.searchParams.get("enrolId") || "";
+  const tile = url.searchParams.get("tile") || "";
+
+  if (!enrolmentId || !tile) return Response.redirect(`${url.origin}/tracker`, 302);
+
+  const tracker = await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(enrolmentId).first<StudentTracker>();
+  if (!tracker) return Response.redirect(`${url.origin}/tracker`, 302);
+
+  const formData = await request.formData();
+  const action = formData.get("action") as string;
+
+  if (isStudent) {
+    const statusVal = action === "save" ? "completed" : "draft";
+
+    if (tile === "clos") {
+      const existingList = JSON.parse(tracker.course_learning_objectives || "[]");
+      const newTexts = formData.getAll("objective_texts[]") as string[];
+      const newList = newTexts.map((txt, index) => {
+        const match = existingList[index];
+        return {
+          id: match?.id || generateId(),
+          text: txt.trim(),
+          achieved: match ? !!match.achieved : false
+        };
+      });
+      await env.esol_marking_db.prepare(`
+        UPDATE student_trackers SET course_learning_objectives=?, clos_status=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
+      `).bind(JSON.stringify(newList), statusVal, enrolmentId).run();
+
+    } else if (tile === "purpose") {
+      const tailoredPurpose = formData.get("tailored_purpose") as string;
+      await env.esol_marking_db.prepare(`
+        UPDATE student_trackers SET tailored_purpose=?, purpose_status=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
+      `).bind(tailoredPurpose, statusVal, enrolmentId).run();
+
+    } else if (tile === "goals") {
+      const existingList = JSON.parse(tracker.smart_goals || "[]");
+      const newTexts = formData.getAll("goal_texts[]") as string[];
+      const newList = newTexts.map((txt, index) => {
+        const match = existingList[index];
+        return {
+          id: match?.id || generateId(),
+          text: txt.trim(),
+          achieved: match ? !!match.achieved : false
+        };
+      });
+      await env.esol_marking_db.prepare(`
+        UPDATE student_trackers SET smart_goals=?, goals_status=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
+      `).bind(JSON.stringify(newList), statusVal, enrolmentId).run();
+
+    } else if (tile === "outcomes") {
+      const tailoredOutcomes = formData.get("tailored_outcomes") as string;
+      await env.esol_marking_db.prepare(`
+        UPDATE student_trackers SET tailored_outcomes=?, outcomes_status=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
+      `).bind(tailoredOutcomes, statusVal, enrolmentId).run();
+
+    } else if (tile === "destination") {
+      const destType = formData.get("destination_type") as string;
+      const destNotes = formData.get("destination_notes") as string;
+      await env.esol_marking_db.prepare(`
+        UPDATE student_trackers SET destination_type=?, destination_notes=?, destination_status=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
+      `).bind(destType, destNotes, statusVal, enrolmentId).run();
+    }
+
+  } else {
+    if (tile === "clos") {
+      const list = JSON.parse(tracker.course_learning_objectives || "[]");
+      const updated = list.map((item: any, idx: number) => {
+        return {
+          ...item,
+          achieved: formData.get(`achieved_${idx}`) === "true"
+        };
+      });
+      await env.esol_marking_db.prepare(`
+        UPDATE student_trackers SET course_learning_objectives=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
+      `).bind(JSON.stringify(updated), enrolmentId).run();
+
+    } else if (tile === "goals") {
+      const list = JSON.parse(tracker.smart_goals || "[]");
+      const updated = list.map((item: any, idx: number) => {
+        return {
+          ...item,
+          achieved: formData.get(`achieved_${idx}`) === "true"
+        };
+      });
+      await env.esol_marking_db.prepare(`
+        UPDATE student_trackers SET smart_goals=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
+      `).bind(JSON.stringify(updated), enrolmentId).run();
+    }
+  }
+
+  return Response.redirect(`${url.origin}/tracker?enrolId=${enrolmentId}`, 302);
 }
 
 function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment[], trackers: StudentTracker[], courseInstanceId: string, selectedEnrolment: StudentEnrolment | null, tracker: StudentTracker | null, comments: AssessmentComment[], allCourses: {course_instance_id: string, course_title: string}[]): string {
@@ -8304,22 +8885,34 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         <span class="meta-chip">${escapeHtml(selectedEnrolment.learner_id)}</span>
       </div>
 
-      <!-- Student Goals (Read-only for staff) -->
+      <!-- Student Goals (Read-only for staff, with edit/discuss links) -->
       <div class="tracker-section">
-<h3>📚 Course Learning Objectives</h3>
-<pre style="white-space:pre-wrap;font-family:inherit;margin:0">${tracker.course_learning_objectives ? escapeHtml(tracker.course_learning_objectives) : "<em class='muted-text'>Not filled in by student yet.</em>"}</pre>
-</div>
-<div class="tracker-section">
-<h3>🎯 Tailored Learning Purpose</h3>
-        <p>${tracker.tailored_purpose ? escapeHtml(tracker.tailored_purpose) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
+        <h3>📚 Course Learning Objectives</h3>
+        ${formatObjectiveListHtml(tracker.course_learning_objectives) || "<em class='muted-text'>Not filled in by student yet.</em>"}
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=clos" style="text-decoration:none;display:inline-block">✏️ Mark Achievements & Discuss</a>
+        </div>
+      </div>
+      <div class="tracker-section">
+        <h3>🎯 Tailored Learning Purpose</h3>
+        <p>${tracker.tailored_purpose ? escapeHtml(formatPurposeType(tracker.tailored_purpose)) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=purpose" style="text-decoration:none;display:inline-block">👁️ View Details & Discuss</a>
+        </div>
       </div>
       <div class="tracker-section">
         <h3>📋 SMART Goals</h3>
-        <pre style="white-space:pre-wrap;font-family:inherit;margin:0">${tracker.smart_goals ? escapeHtml(tracker.smart_goals) : "<em class='muted-text'>Not filled in by student yet.</em>"}</pre>
+        ${formatObjectiveListHtml(tracker.smart_goals) || "<em class='muted-text'>Not filled in by student yet.</em>"}
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=goals" style="text-decoration:none;display:inline-block">✏️ Mark Achievements & Discuss</a>
+        </div>
       </div>
       <div class="tracker-section">
         <h3>✨ Tailored Learning Outcomes</h3>
-        <p>${tracker.tailored_outcomes ? escapeHtml(tracker.tailored_outcomes) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
+        <p>${tracker.tailored_outcomes ? escapeHtml(formatOutcomeType(tracker.tailored_outcomes)) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=outcomes" style="text-decoration:none;display:inline-block">👁️ View Details & Discuss</a>
+        </div>
       </div>
 
       <!-- Initial Assessment -->
@@ -8340,6 +8933,9 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
           <label class="form-label">Diagnostic Notes</label>
           <textarea class="form-input" id="f-ia-notes" rows="3">${escapeHtml(tracker.initial_assessment_notes ?? "")}</textarea>
         </div>
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=diagnostic" style="text-decoration:none;display:inline-block">💬 Discuss Diagnostic</a>
+        </div>
       </div>
 
       <!-- Term Reviews -->
@@ -8347,24 +8943,27 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       <div class="tracker-section">
         <h3>📊 Term ${n} Review</h3>
         <p class="form-hint">Select a RAG status — the date is recorded automatically when you save.</p>
-                ${ragSelector("term" + n + "_rag", (tracker as any)["term" + n + "_rag"])}
+        ${ragSelector("term" + n + "_rag", (tracker as any)["term" + n + "_rag"])}
         <div class="form-group" style="margin-top:.75rem">
           <label class="form-label">Feedback Comments</label>
           <textarea class="form-input" id="f-t${n}-comments" rows="3">${escapeHtml((tracker as any)["term" + n + "_comments"] ?? "")}</textarea>
+        </div>
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=term${n}" style="text-decoration:none;display:inline-block">💬 Discuss Term ${n} Review</a>
         </div>
       </div>
       `).join("")}
 
       <!-- CLOs Achieved Confirmation -->
-<div class="tracker-section">
-<h3>✅ CLOs Achieved Confirmation</h3>
-<p class="form-hint">Have the Course Learning Objectives been achieved?</p>
-${ragSelector("clos_achieved_rag", tracker.clos_achieved_rag)}
-</div>
+      <div class="tracker-section">
+        <h3>✅ CLOs Achieved Confirmation</h3>
+        <p class="form-hint">Have the Course Learning Objectives been achieved?</p>
+        ${ragSelector("clos_achieved_rag", tracker.clos_achieved_rag)}
+      </div>
 
-<!-- Destination -->
-<div class="tracker-section">
-<h3>🚀 Destination & Progression</h3>
+      <!-- Destination -->
+      <div class="tracker-section">
+        <h3>🚀 Destination & Progression</h3>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Destination</label>
@@ -8381,6 +8980,9 @@ ${ragSelector("clos_achieved_rag", tracker.clos_achieved_rag)}
         <div class="form-group">
           <label class="form-label">Notes</label>
           <textarea class="form-input" id="f-dest-notes" rows="2">${escapeHtml(tracker.destination_notes ?? "")}</textarea>
+        </div>
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=destination" style="text-decoration:none;display:inline-block">💬 Discuss Destination</a>
         </div>
       </div>
 
