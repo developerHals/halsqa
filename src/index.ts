@@ -706,7 +706,12 @@ export default {
     if (url.pathname === "/api/enrolment/student" && request.method === "GET") return fetchStudentEnrolments(request, env, identity);
 
     if (url.pathname === "/assessments") return renderAssessmentsPageHandler(request, env, identity);
-    if (url.pathname === "/tracker") return renderTrackerPageHandler(request, env, identity);
+    if (url.pathname === "/tracker") {
+      if (request.method === "POST") {
+        return saveStudentCourseHandler(request, env, identity);
+      }
+      return renderTrackerPageHandler(request, env, identity);
+    }
     if (url.pathname === "/tracker/edit" && request.method === "GET") return renderTrackerEditPageHandler(request, env, identity);
     if (url.pathname === "/tracker/edit" && request.method === "POST") return saveTrackerEditHandler(request, env, identity);
     if (url.pathname.startsWith("/assessments/quiz/")) return renderQuizPageHandler(request, env, identity);
@@ -7107,9 +7112,12 @@ function renderSidebar(identity: Identity, active: string) {
   </aside>`;
 }
 
-function renderTopbar(identity: Identity, title: string, extraActions?: string) {
+function renderTopbar(identity: Identity, title: string, extraActions?: string, leftExtra?: string) {
   return `<header class="topbar">
-    <div><p class="eyebrow">Dashboard</p><h1>${escapeHtml(title)}</h1></div>
+    <div style="display:flex; align-items:baseline; gap:1.5rem; flex-wrap:wrap;">
+      <div><p class="eyebrow">Dashboard</p><h1>${escapeHtml(title)}</h1></div>
+      ${leftExtra || ""}
+    </div>
     <div style="display:flex;align-items:center;gap:1rem;">
       <div class="profile-pill">${escapeHtml(identity.email)}</div>
       ${extraActions || ""}
@@ -8113,7 +8121,9 @@ async function renderTrackerPageHandler(request: Request, env: Env, identity: Id
     }
 
     const requestedEnrolId = url.searchParams.get("enrolId") ?? enrolments[0]?.id ?? "";
-    return htmlResponse(renderStudentTrackerPage(identity, enrolments, tracker, comments, rawLearnerId, requestedEnrolId));
+    const errorParam = url.searchParams.get("error");
+    const successParam = url.searchParams.get("success");
+    return htmlResponse(renderStudentTrackerPage(identity, enrolments, tracker, comments, rawLearnerId, requestedEnrolId, errorParam, successParam));
   } else {
     // Staff view
 
@@ -8140,6 +8150,38 @@ async function renderTrackerPageHandler(request: Request, env: Env, identity: Id
     }
     return htmlResponse(renderStaffTrackerPage(identity, enrolments, trackers, courseInstanceId, selectedEnrolment, selectedTracker, comments, allCourses));
   }
+}
+
+async function saveStudentCourseHandler(request: Request, env: Env, identity: Identity): Promise<Response> {
+  if (!identity.user) return htmlResponse(renderAccessPendingPage(identity), 403);
+  if (identity.user.role !== "student") return json({ error: "Forbidden" }, 403);
+
+  const url = new URL(request.url);
+  const formData = await request.formData();
+  const courseInstanceId = (formData.get("course_instance_id") as string || "").trim();
+
+  if (!courseInstanceId) {
+    return Response.redirect(`${url.origin}/tracker?error=Class+ID+cannot+be+blank`, 302);
+  }
+
+  const rawLearnerId = identity.email.split("@")[0].replace(/[^0-9]/g, "");
+  const learnerId = rawLearnerId || "test_student";
+
+  // Call the LearnerTrack API sync helper
+  const result = await syncClassEnrolments(courseInstanceId, env);
+  if (result.error) {
+    return Response.redirect(`${url.origin}/tracker?error=${encodeURIComponent(result.error)}`, 302);
+  }
+
+  // Find if the student actually has an enrolment records under this Class ID in the local D1
+  const enrolment = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE learner_id=? AND course_instance_id=?")
+    .bind(learnerId, courseInstanceId).first<StudentEnrolment>();
+
+  if (!enrolment) {
+    return Response.redirect(`${url.origin}/tracker?error=No+enrolment+found+for+Learner+ID+${learnerId}+in+Course+ID+${courseInstanceId}`, 302);
+  }
+
+  return Response.redirect(`${url.origin}/tracker?enrolId=${enrolment.id}&success=Course+saved+successfully`, 302);
 }
 
 function formatObjectiveListHtml(jsonStr: string | null): string {
@@ -8293,8 +8335,15 @@ function renderTrackerTile(
   </div>`;
 }
 
-function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string, activeEnrolmentId: string): string {
+function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string, activeEnrolmentId: string, error?: string | null, success?: string | null): string {
   const enrolment = enrolments.find(e => e.id === activeEnrolmentId) ?? enrolments[0] ?? null;
+
+  const classSearchForm = `
+    <form method="POST" action="/tracker" style="display:flex; align-items:center; gap:0.5rem; margin:0;">
+      <input type="text" name="course_instance_id" placeholder="Enter Class ID (e.g. mock_course)" value="${escapeHtml(enrolment?.course_instance_id ?? "")}" required style="padding:0.4rem 0.75rem; font-size:0.875rem; border:1px solid var(--border); border-radius:8px; width:auto; min-width:200px; max-width:260px;">
+      <button type="submit" style="padding:0.4rem 1.25rem; font-size:0.875rem; border-radius:8px; height:38px;">Save</button>
+    </form>
+  `;
 
   const learnerProfileTile = renderTrackerTile("profile", "👤", "Learner Profile",
     `<p class="muted-text">Learner demographic and support profile details.</p>`,
@@ -8351,8 +8400,10 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
     <main class="dashboard-shell">
       ${renderSidebar(identity, "tracker")}
       <div class="content">
-        ${renderTopbar(identity, "My Progress Tracker")}
+        ${renderTopbar(identity, "My Progress Tracker", undefined, classSearchForm)}
         <section class="page-section">
+          ${error ? `<div class="alert alert-danger">${escapeHtml(error)}</div>` : ""}
+          ${success ? `<div class="alert alert-success">${escapeHtml(success)}</div>` : ""}
           ${!learnerId ? `<div class="alert alert-warn">Could not determine your learner ID from your email.</div>` : ""}
           ${enrolment ? `<div class="tracker-course-banner"><strong>${escapeHtml(enrolment.course_title)}</strong> <span class="meta-chip">${escapeHtml(enrolment.course_code)}</span></div>` : ""}
           <div class="tracker-tiles">
@@ -8372,6 +8423,10 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
       </div>
     </main>
     <style>
+      .alert{padding:.875rem 1.25rem;border-radius:10px;margin:1rem 1.5rem;font-size:.9375rem}
+      .alert-warn{background:#fffbeb;border:1px solid #fcd34d;color:#92400e}
+      .alert-danger{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
+      .alert-success{background:#f0fdf4;border:1px solid #86efac;color:#166534}
       .tracker-course-banner{padding:.75rem 1.5rem;background:#f0f9ff;border-bottom:1px solid #bfdbfe;font-size:.9375rem}
       .tracker-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.25rem;padding:1.5rem}
       .tracker-tile{background:#fff;border:2px solid #e2e8f0;border-radius:14px;overflow:hidden;transition:border-color .2s}
@@ -8717,7 +8772,7 @@ OTH4: Not known.`;
         
         <div class="form-group" style="margin-bottom:1.5rem">
           <label class="form-label" style="font-weight:600">1. What is your Class ID?</label>
-          <input type="text" name="q1" class="form-input" value="${escapeHtml(data.q1 || "")}" ${disabledAttr} required>
+          <input type="text" name="q1" class="form-input" value="${escapeHtml(data.q1 || enrolment.course_instance_id)}" ${disabledAttr} required>
         </div>
 
         <div class="form-group" style="margin-bottom:1.5rem">
