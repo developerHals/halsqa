@@ -645,7 +645,7 @@ export default {
     if (!identity) return wantsJson(request) ? json({ error: "Not authenticated" }, 401) : Response.redirect(`${url.origin}/login`, 302);
     if (!identity.user) return htmlResponse(renderAccessPendingPage(identity), 403);
 
-    if (url.pathname === "/dashboard") return Response.redirect(`${url.origin}/${identity.user.role === "student" ? "assessments" : "learning-walks"}`, 302);
+    if (url.pathname === "/dashboard") return renderDashboardPage(request, env, identity);
     if (url.pathname.startsWith("/it-tickets")) return handleITTicketsRequest(request, env, identity);
     if (url.pathname === "/users") return renderUsersPage(request, env, identity);
     if (url.pathname === "/roles") return renderRolesPage(request, env, identity);
@@ -6934,6 +6934,69 @@ function pageShell(title: string, body: string) {
     .qc-context-label{font-size:.75rem;color:var(--muted);padding:.4rem .75rem 0;text-transform:uppercase;letter-spacing:.05em}
     .qc-context-palette{display:grid;grid-template-columns:repeat(5,1fr);gap:.35rem;padding:.4rem .75rem}
     @media(max-width:768px){.qc-toolbar{flex-direction:column;align-items:stretch}.qc-form-row,.qc-sub-row{grid-template-columns:1fr}.qc-color-field{grid-column:span 1}.qc-header-row,.qc-grid,.qc-banner-row,.qc-single-row{grid-template-columns:repeat(5,1fr)}.qc-seven-day .qc-header-row,.qc-seven-day .qc-grid,.qc-seven-day .qc-banner-row,.qc-seven-day .qc-single-row{grid-template-columns:repeat(7,1fr)}}
+    .homepage-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+    @media (max-width: 1024px) {
+      .homepage-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    @media (max-width: 640px) {
+      .homepage-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .homepage-tile {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      transition: all 0.2s ease-in-out;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .homepage-tile:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 24px rgba(0,0,0,0.08);
+      border-color: var(--primary);
+    }
+    .tile-icon-wrapper {
+      width: 2.75rem;
+      height: 2.75rem;
+      border-radius: 8px;
+      background: rgba(255,0,90,0.08);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease-in-out;
+    }
+    .homepage-tile:hover .tile-icon-wrapper {
+      background: var(--primary);
+      color: #fff;
+    }
+    .tile-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+    .tile-desc {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0;
+      flex-grow: 1;
+    }
   </style></head><body>${body}</body></html>`;
 }
 
@@ -6987,10 +7050,10 @@ function renderSidebar(identity: Identity, active: string) {
   const portalLabel = user.role === "student" ? "Student Portal" : (user.role === "assessor_iqa" ? "Assessor / IQA" : user.role);
 
   return `<aside class="sidebar">
-    <div class="sidebar-brand">
+    <a class="sidebar-brand" href="/dashboard" style="text-decoration:none; color:inherit; display:flex;">
       <div class="brand-mark"><img src="/favicon.svg" width="36" height="36" style="object-fit:contain;display:block"></div>
       <div><strong>HALSQ</strong><span>${escapeHtml(portalLabel)}</span></div>
-    </div>
+    </a>
     <nav class="sidebar-nav">
       ${links.join("\n")}
     </nav>
@@ -7006,6 +7069,138 @@ function renderTopbar(identity: Identity, title: string, extraActions?: string) 
       <a class="logout-link" href="/logout">Sign out</a>
     </div>
   </header>`;
+}
+
+async function renderDashboardPage(request: Request, env: Env, identity: Identity): Promise<Response> {
+  const user = identity.user!;
+  const allowed = identity.functionalities || getDefaultFunctionalitiesForRole(user.role);
+
+  const allTiles = [
+    {
+      key: "learning-walks",
+      href: "/learning-walks",
+      title: "Learning Walks",
+      desc: "Conduct and manage teaching observation records and feedback.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 22s1-1 1-5c0-4 4-8 8-8s8 4 8 8c0 4 1 5 1 5"/><circle cx="12" cy="6" r="4"/></svg>`
+    },
+    {
+      key: "iqa-forms",
+      href: "/iqa-forms",
+      title: "IQA Forms",
+      desc: "Complete Internal Quality Assurance monitoring and reviews.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`
+    },
+    {
+      key: "assessments",
+      href: "/assessments",
+      title: "Assessments",
+      desc: "View and complete course assessments and grades.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2.5 3 6 3s6-1 6-3v-5"/></svg>`
+    },
+    {
+      key: "tracker",
+      href: "/tracker",
+      title: user.role === "student" ? "My Tracker" : "Progress Tracker",
+      desc: "Monitor learning progress, objectives, and qualifications.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`
+    },
+    {
+      key: "courses",
+      href: "/courses",
+      title: "Our Courses",
+      desc: "Browse the complete directory of course offerings and schedules.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`
+    },
+    {
+      key: "my-class",
+      href: "/my-class",
+      title: "My Class",
+      desc: "Access class lists, registers, and specific course activities.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`
+    },
+    {
+      key: "students",
+      href: "/students",
+      title: "Students",
+      desc: "Manage student details, enrolments, and learning cohorts.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`
+    },
+    {
+      key: "reports",
+      href: "/reports",
+      title: "Reports",
+      desc: "View quality assurance performance metrics and reports.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>`
+    },
+    {
+      key: "quality-calendar",
+      href: "/quality-calendar",
+      title: "Quality Calendar",
+      desc: "Track key quality audits, observation deadlines, and meetings.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`
+    },
+    {
+      key: "todays-classes",
+      href: "https://schedupro.pages.dev/",
+      title: "Todays' classes",
+      desc: "View live schedule of classes and sessions running today.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+      external: true
+    },
+    {
+      key: "trainings",
+      href: "https://haringey-learns-blog.pages.dev/",
+      title: "Trainings",
+      desc: "Explore training schedules, materials, and development links.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>`,
+      external: true
+    },
+    {
+      key: "it-tickets",
+      href: "/it-tickets",
+      title: "IT Tickets",
+      desc: "Report technical issues and request IT service support.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`
+    },
+    {
+      key: "users",
+      href: "/users",
+      title: "Users",
+      desc: "Manage accounts, authentication state, and role assignments.",
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`
+    }
+  ];
+
+  const allowedTiles = allTiles.filter(tile => allowed.includes(tile.key));
+
+  const tilesHtml = allowedTiles.map(tile => `
+    <a href="${tile.href}" class="homepage-tile" ${tile.external ? 'target="_blank"' : ''}>
+      <div class="tile-icon-wrapper">
+        ${tile.icon}
+      </div>
+      <h3 class="tile-title">${escapeHtml(tile.title)}</h3>
+      <p class="tile-desc">${escapeHtml(tile.desc)}</p>
+    </a>
+  `).join("\n");
+
+  const page = pageShell("Home", `
+    <main class="dashboard-shell">
+      ${renderSidebar(identity, "dashboard")}
+      <section class="content">
+        ${renderTopbar(identity, "Welcome to HALSQ")}
+        <section class="panel" style="padding: 2.5rem;">
+          <p class="eyebrow" style="margin-bottom: 0.5rem;">Overview</p>
+          <h2 style="margin: 0 0 2rem 0; font-size: 1.75rem; font-weight: 700;">HALS Quality Assurance & Learning Portal</h2>
+          
+          <div class="homepage-grid">
+            ${tilesHtml}
+          </div>
+        </section>
+      </section>
+    </main>
+  `);
+
+  return htmlResponse(page);
 }
 
 function escapeHtml(value: string | null | undefined) { if (value == null) return ""; return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
