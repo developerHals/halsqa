@@ -7253,10 +7253,10 @@ async function renderDashboardPage(request: Request, env: Env, identity: Identit
     <main class="dashboard-shell">
       ${renderSidebar(identity, "dashboard")}
       <section class="content">
-        ${renderTopbar(identity, "Welcome to HALSQ")}
+        ${renderTopbar(identity, "Welcome to Haringey Learns")}
         <section class="panel" style="padding: 2.5rem;">
           <p class="eyebrow" style="margin-bottom: 0.5rem;">Overview</p>
-          <h2 style="margin: 0 0 2rem 0; font-size: 1.75rem; font-weight: 700;">HALS Quality Assurance & Learning Portal</h2>
+          <h2 style="margin: 0 0 2rem 0; font-size: 1.75rem; font-weight: 700;">Learning Portal</h2>
           
           <div class="homepage-grid">
             ${tilesHtml}
@@ -7612,6 +7612,8 @@ async function saveTrackerRecord(request: Request, env: Env, identity: Identity)
         term2_grade=COALESCE(?,term2_grade), term2_rag=COALESCE(?,term2_rag), term2_comments=COALESCE(?,term2_comments), term2_date=COALESCE(?,term2_date), term2_by=COALESCE(?,term2_by),
         term3_grade=COALESCE(?,term3_grade), term3_rag=COALESCE(?,term3_rag), term3_comments=COALESCE(?,term3_comments), term3_date=COALESCE(?,term3_date), term3_by=COALESCE(?,term3_by),
         destination_type=COALESCE(?,destination_type), destination_notes=COALESCE(?,destination_notes), destination_date=COALESCE(?,destination_date), destination_by=COALESCE(?,destination_by),
+        clos_achieved_rag=COALESCE(?,clos_achieved_rag),
+        course_learning_objectives=COALESCE(?,course_learning_objectives),
         updated_at=CURRENT_TIMESTAMP
       WHERE enrolment_id=?
     `).bind(
@@ -7621,6 +7623,8 @@ async function saveTrackerRecord(request: Request, env: Env, identity: Identity)
       body.term2_grade ?? null, body.term2_rag ?? null, body.term2_comments ?? null, body.term2_date ?? null, identity.user.id,
       body.term3_grade ?? null, body.term3_rag ?? null, body.term3_comments ?? null, body.term3_date ?? null, identity.user.id,
       body.destination_type ?? null, body.destination_notes ?? null, body.destination_date ?? null, identity.user.id,
+      body.clos_achieved_rag ?? null,
+      body.course_learning_objectives ?? null,
       body.enrolment_id
     ).run();
   } else {
@@ -8336,7 +8340,12 @@ function renderTrackerTile(
 }
 
 function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string, activeEnrolmentId: string, error?: string | null, success?: string | null): string {
-  const enrolment = enrolments.find(e => e.id === activeEnrolmentId) ?? enrolments[0] ?? null;
+  const sortedEnrolments = [...enrolments].sort((a, b) => {
+    if (a.course_instance_id === 'mock_course') return -1;
+    if (b.course_instance_id === 'mock_course') return 1;
+    return 0;
+  });
+  const enrolment = sortedEnrolments.find(e => e.id === activeEnrolmentId) ?? sortedEnrolments[0] ?? null;
 
   const classSearchForm = `
     <form method="POST" action="/tracker" style="display:flex; align-items:center; gap:0.5rem; margin:0;">
@@ -8407,7 +8416,17 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
           ${!learnerId ? `<div class="alert alert-warn">Could not determine your learner ID from your email.</div>` : ""}
           ${enrolment ? `
             <div class="tracker-course-banner" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding:.5rem 1.5rem;">
-              <div><strong>${escapeHtml(enrolment.course_title)}</strong> <span class="meta-chip">${escapeHtml(enrolment.course_code)}</span></div>
+              <div style="display:flex; align-items:center; gap:1.5rem; flex-wrap:wrap;">
+                <form method="GET" action="/tracker" style="display:flex; align-items:center; gap:0.5rem; margin:0;">
+                  <label style="font-weight:600; white-space:nowrap;">My classes</label>
+                  <select class="form-input" name="enrolId" onchange="this.form.submit()" style="width:320px; max-width:100%; height:38px; border-radius:8px;">
+                    ${sortedEnrolments.map(e => {
+                      const title = e.course_instance_id === 'mock_course' ? "Find your course using the searchbox" : `${e.course_title} (${e.course_code})`;
+                      return `<option value="${escapeHtml(e.id)}" ${e.id === activeEnrolmentId ? "selected" : ""}>${escapeHtml(title)}</option>`;
+                    }).join("")}
+                  </select>
+                </form>
+              </div>
               ${classSearchForm}
             </div>
           ` : `
@@ -9388,6 +9407,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
           <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=clos" style="text-decoration:none;display:inline-block">✏️ Mark Achievements & Discuss</a>
         </div>
       </div>
+
       <div class="tracker-section">
         <h3>🎯 Tailored Learning Purpose</h3>
         <p>${tracker.tailored_purpose ? escapeHtml(formatPurposeType(tracker.tailored_purpose)) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
@@ -9395,6 +9415,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
           <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=purpose" style="text-decoration:none;display:inline-block">👁️ View Details & Discuss</a>
         </div>
       </div>
+
       <div class="tracker-section">
         <h3>📋 SMART Goals</h3>
         ${formatObjectiveListHtml(tracker.smart_goals) || "<em class='muted-text'>Not filled in by student yet.</em>"}
@@ -9402,11 +9423,61 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
           <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=goals" style="text-decoration:none;display:inline-block">✏️ Mark Achievements & Discuss</a>
         </div>
       </div>
+
       <div class="tracker-section">
         <h3>✨ Tailored Learning Outcomes</h3>
         <p>${tracker.tailored_outcomes ? escapeHtml(formatOutcomeType(tracker.tailored_outcomes)) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
         <div style="margin-top:0.75rem">
           <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=outcomes" style="text-decoration:none;display:inline-block">👁️ View Details & Discuss</a>
+        </div>
+      </div>
+
+      <!-- CLOs Achieved Confirmation -->
+      <div class="tracker-section">
+        <h3>✅ CLOs Achieved Confirmation</h3>
+        <p class="form-hint" style="margin-bottom:0.75rem">Have the Course Learning Objectives been achieved?</p>
+        <div style="margin-bottom: 1.25rem;">
+          ${(() => {
+            if (!tracker.course_learning_objectives) return "<em class='muted-text'>No objectives added by student yet.</em>";
+            try {
+              const list = JSON.parse(tracker.course_learning_objectives);
+              if (!Array.isArray(list) || list.length === 0) return "<em class='muted-text'>No objectives added by student yet.</em>";
+              return list.map((item: any, idx: number) => `
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+                  <input type="checkbox" class="clo-achieved-checkbox" data-id="${escapeHtml(item.id)}" data-text="${escapeHtml(item.text)}" ${item.achieved === true || item.achieved === "true" ? "checked" : ""} style="width:1.2rem; height:1.2rem; accent-color:var(--primary);" onchange="this.nextElementSibling.style.textDecoration = this.checked ? 'line-through' : 'none'; this.nextElementSibling.style.color = this.checked ? 'var(--muted)' : 'inherit';">
+                  <span style="${item.achieved === true || item.achieved === "true" ? "text-decoration:line-through;color:var(--muted)" : ""}">${escapeHtml(item.text)}</span>
+                </div>
+              `).join("");
+            } catch(e) {
+              return "<em class='muted-text'>Error parsing objectives.</em>";
+            }
+          })()}
+        </div>
+        ${ragSelector("clos_achieved_rag", tracker.clos_achieved_rag)}
+      </div>
+
+      <!-- Destination -->
+      <div class="tracker-section">
+        <h3>🚀 Destination & Progression</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Destination</label>
+            <select class="form-input" id="f-dest-type">
+              <option value="">Select…</option>
+              ${["Employment", "Next Level ESOL", "Further Education", "Volunteering", "Digital Skills", "Other"].map(o => `<option value="${o}" ${tracker.destination_type === o ? "selected" : ""}>${o}</option>`).join("")}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date</label>
+            <input class="form-input" id="f-dest-date" type="date" value="${escapeHtml(tracker.destination_date ?? "")}">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea class="form-input" id="f-dest-notes" rows="2">${escapeHtml(tracker.destination_notes ?? "")}</textarea>
+        </div>
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=destination" style="text-decoration:none;display:inline-block">💬 Discuss Destination</a>
         </div>
       </div>
 
@@ -9448,38 +9519,6 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         </div>
       </div>
       `).join("")}
-
-      <!-- CLOs Achieved Confirmation -->
-      <div class="tracker-section">
-        <h3>✅ CLOs Achieved Confirmation</h3>
-        <p class="form-hint">Have the Course Learning Objectives been achieved?</p>
-        ${ragSelector("clos_achieved_rag", tracker.clos_achieved_rag)}
-      </div>
-
-      <!-- Destination -->
-      <div class="tracker-section">
-        <h3>🚀 Destination & Progression</h3>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Destination</label>
-            <select class="form-input" id="f-dest-type">
-              <option value="">Select…</option>
-              ${["Employment", "Next Level ESOL", "Further Education", "Volunteering", "Digital Skills", "Other"].map(o => `<option value="${o}" ${tracker.destination_type === o ? "selected" : ""}>${o}</option>`).join("")}
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Date</label>
-            <input class="form-input" id="f-dest-date" type="date" value="${escapeHtml(tracker.destination_date ?? "")}">
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Notes</label>
-          <textarea class="form-input" id="f-dest-notes" rows="2">${escapeHtml(tracker.destination_notes ?? "")}</textarea>
-        </div>
-        <div style="margin-top:0.75rem">
-          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=destination" style="text-decoration:none;display:inline-block">💬 Discuss Destination</a>
-        </div>
-      </div>
 
       <!-- Course Feedback (Read-only for staff, with view/discuss links) -->
       <div class="tracker-section">
@@ -9707,6 +9746,18 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
     async function saveTrackerRecord() {
       const enrolId = '${escapeHtml(selectedEnrolment?.id ?? "")}';
       if (!enrolId) { alert('No student selected'); return; }
+
+      const cloCheckboxes = document.querySelectorAll('.clo-achieved-checkbox');
+      let updatedObjectivesStr = null;
+      if (cloCheckboxes.length > 0) {
+        const list = Array.from(cloCheckboxes).map(cb => ({
+          id: cb.getAttribute('data-id'),
+          text: cb.getAttribute('data-text'),
+          achieved: cb.checked
+        }));
+        updatedObjectivesStr = JSON.stringify(list);
+      }
+
       const payload = {
         enrolment_id: enrolId,
         initial_assessment_level: document.getElementById('f-ia-level')?.value?.trim() || null,
@@ -9723,6 +9774,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         term3_rag: ragState['term3_rag'] || '${escapeHtml((tracker as any)?.term3_rag ?? "")}' || null,
         term3_date: ragState['term3_rag'] ? todayStr : ('${escapeHtml((tracker as any)?.term3_date ?? "")}' || null),
         clos_achieved_rag: ragState['clos_achieved_rag'] || '${escapeHtml((tracker as any)?.clos_achieved_rag ?? "")}' || null,
+        course_learning_objectives: updatedObjectivesStr,
         destination_type: document.getElementById('f-dest-type')?.value || null,
         destination_date: document.getElementById('f-dest-date')?.value || null,
         destination_notes: document.getElementById('f-dest-notes')?.value?.trim() || null
