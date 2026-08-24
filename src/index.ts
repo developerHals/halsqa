@@ -1182,7 +1182,6 @@ function renderMyClassPage(identity: Identity, courseInstanceId: string, courseT
   const header = ["Learner ID", "Student", "Course Code", "Course Title", "Completed", "Category", "Start Date", "End Date", "Times", "Weeks", "Status", "Academic Year"];
   const rows = enrolments.map(e => {
     const attended = e.HasAttended != null ? Math.round(e.HasAttended * 100) + "%" : "";
-    const withdraw = e.WithdrawReason != null && e.WithdrawReason !== 0 ? String(e.WithdrawReason) : "";
     return [
       String(e.LearnerID ?? ""),
       e.StudentLabel ?? "",
@@ -1323,7 +1322,6 @@ function renderStudentsPage(identity: Identity, learnerId: string, enrolments: L
     e.CourseTitle ?? "",
     e.CourseTypeCategory ?? "",
     e.HasAttended != null ? Math.round(e.HasAttended * 100) + "%" : "",
-    e.WithdrawReason != null && e.WithdrawReason !== 0 ? String(e.WithdrawReason) : "0",
     e.LearnStartDate ?? "",
     e.LearnActEndDate ?? "",
     e.Times ?? "",
