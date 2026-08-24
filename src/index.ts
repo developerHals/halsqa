@@ -7280,7 +7280,7 @@ function generateId(): string {
 }
 
 function isStaffRole(role: Role): boolean {
-  return ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa"].includes(role);
+  return ["superuser", "admin", "assessor", "iqa", "eqa", "assessor_iqa", "cm"].includes(role);
 }
 
 function ragBadge(rag: string | null): string {
@@ -7700,17 +7700,17 @@ async function renderAssessmentsPageHandler(request: Request, env: Env, identity
 }
 
 function renderStudentAssessmentsPage(identity: Identity, templates: AssessmentTemplate[], enrolments: StudentEnrolment[], entries: AssessmentEntry[], learnerId: string, activeEnrolmentId: string): string {
+  const selectedEnrolId = activeEnrolmentId || enrolments[0]?.id || "";
   const entryMap = new Map(entries.map(e => [e.template_id + "_" + e.enrolment_id, e]));
-  const courseOptions = enrolments.map(en => `<option value="${escapeHtml(en.id)}">${escapeHtml(en.course_title)} (${escapeHtml(en.course_code)})</option>`).join("");
+  const courseOptions = enrolments.map(en => `<option value="${escapeHtml(en.id)}" ${en.id === selectedEnrolId ? "selected" : ""}>${escapeHtml(en.course_title)} (${escapeHtml(en.course_code)})</option>`).join("");
   const tilesHtml = templates.map(t => {
-    const enrolmentId = enrolments[0]?.id ?? ""; // default to first enrolment
-    const key = t.id + "_" + enrolmentId;
+    const key = t.id + "_" + selectedEnrolId;
     const entry = entryMap.get(key);
     const done = entry?.status === "completed";
     const pct = entry?.percentage ?? 0;
-    const scoreText = done ? `${entry!.score_earned}/${entry!.max_score} (${pct}%)` : "Not started";
+    const scoreText = done ? `${entry!.score_earned}/${entry!.max_score} (${pct}%)` : (entry?.status === "pending_marking" ? "Pending Marking" : "Not started");
     return `
-    <div class="assess-tile ${done ? "assess-tile--done" : ""}" data-template-id="${escapeHtml(t.id)}" data-enrolment-id="${escapeHtml(activeEnrolmentId)}" onclick="openQuizModal('${escapeHtml(t.id)}','${escapeHtml(activeEnrolmentId)}','${escapeHtml(t.title)}',${done ? 1 : 0})">
+    <div class="assess-tile ${done ? "assess-tile--done" : ""}" data-template-id="${escapeHtml(t.id)}" data-enrolment-id="${escapeHtml(selectedEnrolId)}" onclick="openQuizModal('${escapeHtml(t.id)}','${escapeHtml(selectedEnrolId)}','${escapeHtml(t.title)}',${done ? 1 : 0})">
       <div class="assess-tile-icon">${done ? "✅" : "📝"}</div>
       <div class="assess-tile-body">
         <h3>${escapeHtml(t.title)}</h3>
@@ -7842,13 +7842,13 @@ function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTem
         <tbody>
           ${enrolments.map(en => {
             const cols = templates.map(t => {
-              const entry = entryMap.get(t.id + "_" + en.id);
-              if (!entry) return `<td><span class="meta-chip chip-grey">—</span></td>`;
-              const pct = entry.percentage;
-              let cls = pct >= (t.pass_percentage ?? 70) ? "chip-green" : "chip-amber";
-              if (entry.status === 'pending_marking') cls = "chip-amber"; // override for pending marking
-              return `<td><a href="/assessments/quiz/${entry.template_id}?enrolmentId=${entry.enrolment_id}" class="meta-chip ${cls}" style="text-decoration:none" title="${entry.status === 'pending_marking' ? 'Pending Tutor Marking' : 'View Submission'}">${entry.score_earned}/${entry.max_score}</a></td>`;
-            }).join("");
+               const entry = entryMap.get(t.id + "_" + en.id);
+               if (!entry) return `<td><span class="meta-chip chip-grey">—</span></td>`;
+               const pct = entry.percentage;
+               let cls = pct >= (t.pass_percentage ?? 70) ? "chip-green" : "chip-amber";
+               if (entry.status === 'pending_marking') cls = "chip-amber"; // override for pending marking
+               return `<td><a href="/assessments/quiz/${entry.template_id}?enrolmentId=${entry.enrolment_id}" class="meta-chip ${cls}" style="text-decoration:none" title="${entry.status === 'pending_marking' ? 'Pending Tutor Marking' : 'View Submission'}">${entry.score_earned}/${entry.max_score}</a> <a href="/assessments/templates/build/${t.id}" class="action-btn edit-btn" title="Edit">✏️</a></td>`;
+             }).join("");
             return `<tr>
               <td><strong>${escapeHtml(en.student_label)}</strong></td>
               <td>${escapeHtml(en.learner_id)}</td>
@@ -8348,9 +8348,9 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
   const enrolment = sortedEnrolments.find(e => e.id === activeEnrolmentId) ?? sortedEnrolments[0] ?? null;
 
   const classSearchForm = `
-    <form method="POST" action="/tracker" style="display:flex; align-items:center; gap:0.5rem; margin:0;">
-      <input type="text" name="course_instance_id" placeholder="Enter Class ID (e.g. mock_course)" value="${escapeHtml(enrolment?.course_instance_id ?? "")}" required style="padding:0.4rem 0.75rem; font-size:0.875rem; border:1px solid var(--border); border-radius:8px; width:auto; min-width:200px; max-width:260px;">
-      <button type="submit" style="padding:0.4rem 1.25rem; font-size:0.875rem; border-radius:8px; height:38px;">Save</button>
+    <form method="POST" action="/tracker" style="display:flex; align-items:center; gap:0.5rem; margin:0; flex-wrap:wrap;">
+      <input type="text" name="course_instance_id" placeholder="Enter Class ID (e.g. mock_course)" value="${escapeHtml(enrolment?.course_instance_id ?? "")}" required style="padding:8px 12px; font-size:0.875rem; border:1px solid var(--border); border-radius:8px; width:auto; min-width:180px; max-width:260px; min-height:40px; height:auto; box-sizing:border-box;">
+      <button type="submit" class="btn btn-primary" style="padding:0 1.25rem; font-size:0.875rem; border-radius:8px; min-height:40px; height:40px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer;">Save</button>
     </form>
   `;
 
@@ -8415,11 +8415,11 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
           ${success ? `<div class="alert alert-success">${escapeHtml(success)}</div>` : ""}
           ${!learnerId ? `<div class="alert alert-warn">Could not determine your learner ID from your email.</div>` : ""}
           ${enrolment ? `
-            <div class="tracker-course-banner" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding:.5rem 1.5rem;">
-              <div style="display:flex; align-items:center; gap:1.5rem; flex-wrap:wrap;">
-                <form method="GET" action="/tracker" style="display:flex; align-items:center; gap:0.5rem; margin:0;">
-                  <label style="font-weight:600; white-space:nowrap;">My classes</label>
-                  <select class="form-input" name="enrolId" onchange="this.form.submit()" style="width:320px; max-width:100%; height:38px; border-radius:8px;">
+            <div class="tracker-course-banner">
+              <div class="tracker-course-banner-left">
+                <form method="GET" action="/tracker" style="display:flex; align-items:center; gap:0.75rem; margin:0; flex-wrap:wrap; width:100%;">
+                  <label style="font-weight:600; white-space:nowrap; font-size:0.95rem;">My classes</label>
+                  <select class="form-input tracker-class-select" name="enrolId" onchange="this.form.submit()">
                     ${sortedEnrolments.map(e => {
                       const title = e.course_instance_id === 'mock_course' ? "Find your course using the searchbox" : `${e.course_title} (${e.course_code})`;
                       return `<option value="${escapeHtml(e.id)}" ${e.id === activeEnrolmentId ? "selected" : ""}>${escapeHtml(title)}</option>`;
@@ -8427,10 +8427,12 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
                   </select>
                 </form>
               </div>
-              ${classSearchForm}
+              <div class="tracker-course-banner-right">
+                ${classSearchForm}
+              </div>
             </div>
           ` : `
-            <div class="tracker-course-banner" style="display:flex; align-items:center; justify-content:flex-end; padding:.5rem 1.5rem;">
+            <div class="tracker-course-banner" style="display:flex; align-items:center; justify-content:flex-end; padding:.75rem 1.5rem;">
               ${classSearchForm}
             </div>
           `}
@@ -8455,7 +8457,11 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
       .alert-warn{background:#fffbeb;border:1px solid #fcd34d;color:#92400e}
       .alert-danger{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
       .alert-success{background:#f0fdf4;border:1px solid #86efac;color:#166534}
-      .tracker-course-banner{padding:.75rem 1.5rem;background:#f0f9ff;border-bottom:1px solid #bfdbfe;font-size:.9375rem}
+      .tracker-course-banner{padding:.875rem 1.5rem;background:#f0f9ff;border-bottom:1px solid #bfdbfe;font-size:.9375rem;display:flex;align-items:center;justify-content:space-between;gap:1.5rem;flex-wrap:wrap;}
+      .tracker-course-banner-left{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;flex:1;min-width:300px;}
+      .tracker-course-banner-right{display:flex;align-items:center;gap:0.5rem;flex-shrink:0;}
+      .tracker-class-select{min-width:320px;max-width:100%;min-height:40px;height:auto;padding:8px 12px;font-size:0.9375rem;line-height:1.5;border-radius:8px;box-sizing:border-box;border:2px solid #f43f5e;background:#fff;outline:none;cursor:pointer;color:var(--text);flex:1;}
+      .tracker-class-select:focus,.tracker-class-select:active{border-color:#e11d48;box-shadow:0 0 0 3px rgba(244,63,94,0.25);}
       .tracker-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.25rem;padding:1.5rem}
       .tracker-tile{background:#fff;border:2px solid #e2e8f0;border-radius:14px;overflow:hidden;transition:border-color .2s}
       .tracker-tile-header{display:flex;align-items:center;gap:.75rem;padding:1rem 1.25rem;background:#f8fafc;border-bottom:1px solid #e2e8f0}
@@ -8564,50 +8570,62 @@ OTH4: Not known.`;
     if (isStudent) {
       formHtml = `
         <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=clos">
-          <p class="muted-text" style="margin-bottom:1.5rem">Enter your course learning objectives below. You can add multiple objectives.</p>
-          <div id="objectives-container"></div>
-          ${!isLocked ? `<button type="button" class="btn btn-secondary" onclick="addObjectiveField('')" style="margin-top:0.5rem;display:inline-block">+ Add learning objective</button>` : ""}
-          
-          ${!isLocked ? `
-            <div style="margin-top:2rem; display:flex; gap:1rem;">
-              <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
-              <button type="submit" name="action" value="save" class="btn btn-primary">Save</button>
+          <p class="muted-text" style="margin-bottom:1.5rem">Enter your course learning objectives below. You can add new learning objectives at any stage.</p>
+          ${isLocked ? `
+            <div class="alert alert-info" style="margin-bottom:1.5rem;">
+              <span>You have previously submitted learning objectives. You can edit existing ones or click <strong>Add new</strong> below to add new objectives for the next stage.</span>
             </div>
-          ` : `<div class="alert alert-info" style="margin-top:2rem">This section has been submitted and is locked.</div>`}
+          ` : ""}
+          <div id="objectives-container"></div>
+          <div style="margin-top:1rem; display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+            <button type="button" id="add-clo-btn" class="btn btn-secondary" onclick="addObjectiveField('','')" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;">➕ Add new</button>
+          </div>
+          
+          <div style="margin-top:2rem; display:flex; gap:1rem;">
+            <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+            <button type="submit" name="action" value="save" class="btn btn-primary">${isLocked ? "Save Changes" : "Save"}</button>
+          </div>
         </form>
       `;
       pageScript = `
         <script>
           const list = ${JSON.stringify(list)};
-          function addObjectiveField(val = "") {
+          function addObjectiveField(id = "", val = "") {
             const container = document.getElementById('objectives-container');
             const div = document.createElement('div');
             div.style = "display:flex; gap:0.75rem; align-items:center; margin-bottom:0.75rem;";
             
+            const idInput = document.createElement('input');
+            idInput.type = 'hidden';
+            idInput.name = 'objective_ids[]';
+            idInput.value = id;
+            div.appendChild(idInput);
+
             const txt = document.createElement('input');
             txt.type = 'text';
             txt.name = 'objective_texts[]';
             txt.value = val;
             txt.className = 'form-input';
             txt.style = 'flex:1;';
+            txt.placeholder = 'e.g. Improve speaking in daily life';
             txt.required = true;
-            if (${isLocked}) txt.disabled = true;
             div.appendChild(txt);
 
-            if (!${isLocked}) {
-              const del = document.createElement('button');
-              del.type = 'button';
-              del.className = 'btn btn-danger';
-              del.innerHTML = '🗑️';
-              del.onclick = () => div.remove();
-              div.appendChild(del);
-            }
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'btn btn-danger';
+            del.innerHTML = '🗑️';
+            del.title = 'Remove';
+            del.onclick = () => div.remove();
+            div.appendChild(del);
+
             container.appendChild(div);
+            if (!id && !val) txt.focus();
           }
           if (list.length === 0) {
-            if (!${isLocked}) addObjectiveField("");
+            addObjectiveField("", "");
           } else {
-            list.forEach(item => addObjectiveField(item.text));
+            list.forEach(item => addObjectiveField(item.id, item.text));
           }
         </script>
       `;
@@ -8662,50 +8680,62 @@ OTH4: Not known.`;
           </p>
         </div>
         <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=goals">
-          <p class="muted-text" style="margin-bottom:1.5rem">Enter your personal goals for doing the course. These goals must be SMART.</p>
-          <div id="goals-container"></div>
-          ${!isLocked ? `<button type="button" class="btn btn-secondary" onclick="addGoalField('')" style="margin-top:0.5rem;display:inline-block">+ Add SMART Goal</button>` : ""}
-          
-          ${!isLocked ? `
-            <div style="margin-top:2rem; display:flex; gap:1rem;">
-              <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
-              <button type="submit" name="action" value="save" class="btn btn-primary">Save</button>
+          <p class="muted-text" style="margin-bottom:1.5rem">Enter your personal goals for doing the course. You can add new SMART goals at any stage.</p>
+          ${isLocked ? `
+            <div class="alert alert-info" style="margin-bottom:1.5rem;">
+              <span>You have previously submitted SMART goals. You can edit existing ones or click <strong>Add new</strong> below to add new goals for the next stage.</span>
             </div>
-          ` : `<div class="alert alert-info" style="margin-top:2rem">This section has been submitted and is locked.</div>`}
+          ` : ""}
+          <div id="goals-container"></div>
+          <div style="margin-top:1rem; display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+            <button type="button" id="add-goal-btn" class="btn btn-secondary" onclick="addGoalField('','')" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;">➕ Add new</button>
+          </div>
+          
+          <div style="margin-top:2rem; display:flex; gap:1rem;">
+            <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+            <button type="submit" name="action" value="save" class="btn btn-primary">${isLocked ? "Save Changes" : "Save"}</button>
+          </div>
         </form>
       `;
       pageScript = `
         <script>
           const list = ${JSON.stringify(list)};
-          function addGoalField(val = "") {
+          function addGoalField(id = "", val = "") {
             const container = document.getElementById('goals-container');
             const div = document.createElement('div');
             div.style = "display:flex; gap:0.75rem; align-items:center; margin-bottom:0.75rem;";
             
+            const idInput = document.createElement('input');
+            idInput.type = 'hidden';
+            idInput.name = 'goal_ids[]';
+            idInput.value = id;
+            div.appendChild(idInput);
+
             const txt = document.createElement('input');
             txt.type = 'text';
             txt.name = 'goal_texts[]';
             txt.value = val;
             txt.className = 'form-input';
             txt.style = 'flex:1;';
+            txt.placeholder = 'e.g. S: Pass reading test M: Yes A: Yes R: Yes TB: Term 2';
             txt.required = true;
-            if (${isLocked}) txt.disabled = true;
             div.appendChild(txt);
 
-            if (!${isLocked}) {
-              const del = document.createElement('button');
-              del.type = 'button';
-              del.className = 'btn btn-danger';
-              del.innerHTML = '🗑️';
-              del.onclick = () => div.remove();
-              div.appendChild(del);
-            }
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'btn btn-danger';
+            del.innerHTML = '🗑️';
+            del.title = 'Remove';
+            del.onclick = () => div.remove();
+            div.appendChild(del);
+
             container.appendChild(div);
+            if (!id && !val) txt.focus();
           }
           if (list.length === 0) {
-            if (!${isLocked}) addGoalField("");
+            addGoalField("", "");
           } else {
-            list.forEach(item => addGoalField(item.text));
+            list.forEach(item => addGoalField(item.id, item.text));
           }
         </script>
       `;
@@ -9244,13 +9274,15 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
 
     if (tile === "clos") {
       const existingList = JSON.parse(tracker.course_learning_objectives || "[]");
+      const newIds = formData.getAll("objective_ids[]") as string[];
       const newTexts = formData.getAll("objective_texts[]") as string[];
       const newList = newTexts.map((txt, index) => {
-        const match = existingList[index];
+        const id = newIds[index] || generateId();
+        const match = existingList.find((x: any) => x.id === id);
         return {
-          id: match?.id || generateId(),
+          id: id,
           text: txt.trim(),
-          achieved: match ? !!match.achieved : false
+          achieved: match ? (match.achieved === true || match.achieved === "true" || match.achieved === 1) : false
         };
       });
       await env.esol_marking_db.prepare(`
@@ -9265,13 +9297,15 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
 
     } else if (tile === "goals") {
       const existingList = JSON.parse(tracker.smart_goals || "[]");
+      const newIds = formData.getAll("goal_ids[]") as string[];
       const newTexts = formData.getAll("goal_texts[]") as string[];
       const newList = newTexts.map((txt, index) => {
-        const match = existingList[index];
+        const id = newIds[index] || generateId();
+        const match = existingList.find((x: any) => x.id === id);
         return {
-          id: match?.id || generateId(),
+          id: id,
           text: txt.trim(),
-          achieved: match ? !!match.achieved : false
+          achieved: match ? (match.achieved === true || match.achieved === "true" || match.achieved === 1) : false
         };
       });
       await env.esol_marking_db.prepare(`
@@ -9424,6 +9458,22 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         </div>
       </div>
 
+      <!-- Term Reviews -->
+      ${[1, 2, 3].map(n => `
+      <div class="tracker-section">
+        <h3>📊 Term ${n} Review</h3>
+        <p class="form-hint">Select a RAG status — the date is recorded automatically when you save.</p>
+        ${ragSelector("term" + n + "_rag", (tracker as any)["term" + n + "_rag"])}
+        <div class="form-group" style="margin-top:.75rem">
+          <label class="form-label">Feedback Comments</label>
+          <textarea class="form-input" id="f-t${n}-comments" rows="3">${escapeHtml((tracker as any)["term" + n + "_comments"] ?? "")}</textarea>
+        </div>
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=term${n}" style="text-decoration:none;display:inline-block">💬 Discuss Term ${n} Review</a>
+        </div>
+      </div>
+      `).join("")}
+
       <div class="tracker-section">
         <h3>✨ Tailored Learning Outcomes</h3>
         <p>${tracker.tailored_outcomes ? escapeHtml(formatOutcomeType(tracker.tailored_outcomes)) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
@@ -9481,6 +9531,15 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         </div>
       </div>
 
+      <!-- Course Feedback (Read-only for staff, with view/discuss links) -->
+      <div class="tracker-section">
+        <h3>💬 Course feedback (End of Course Feedback)</h3>
+        ${feedbackSummary}
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=feedback" style="text-decoration:none;display:inline-block">👁️ View Complete Feedback & Discuss</a>
+        </div>
+      </div>
+
       <!-- Initial Assessment -->
       <div class="tracker-section">
         <h3>🔍 Initial Assessment & Diagnostic</h3>
@@ -9501,31 +9560,6 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         </div>
         <div style="margin-top:0.75rem">
           <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=diagnostic" style="text-decoration:none;display:inline-block">💬 Discuss Diagnostic</a>
-        </div>
-      </div>
-
-      <!-- Term Reviews -->
-      ${[1, 2, 3].map(n => `
-      <div class="tracker-section">
-        <h3>📊 Term ${n} Review</h3>
-        <p class="form-hint">Select a RAG status — the date is recorded automatically when you save.</p>
-        ${ragSelector("term" + n + "_rag", (tracker as any)["term" + n + "_rag"])}
-        <div class="form-group" style="margin-top:.75rem">
-          <label class="form-label">Feedback Comments</label>
-          <textarea class="form-input" id="f-t${n}-comments" rows="3">${escapeHtml((tracker as any)["term" + n + "_comments"] ?? "")}</textarea>
-        </div>
-        <div style="margin-top:0.75rem">
-          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=term${n}" style="text-decoration:none;display:inline-block">💬 Discuss Term ${n} Review</a>
-        </div>
-      </div>
-      `).join("")}
-
-      <!-- Course Feedback (Read-only for staff, with view/discuss links) -->
-      <div class="tracker-section">
-        <h3>💬 Course feedback (End of Course Feedback)</h3>
-        ${feedbackSummary}
-        <div style="margin-top:0.75rem">
-          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=feedback" style="text-decoration:none;display:inline-block">👁️ View Complete Feedback & Discuss</a>
         </div>
       </div>
 
@@ -9677,7 +9711,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       .rag-btn--active-na{background:#e2e8f0;border-color:#94a3b8;color:#475569}
       .comment-row{padding:.75rem 1rem;border-radius:10px;margin-bottom:.75rem}
       .comment-student{background:#eff6ff;border-left:3px solid #3b82f6}
-      .comment-teacher,.comment-assessor,.comment-admin,.comment-superuser{background:#f0fdf4;border-left:3px solid #22c55e}
+      .comment-teacher,.comment-assessor,.comment-admin,.comment-superuser,.comment-cm{background:#f0fdf4;border-left:3px solid #22c55e}
       .comment-meta{font-size:.8125rem;margin-bottom:.35rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
       .comment-form{display:flex;gap:.75rem;margin-top:1rem;align-items:flex-start}
       .assess-search-form{display:flex;gap:.5rem;flex:1;min-width:280px}
@@ -9926,7 +9960,7 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
           Required
         </label>
         <div class="lwfb-pts-wrap" style="${tmplType !== 'quiz' || isSection ? 'display:none' : ''}">
-          <label>Pts: <input type="number" class="lwfb-q-pts" value="${q.points || 1}" min="0" style="width:50px"></label>
+          <label>Pts: <input type="number" class="lwfb-q-pts" value="${q.points || 1}" min="0" style="width:80px;color:var(--text);"></label>
         </div>
         <div class="lwfb-reorder-btns">
            <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">▲</button>
@@ -10143,7 +10177,7 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
             Required
           </label>
           <div class="lwfb-pts-wrap" style="\${activeTmplType !== 'quiz' || isSection ? 'display:none' : ''}">
-            <label>Pts: <input type="number" class="lwfb-q-pts" value="1" min="0" style="width:50px"></label>
+            <label>Pts: <input type="number" class="lwfb-q-pts" value="1" min="0" style="width:80px;color:var(--text);"></label>
           </div>
           <div class="lwfb-reorder-btns">
              <button type="button" class="lwfb-reorder-btn" onclick="moveQuestion(this,'up')" title="Move up">▲</button>
@@ -10310,6 +10344,28 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
   const enrolment = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE id=?").bind(enrolmentId).first<StudentEnrolment>();
   if (!enrolment) return htmlResponse(pageShell("Not Found", "<h2>Enrolment Not Found</h2>"), 404);
 
+  let studentLabel = enrolment.student_label || "";
+  if (!studentLabel || studentLabel.trim() === "" || studentLabel === enrolment.learner_id) {
+    try {
+      const apiKey = env.LT_USER_API || env["LearnerTrack.API"];
+      if (apiKey && enrolment.course_instance_id) {
+        const username = env.LT_USER_NAME ?? "GiuseppeA";
+        const apiUrl = `https://betaapi.learnertrack.net/api/Enrolment?api_key=${encodeURIComponent(apiKey)}&username=${encodeURIComponent(username)}&courseinstanceid=${encodeURIComponent(enrolment.course_instance_id)}`;
+        const r = await fetch(apiUrl, { headers: { "Accept": "application/json" } });
+        if (r.ok) {
+          const data = await r.json() as LearnerTrackEnrolment[];
+          if (Array.isArray(data)) {
+            const found = data.find(e => String(e.LearnerID) === String(enrolment.learner_id));
+            if (found && found.StudentLabel) {
+              studentLabel = found.StudentLabel;
+              env.esol_marking_db.prepare("UPDATE student_enrolments SET student_label=? WHERE id=?").bind(studentLabel, enrolment.id).run().catch(() => {});
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
   const { results: questions } = await env.esol_marking_db.prepare("SELECT * FROM assessment_template_questions WHERE template_id=? ORDER BY sort_order").bind(templateId).all<AssessmentTemplateQuestion>();
   
   const entry = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE template_id=? AND enrolment_id=?").bind(templateId, enrolmentId).first<AssessmentEntry>();
@@ -10317,7 +10373,7 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
   let answers = {};
   if (entry && entry.answers_json) {
     try {
-       answers = JSON.parse(entry.answers_json as string);
+      answers = JSON.parse(entry.answers_json as string);
     } catch(e) {}
   }
 
@@ -10325,13 +10381,19 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
   if (!isStaff && entry && entry.status === 'completed') {
      return htmlResponse(pageShell(tmpl.title, `
        <main class="dashboard-shell">
-         <div class="content" style="max-width:800px;margin:2rem auto;padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
-           <h1 style="margin-bottom:1rem">${escapeHtml(tmpl.title)}</h1>
-           <div style="background:#f8fafc;padding:2rem;border-radius:12px;text-align:center">
-             <h2 style="color:var(--text);margin-bottom:.5rem">Assessment Completed</h2>
-             <p style="color:var(--muted)">Your score: <strong>${entry.score_earned} / ${entry.max_score} (${entry.percentage}%)</strong></p>
-             <button class="btn btn-primary" style="margin-top:1rem" onclick="window.location.href='/assessments'">Back to Assessments</button>
-           </div>
+         ${renderSidebar(identity, "assessments")}
+         <div class="content">
+           ${renderTopbar(identity, tmpl.title)}
+           <section class="page-section">
+             <div style="background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05);padding:2rem;">
+               <h1 style="margin-bottom:1rem">${escapeHtml(tmpl.title)}</h1>
+               <div style="background:#f8fafc;padding:2rem;border-radius:12px;text-align:center">
+                 <h2 style="color:var(--text);margin-bottom:.5rem">Assessment Completed</h2>
+                 <p style="color:var(--muted)">Your score: <strong>${entry.score_earned} / ${entry.max_score} (${entry.percentage}%)</strong></p>
+                 <button class="btn btn-primary" style="margin-top:1rem" onclick="window.location.href='/assessments'">Back to Assessments</button>
+               </div>
+             </div>
+           </section>
          </div>
        </main>
      `));
@@ -10341,13 +10403,19 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
   if (!isStaff && entry && entry.status === 'pending_marking') {
      return htmlResponse(pageShell(tmpl.title, `
        <main class="dashboard-shell">
-         <div class="content" style="max-width:800px;margin:2rem auto;padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
-           <h1 style="margin-bottom:1rem">${escapeHtml(tmpl.title)}</h1>
-           <div style="background:#fffbeb;padding:2rem;border-radius:12px;text-align:center;border:1px solid #fcd34d">
-             <h2 style="color:#92400e;margin-bottom:.5rem">Pending Marking</h2>
-             <p style="color:#92400e">Your assessment has been submitted and is awaiting tutor marking for open questions.</p>
-             <button class="btn btn-primary" style="margin-top:1rem" onclick="window.location.href='/assessments'">Back to Assessments</button>
-           </div>
+         ${renderSidebar(identity, "assessments")}
+         <div class="content">
+           ${renderTopbar(identity, tmpl.title)}
+           <section class="page-section">
+             <div style="background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05);padding:2rem;">
+               <h1 style="margin-bottom:1rem">${escapeHtml(tmpl.title)}</h1>
+               <div style="background:#fffbeb;padding:2rem;border-radius:12px;text-align:center;border:1px solid #fcd34d">
+                 <h2 style="color:#92400e;margin-bottom:.5rem">Pending Marking</h2>
+                 <p style="color:#92400e">Your assessment has been submitted and is awaiting tutor marking for open questions.</p>
+                 <button class="btn btn-primary" style="margin-top:1rem" onclick="window.location.href='/assessments'">Back to Assessments</button>
+               </div>
+             </div>
+           </section>
          </div>
        </main>
      `));
@@ -10436,35 +10504,41 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
 
   return htmlResponse(pageShell(tmpl.title, `
     <main class="dashboard-shell">
-      <div class="content" style="max-width:800px;margin:2rem auto;padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
-        <h1 style="margin-bottom:.5rem;color:var(--text)">${escapeHtml(tmpl.title)}</h1>
-        <p style="color:var(--muted);margin-bottom:2rem">${escapeHtml(tmpl.description || '')}</p>
-        
-        <!-- Fixed Info -->
-        <div style="display:flex;gap:1.5rem;margin-bottom:2rem;padding:1rem;background:#f8fafc;border-radius:8px">
-          <div>
-            <span style="font-size:.85rem;color:var(--muted);display:block">Course</span>
-            <strong style="color:var(--text)">${escapeHtml(enrolment.course_instance_id)} - ${escapeHtml(enrolment.course_title)}</strong>
-          </div>
-          <div>
-            <span style="font-size:.85rem;color:var(--muted);display:block">Student</span>
-            <strong style="color:var(--text)">${escapeHtml(enrolment.student_label)} (${escapeHtml(enrolment.learner_id)})</strong>
-          </div>
-        </div>
+      ${renderSidebar(identity, "assessments")}
+      <div class="content">
+        ${renderTopbar(identity, tmpl.title)}
+        <section class="page-section">
+          <div style="padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
+            <h1 style="margin-bottom:.5rem;color:var(--text)">${escapeHtml(tmpl.title)}</h1>
+            <p style="color:var(--muted);margin-bottom:2rem">${escapeHtml(tmpl.description || '')}</p>
+            
+            <!-- Fixed Info -->
+            <div style="display:flex;gap:1.5rem;margin-bottom:2rem;padding:1rem;background:#f8fafc;border-radius:8px">
+              <div>
+                <span style="font-size:.85rem;color:var(--muted);display:block">Course</span>
+                <strong style="color:var(--text)">${escapeHtml(enrolment.course_instance_id)} - ${escapeHtml(enrolment.course_title)}</strong>
+              </div>
+              <div>
+                <span style="font-size:.85rem;color:var(--muted);display:block">Student</span>
+                <strong style="color:var(--text)" id="quizStudentName">${escapeHtml(studentLabel || enrolment.student_label || enrolment.learner_id)} (${escapeHtml(enrolment.learner_id)})</strong>
+              </div>
+            </div>
 
-        <form id="quizForm" onsubmit="submitQuiz(event)">
-          ${questions.map((q, i) => renderQ(q, i)).join('')}
-          
-          <div style="margin-top:2rem;display:flex;gap:1rem;justify-content:flex-end">
-            ${isMarking ? `
-              <button type="button" class="btn btn-secondary" onclick="window.location.href='/assessments'">Close</button>
-              <button type="button" class="btn btn-primary" onclick="saveTutorMarks()" id="saveMarksBtn">Save Marks</button>
-            ` : `
-              <button type="button" class="btn btn-secondary" onclick="window.location.href='/assessments'">Cancel</button>
-              <button type="submit" class="btn btn-primary" id="submitBtn">Submit Assessment</button>
-            `}
-          </div>
-        </form>
+          <form id="quizForm" onsubmit="submitQuiz(event)">
+            ${questions.map((q, i) => renderQ(q, i)).join('')}
+            
+            <div style="margin-top:2rem;display:flex;gap:1rem;justify-content:flex-end">
+              ${isMarking ? `
+                <button type="button" class="btn btn-secondary" onclick="window.location.href='/assessments'">Close</button>
+                <button type="button" class="btn btn-primary" onclick="saveTutorMarks()" id="saveMarksBtn">Save Marks</button>
+              ` : `
+                <button type="button" class="btn btn-secondary" onclick="window.location.href='/assessments'">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="submitBtn">Submit Assessment</button>
+              `}
+            </div>
+          </form>
+        </div>
+      </section>
       </div>
     </main>
 
