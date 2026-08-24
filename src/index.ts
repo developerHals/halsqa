@@ -2866,13 +2866,13 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
       tableHtml = "<p>No quiz templates found.</p>";
     } else {
       let tHead = "<tr><th>Learner ID</th><th>Student</th>";
-      quizTemplates.forEach(t => { tHead += <th> + escapeHtml(t.title) + </th>; });
+      quizTemplates.forEach(t => { tHead += '<th>' + escapeHtml(t.title) + '</th>'; });
       tHead += "</tr>";
       
       let tBody = "";
       enrols.forEach(e => {
         const studentName = e.student_label || e.learner_id;
-        let row = <tr><td> + escapeHtml(e.learner_id) + </td><td> + escapeHtml(studentName) + </td>;
+        let row = '<tr><td>' + escapeHtml(e.learner_id) + '</td><td>' + escapeHtml(studentName) + '</td>';
         quizTemplates.forEach(t => {
           // find latest completed entry for this template and enrolment
           const studentEntries = relevantEntries.filter(ent => ent.enrolment_id === e.id && ent.template_id === t.id);
@@ -2883,7 +2883,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
             const latest = studentEntries[0];
             cellText = latest.score_earned + " / " + latest.max_score;
           }
-          row += <td> + escapeHtml(cellText) + </td>;
+          row += '<td>' + escapeHtml(cellText) + '</td>';
         });
         row += "</tr>";
         tBody += row;
