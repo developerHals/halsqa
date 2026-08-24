@@ -2834,7 +2834,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                         <td>${escapeHtml(outcomesMap[row.tailored_outcomes] || row.tailored_outcomes || "Not set")}</td>
                         <td>${escapeHtml(closStatusText)} (${closAchieved}/${closTotal})</td>
                         <td>${escapeHtml(goalsStatusText)} (${goalsAchieved}/${goalsTotal})</td>
-                        <td>${escapeHtml(row.destination_type || "Not set")}</td>
+                        <td>${escapeHtml(row.destination_type ? row.destination_type.split(" - ")[0].trim() : "Not set")}</td>
                       </tr>
                     `;
                   }).join("")
@@ -7786,7 +7786,7 @@ async function renderAssessmentsPageHandler(request: Request, env: Env, identity
     // Teacher / staff view
     const search = url.searchParams.get("q") ?? "";
     let query = `
-      SELECT e.id, e.template_id, e.enrolment_id, e.learner_id, e.score_earned, e.max_score, e.percentage, e.status, e.submitted_at,
+      SELECT e.id, e.template_id, e.enrolment_id, e.learner_id, e.score_earned, e.max_score, e.percentage, e.status, e.completed_at as submitted_at,
              t.title as template_title, t.max_points,
              en.student_label, en.course_title, en.course_code, en.course_instance_id
       FROM assessment_entries e
@@ -7799,8 +7799,9 @@ async function renderAssessmentsPageHandler(request: Request, env: Env, identity
       const s = `%${search}%`;
       params = [s, s, s];
     }
-    query += ` ORDER BY e.submitted_at DESC LIMIT 100`;
-    const r2 = await env.esol_marking_db.prepare(query).bind(...params).all();
+    query += ` ORDER BY e.completed_at DESC LIMIT 100`;
+    const stmt = env.esol_marking_db.prepare(query);
+    const r2 = await (params.length > 0 ? stmt.bind(...params) : stmt).all();
     const entries = r2.results;
     return htmlResponse(renderStaffAssessmentsPage(identity, templates, entries, search));
   }
@@ -8679,12 +8680,32 @@ async function renderTrackerEditPageHandler(request: Request, env: Env, identity
     { id: "11", text: "(11) No outcome area 1-10 achieved" }
   ];
 
-  const destinationOptions = [
-    { id: "1", text: "(1) EMP: Starting new job" },
-    { id: "2", text: "(2) EDU; New course" },
-    { id: "3", text: "(3) SDE: Looking for work" },
-    { id: "4", text: "(4) OTH: Other destination" }
+  const rawDestinationOptions = [
+    "EDU1 - Progression to Further Education (FE) course or college",
+    "EDU2 - Progression to Higher Education (HE / University)",
+    "EDU3 - Progression to other work-based learning or independent training",
+    "EDU4 - Progression to an Apprenticeship",
+    "EDU5 - Progression to a Supported Internship / Traineeship",
+    "EDU6 - Progression to other non-formal education / Community Learning / Adult Skills provision",
+    "EMP1 - In paid employment (16+ hours/week)",
+    "EMP2 - In paid employment (fewer than 16 hours/week)",
+    "EMP4 - Self-employment / starting a business",
+    "EMP5 - Progression to an enhanced role / promotion / increased wages",
+    "GAP1 - Gap year before continuing study",
+    "NPE1 / NRP1 - Not seeking employment / not in education",
+    "NPE2 - Unemployed / actively seeking employment",
+    "OTH1 - Other destination or progression outcome",
+    "OTH2 - Moved outside local area / emigrated",
+    "OTH3 - Left due to personal / caring responsibilities or ill health",
+    "OTH4 - Unknown / destination not recorded / unable to contact",
+    "SDE1 - Social / community engagement / independent living skills progression",
+    "SDE2 - Improved health, wellbeing, or personal development outcome",
+    "SDE3 - Digital inclusion / basic digital skills development milestone",
+    "SDE4 - Progression to community / family learning initiatives",
+    "VOL1 - Voluntary work",
+    "HL - Internal progression to a new/next-level course at Haringey Learns"
   ];
+  const destinationOptions = rawDestinationOptions.map(o => ({ id: o, text: o }));
 
   const referenceList = `EMP1: In paid employment for 16 hours or more per week.
 EMP2: In paid employment for less than 16 hours per week.
@@ -9884,7 +9905,31 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
             <label class="form-label">Destination</label>
             <select class="form-input" id="f-dest-type">
               <option value="">Select…</option>
-              ${["Employment", "Next Level ESOL", "Further Education", "Volunteering", "Digital Skills", "Other"].map(o => `<option value="${o}" ${tracker.destination_type === o ? "selected" : ""}>${o}</option>`).join("")}
+              ${[
+                "EDU1 - Progression to Further Education (FE) course or college",
+                "EDU2 - Progression to Higher Education (HE / University)",
+                "EDU3 - Progression to other work-based learning or independent training",
+                "EDU4 - Progression to an Apprenticeship",
+                "EDU5 - Progression to a Supported Internship / Traineeship",
+                "EDU6 - Progression to other non-formal education / Community Learning / Adult Skills provision",
+                "EMP1 - In paid employment (16+ hours/week)",
+                "EMP2 - In paid employment (fewer than 16 hours/week)",
+                "EMP4 - Self-employment / starting a business",
+                "EMP5 - Progression to an enhanced role / promotion / increased wages",
+                "GAP1 - Gap year before continuing study",
+                "NPE1 / NRP1 - Not seeking employment / not in education",
+                "NPE2 - Unemployed / actively seeking employment",
+                "OTH1 - Other destination or progression outcome",
+                "OTH2 - Moved outside local area / emigrated",
+                "OTH3 - Left due to personal / caring responsibilities or ill health",
+                "OTH4 - Unknown / destination not recorded / unable to contact",
+                "SDE1 - Social / community engagement / independent living skills progression",
+                "SDE2 - Improved health, wellbeing, or personal development outcome",
+                "SDE3 - Digital inclusion / basic digital skills development milestone",
+                "SDE4 - Progression to community / family learning initiatives",
+                "VOL1 - Voluntary work",
+                "HL - Internal progression to a new/next-level course at Haringey Learns"
+              ].map(o => `<option value="${escapeHtml(o)}" ${tracker.destination_type === o ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}
             </select>
           </div>
           <div class="form-group">
