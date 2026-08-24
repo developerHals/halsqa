@@ -7784,25 +7784,31 @@ async function renderAssessmentsPageHandler(request: Request, env: Env, identity
     return htmlResponse(renderStudentAssessmentsPage(identity, templates, enrolments, entries, learnerId, requestedEnrolId));
   } else {
     // Teacher / staff view
-    const courseInstanceId = url.searchParams.get("courseId") ?? "";
-    let enrolments: StudentEnrolment[] = [];
-    let entries: AssessmentEntry[] = [];
-    let syncMsg = "";
-    if (courseInstanceId) {
-      const r1 = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE course_instance_id=? ORDER BY student_label ASC").bind(courseInstanceId).all<StudentEnrolment>();
-      enrolments = r1.results;
-      const r2 = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE course_instance_id=?").bind(courseInstanceId).all<AssessmentEntry>();
-      entries = r2.results;
+    const search = url.searchParams.get("q") ?? "";
+    let query = `
+      SELECT e.id, e.template_id, e.enrolment_id, e.learner_id, e.score_earned, e.max_score, e.percentage, e.status, e.submitted_at,
+             t.title as template_title, t.max_points,
+             en.student_label, en.course_title, en.course_code, en.course_instance_id
+      FROM assessment_entries e
+      JOIN assessment_templates t ON e.template_id = t.id
+      JOIN student_enrolments en ON e.enrolment_id = en.id
+    `;
+    let params: any[] = [];
+    if (search) {
+      query += ` WHERE en.course_instance_id LIKE ? OR en.student_label LIKE ? OR t.title LIKE ?`;
+      const s = `%${search}%`;
+      params = [s, s, s];
     }
-    return htmlResponse(renderStaffAssessmentsPage(identity, templates, enrolments, entries, courseInstanceId, syncMsg));
+    query += ` ORDER BY e.submitted_at DESC LIMIT 100`;
+    const r2 = await env.esol_marking_db.prepare(query).bind(...params).all();
+    const entries = r2.results;
+    return htmlResponse(renderStaffAssessmentsPage(identity, templates, entries, search));
   }
 }
 
-function renderStudentAssessmentsPage(identity: Identity, templates: AssessmentTemplate[], enrolments: StudentEnrolment[], entries: AssessmentEntry[], learnerId: string, activeEnrolmentId: string): string {
-  const selectedEnrolId = activeEnrolmentId || enrolments[0]?.id || "";
+function buildAssessmentTilesHtml(templates: AssessmentTemplate[], entries: AssessmentEntry[], selectedEnrolId: string): string {
   const entryMap = new Map(entries.map(e => [e.template_id + "_" + e.enrolment_id, e]));
-  const courseOptions = enrolments.map(en => `<option value="${escapeHtml(en.id)}" ${en.id === selectedEnrolId ? "selected" : ""}>${escapeHtml(en.course_title)} (${escapeHtml(en.course_code)})</option>`).join("");
-  const tilesHtml = templates.map(t => {
+  return templates.map(t => {
     const key = t.id + "_" + selectedEnrolId;
     const entry = entryMap.get(key);
     const done = entry?.status === "completed";
@@ -7821,6 +7827,12 @@ function renderStudentAssessmentsPage(identity: Identity, templates: AssessmentT
       </div>
     </div>`;
   }).join("");
+}
+
+function renderStudentAssessmentsPage(identity: Identity, templates: AssessmentTemplate[], enrolments: StudentEnrolment[], entries: AssessmentEntry[], learnerId: string, activeEnrolmentId: string): string {
+  const selectedEnrolId = activeEnrolmentId || enrolments[0]?.id || "";
+  const courseOptions = enrolments.map(en => `<option value="${escapeHtml(en.id)}" ${en.id === selectedEnrolId ? "selected" : ""}>${escapeHtml(en.course_title)} (${escapeHtml(en.course_code)})</option>`).join("");
+  const tilesHtml = buildAssessmentTilesHtml(templates, entries, selectedEnrolId);
 
   return pageShell("My Assessments", `
     <main class="dashboard-shell">
@@ -7924,76 +7936,72 @@ function renderStudentAssessmentsPage(identity: Identity, templates: AssessmentT
   `);
 }
 
-function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTemplate[], enrolments: StudentEnrolment[], entries: AssessmentEntry[], courseInstanceId: string, syncMsg: string): string {
+function renderStaffAssessmentsPage(identity: Identity, templates: AssessmentTemplate[], entries: any[], search: string): string {
   const isAdmin = isStaffRole(identity.user!.role);
-  // Build entry map: template_id + enrolment_id -> entry
-  const entryMap = new Map(entries.map(e => [e.template_id + "_" + e.enrolment_id, e]));
-
-  const rosterHtml = enrolments.length === 0 ? "" : `
-    <div class="roster-table-wrap">
-      <table class="data-table">
-        <thead><tr>
-          <th>Student</th>
-          <th>Learner ID</th>
-          <th>Course</th>
-          ${templates.map(t => `<th title="${escapeHtml(t.title)}">${escapeHtml(t.title.length > 18 ? t.title.slice(0, 18) + "…" : t.title)}</th>`).join("")}
-        </tr></thead>
-        <tbody>
-          ${enrolments.map(en => {
-            const cols = templates.map(t => {
-               const entry = entryMap.get(t.id + "_" + en.id);
-               if (!entry) return `<td><span class="meta-chip chip-grey">—</span></td>`;
-               const pct = entry.percentage;
-               let cls = pct >= (t.pass_percentage ?? 70) ? "chip-green" : "chip-amber";
-               if (entry.status === 'pending_marking') cls = "chip-amber"; // override for pending marking
-               return `<td><a href="/assessments/quiz/${entry.template_id}?enrolmentId=${entry.enrolment_id}" class="meta-chip ${cls}" style="text-decoration:none" title="${entry.status === 'pending_marking' ? 'Pending Tutor Marking' : 'View Submission'}">${entry.score_earned}/${entry.max_score}</a> <a href="/assessments/templates/build/${t.id}" class="action-btn edit-btn" title="Edit">✏️</a></td>`;
-             }).join("");
-            return `<tr>
-              <td><strong>${escapeHtml(en.student_label)}</strong></td>
-              <td>${escapeHtml(en.learner_id)}</td>
-              <td>${escapeHtml(en.course_title)}</td>
-              ${cols}
-            </tr>`;
-          }).join("")}
-        </tbody>
-      </table>
-    </div>`;
 
   return pageShell("Assessments", `
     <main class="dashboard-shell">
       ${renderSidebar(identity, "assessments")}
       <div class="content">
         ${renderTopbar(identity, "Assessments")}
-        <section class="page-section">
-          <div class="assess-toolbar">
-            <form method="GET" action="/assessments" class="assess-search-form">
-              <input class="form-input" name="courseId" placeholder="Course Instance ID…" value="${escapeHtml(courseInstanceId)}">
-              <button class="btn btn-primary" type="submit">Search</button>
-              ${courseInstanceId ? `<button class="btn btn-secondary" type="button" onclick="syncClass()">Sync Class</button>` : ""}
-            </form>
-            ${isAdmin ? `<a class="btn btn-pink" href="/assessments/templates/build">+ New Template</a>` : ""}
+        
+        <section class="panel templates-section">
+          <div class="section-header">
+            <p class="eyebrow">Assessment Templates</p>
+            ${isAdmin ? `<a class="small-action" href="/assessments/templates/build">+ New template</a>` : ""}
           </div>
-          ${syncMsg ? `<div class="alert alert-info">${escapeHtml(syncMsg)}</div>` : ""}
-          ${courseInstanceId && enrolments.length === 0 ? `<div class="alert alert-warn">No enrolments found for course ID <strong>${escapeHtml(courseInstanceId)}</strong>. Try syncing first.</div>` : ""}
-
-          <!-- Quiz Template Tiles -->
-          <div class="section-header"><h2>Assessment Templates</h2></div>
-          <div class="assess-tiles">
-            ${templates.length === 0 ? "<p class='muted-text' style='padding:1rem'>No quiz templates yet. Create one with + New Template.</p>" : templates.map(t => `
-            <div class="assess-tile">
-              <div class="assess-tile-icon">📝</div>
-              <div class="assess-tile-body">
-                <h3>${escapeHtml(t.title)}</h3>
-                <p>${escapeHtml(t.description ?? "")}</p>
-                <div class="assess-tile-meta">
-                  <span class="meta-chip">${t.max_points} pts total</span>
-                  <span class="meta-chip chip-grey">Pass: ${t.pass_percentage}%</span>
-                </div>
+          <div class="list-stack templates-list">
+            ${templates.length ? templates.map(t => `
+            <article class="list-card template-card">
+              <div class="card-content">
+                <strong>${escapeHtml(t.title)}</strong>
+                <span>${escapeHtml(t.description ?? "No description")}</span>
               </div>
-            </div>`).join("")}
+              <div class="card-actions">
+                <a href="/assessments/templates/build/${t.id}" class="action-btn edit-btn" title="Edit">✏️</a>
+                <form method="POST" action="/api/assessment/templates/${t.id}/delete" onsubmit="return confirm('Type DELETE to confirm:');">
+                  <input type="hidden" name="confirm" value="DELETE">
+                  <button type="submit" class="action-btn delete-btn" title="Delete">🗑️</button>
+                </form>
+              </div>
+            </article>
+            `).join("") : `<p class="hint">No templates yet. Create one to get started.</p>`}
           </div>
+        </section>
 
-          ${rosterHtml ? `<div class="section-header" style="margin-top:2rem"><h2>Class Roster — ${escapeHtml(courseInstanceId)}</h2></div>${rosterHtml}` : ""}
+        <section class="panel submissions-section">
+          <div class="section-header">
+            <p class="eyebrow">Assessment Submissions</p>
+            <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+              <form method="GET" action="/assessments" class="search-form-inline">
+                <input name="q" value="${escapeHtml(search)}" placeholder="Search by course, student...">
+                <button type="submit">Search</button>
+              </form>
+            </div>
+          </div>
+          <div class="list-stack">
+            ${entries.length ? entries.map(e => {
+              const isPending = e.status === 'pending_marking';
+              const pct = e.percentage;
+              let cls = isPending ? "chip-amber" : (pct >= 70 ? "chip-green" : "chip-grey");
+              const delBtn = isSuperuser(identity.user!) ? `<button type="button" class="lw-entry-delete-btn" title="Delete" onclick="if(confirm('Delete submission?')) { fetch('/api/assessment/entries/${e.id}/delete', {method:'POST'}).then(r=>r.json()).then(d=>{if(d.success)location.reload();}) }"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>` : "";
+              
+              return `
+              <article class="list-card">
+                <a href="/assessments/quiz/${e.template_id}?enrolmentId=${e.enrolment_id}" style="display:block;flex:1">
+                  <strong>${escapeHtml(e.template_title)}</strong>
+                  <span>Student: ${escapeHtml(e.student_label)} (${escapeHtml(e.learner_id)})</span>
+                  <span>Course: ${escapeHtml(e.course_title)} (${escapeHtml(e.course_code)} / ${escapeHtml(e.course_instance_id)})</span>
+                  <span>Submitted: ${escapeHtml(e.submitted_at)}</span>
+                </a>
+                <div style="display:flex;align-items:center;gap:0.5rem">
+                  <span class="meta-chip ${cls}" title="${isPending ? 'Pending Tutor Marking' : 'View Submission'}">${e.score_earned}/${e.max_score} (${e.percentage}%)</span>
+                  <a href="/assessments/quiz/${e.template_id}?enrolmentId=${e.enrolment_id}" class="action-btn edit-btn" style="text-decoration:none" title="View Submission">👁️</a>
+                  ${delBtn}
+                </div>
+              </article>`;
+            }).join("") : `<p class="hint">No submissions found.</p>`}
+          </div>
         </section>
       </div>
     </main>
@@ -8226,7 +8234,15 @@ async function renderTrackerPageHandler(request: Request, env: Env, identity: Id
     const requestedEnrolId = url.searchParams.get("enrolId") ?? enrolments[0]?.id ?? "";
     const errorParam = url.searchParams.get("error");
     const successParam = url.searchParams.get("success");
-    return htmlResponse(renderStudentTrackerPage(identity, enrolments, tracker, comments, rawLearnerId, requestedEnrolId, errorParam, successParam));
+    const rTemplates = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE is_active=1 AND template_type='quiz' ORDER BY created_at DESC").all<AssessmentTemplate>();
+    const templates = rTemplates.results;
+    let entries: AssessmentEntry[] = [];
+    if (requestedEnrolId) {
+      const rEntries = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE enrolment_id=?").bind(requestedEnrolId).all<AssessmentEntry>();
+      entries = rEntries.results;
+    }
+
+    return htmlResponse(renderStudentTrackerPage(identity, enrolments, tracker, comments, rawLearnerId, requestedEnrolId, templates, entries, errorParam, successParam));
   } else {
     // Staff view
 
@@ -8261,7 +8277,15 @@ async function renderTrackerPageHandler(request: Request, env: Env, identity: Id
       const r3 = await env.esol_marking_db.prepare("SELECT * FROM assessment_comments WHERE entity_id=? AND entity_type='tracker' ORDER BY created_at ASC").bind(studentEnrolId).all<AssessmentComment>();
       comments = r3.results;
     }
-    return htmlResponse(renderStaffTrackerPage(identity, enrolments, trackers, courseInstanceId, selectedEnrolment, selectedTracker, comments, allCourses));
+    const rTemplates = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE is_active=1 AND template_type='quiz' ORDER BY created_at DESC").all<AssessmentTemplate>();
+    const templates = rTemplates.results;
+    let entries: AssessmentEntry[] = [];
+    if (studentEnrolId) {
+      const rEntries = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE enrolment_id=?").bind(studentEnrolId).all<AssessmentEntry>();
+      entries = rEntries.results;
+    }
+
+    return htmlResponse(renderStaffTrackerPage(identity, enrolments, trackers, courseInstanceId, selectedEnrolment, selectedTracker, comments, allCourses, templates, entries));
   }
 }
 
@@ -8448,7 +8472,7 @@ function renderTrackerTile(
   </div>`;
 }
 
-function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string, activeEnrolmentId: string, error?: string | null, success?: string | null): string {
+function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolment[], tracker: StudentTracker | null, comments: AssessmentComment[], learnerId: string, activeEnrolmentId: string, templates: AssessmentTemplate[], entries: AssessmentEntry[], error?: string | null, success?: string | null): string {
   const sortedEnrolments = [...enrolments].sort((a, b) => {
     if (a.course_instance_id === 'mock_course') return -1;
     if (b.course_instance_id === 'mock_course') return 1;
@@ -8558,6 +8582,12 @@ function renderStudentTrackerPage(identity: Identity, enrolments: StudentEnrolme
             ${destinationTile}
             ${courseFeedbackTile}
           </div>
+          ${enrolment ? `
+            <div class="section-header" style="margin-top:3rem;margin-bottom:1.25rem;"><h2>My Assessments & Quizzes</h2></div>
+            <div class="assess-tiles">
+              ${buildAssessmentTilesHtml(templates, entries, activeEnrolmentId) || "<p class='muted-text'>No active assessments assigned.</p>"}
+            </div>
+          ` : ""}
         </section>
       </div>
     </main>
@@ -9728,7 +9758,7 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
   return Response.redirect(`${url.origin}/tracker?enrolId=${enrolmentId}`, 302);
 }
 
-function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment[], trackers: StudentTracker[], courseInstanceId: string, selectedEnrolment: StudentEnrolment | null, tracker: StudentTracker | null, comments: AssessmentComment[], allCourses: {course_instance_id: string, course_title: string}[]): string {
+function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment[], trackers: StudentTracker[], courseInstanceId: string, selectedEnrolment: StudentEnrolment | null, tracker: StudentTracker | null, comments: AssessmentComment[], allCourses: {course_instance_id: string, course_title: string}[], templates: AssessmentTemplate[], entries: AssessmentEntry[]): string {
   const rosterHtml = enrolments.map(en => {
     const isSelected = selectedEnrolment?.id === en.id;
     return `<a href="/tracker?courseId=${encodeURIComponent(courseInstanceId)}&enrolId=${encodeURIComponent(en.id)}" class="roster-item ${isSelected ? "roster-item--active" : ""}">
@@ -9918,6 +9948,13 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         </div>
       </div>
       `).join("")}
+
+      <div class="tracker-section">
+        <h3>📝 Assessments & Quizzes</h3>
+        <div class="assess-tiles">
+          ${buildAssessmentTilesHtml(templates, entries, selectedEnrolment.id) || "<p class='muted-text'>No active assessments assigned.</p>"}
+        </div>
+      </div>
 
       <div style="padding:1rem 0;text-align:right">
         <button class="btn btn-primary" onclick="saveTrackerRecord()">💾 Save All Changes</button>
