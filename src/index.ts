@@ -2889,20 +2889,10 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
         tBody += row;
       });
       
-      tableHtml = <div class="table-responsive"><table class="data-table"><thead> + tHead + </thead><tbody> + tBody + </tbody></table></div>;
+      tableHtml = '<div class="table-responsive"><table class="data-table"><thead>' + tHead + '</thead><tbody>' + tBody + '</tbody></table></div>';
     }
     
-    assessmentsReportHtml = 
-      <section class="panel reports-panel">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Assessments Report</p>
-            <h2>Class </h2>
-          </div>
-        </div>
-        
-      </section>
-    ;
+    assessmentsReportHtml = '<section class="panel reports-panel"><div class="section-header"><div><p class="eyebrow">Assessments Report</p><h2>Class ' + escapeHtml(classId) + '</h2></div></div>' + tableHtml + '</section>';
   }
 
   const noReportSelected = !trackerTable && !iqafTrackerTable && !assessmentsTrackerTable && !studentTrackerHtml && !assessmentsReportHtml
