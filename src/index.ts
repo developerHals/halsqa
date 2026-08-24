@@ -2971,7 +2971,8 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
         ${trackerTable}
         ${iqafTrackerTable}
         ${assessmentsTrackerTable}
-        ${studentTrackerHtml}`r`n        ${assessmentsReportHtml}
+        ${studentTrackerHtml}
+        ${assessmentsReportHtml}
         ${noReportSelected}
       </section>
     </main>
