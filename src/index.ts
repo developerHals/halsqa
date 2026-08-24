@@ -7818,26 +7818,65 @@ async function renderAssessmentsPageHandler(request: Request, env: Env, identity
   }
 }
 
-function buildAssessmentTilesHtml(templates: AssessmentTemplate[], entries: AssessmentEntry[], selectedEnrolId: string): string {
-  const entryMap = new Map(entries.map(e => [e.template_id + "_" + e.enrolment_id, e]));
+function buildAssessmentTilesHtml(templates: AssessmentTemplate[], entries: AssessmentEntry[], selectedEnrolId: string, isAssessor: boolean = false): string {
+  // Group entries by template_id
+  const entriesByTemplate = new Map<string, AssessmentEntry[]>();
+  for (const e of entries) {
+    if (!entriesByTemplate.has(e.template_id)) {
+      entriesByTemplate.set(e.template_id, []);
+    }
+    entriesByTemplate.get(e.template_id)!.push(e);
+  }
+
   return templates.map(t => {
-    const key = t.id + "_" + selectedEnrolId;
-    const entry = entryMap.get(key);
-    const done = entry?.status === "completed";
-    const pct = entry?.percentage ?? 0;
-    const scoreText = done ? `${entry!.score_earned}/${entry!.max_score} (${pct}%)` : (entry?.status === "pending_marking" ? "Pending Marking" : "Not started");
-    return `
-    <div class="assess-tile ${done ? "assess-tile--done" : ""}" data-template-id="${escapeHtml(t.id)}" data-enrolment-id="${escapeHtml(selectedEnrolId)}" onclick="openQuizModal('${escapeHtml(t.id)}','${escapeHtml(selectedEnrolId)}','${escapeHtml(t.title)}',${done ? 1 : 0})">
-      <div class="assess-tile-icon">${done ? "✅" : "📝"}</div>
-      <div class="assess-tile-body">
-        <h3>${escapeHtml(t.title)}</h3>
-        <p>${escapeHtml(t.description ?? "")}</p>
-        <div class="assess-tile-meta">
-          <span class="meta-chip">${t.max_points} pts</span>
-          ${done ? `<span class="meta-chip chip-green">${escapeHtml(scoreText)}</span>` : `<span class="meta-chip chip-grey">${escapeHtml(scoreText)}</span>`}
+    const tmplEntries = entriesByTemplate.get(t.id) || [];
+    
+    if (tmplEntries.length === 0) {
+      return `
+      <div class="assess-tile" data-template-id="${escapeHtml(t.id)}" data-enrolment-id="${escapeHtml(selectedEnrolId)}" onclick="openQuizModal('${escapeHtml(t.id)}','${escapeHtml(selectedEnrolId)}','${escapeHtml(t.title)}',0)">
+        <div class="assess-tile-icon">📝</div>
+        <div class="assess-tile-body">
+          <h3>${escapeHtml(t.title)}</h3>
+          <p>${escapeHtml(t.description ?? "")}</p>
+          <div class="assess-tile-meta">
+            <span class="meta-chip">${t.max_points} pts</span>
+            <span class="meta-chip chip-grey">Not started</span>
+          </div>
         </div>
-      </div>
-    </div>`;
+      </div>`;
+    }
+
+    // Sort entries oldest to newest
+    tmplEntries.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+    return tmplEntries.map((entry, index) => {
+      const done = entry.status === "completed";
+      const pct = entry.percentage ?? 0;
+      const scoreText = done ? `${entry.score_earned}/${entry.max_score} (${pct}%)` : (entry.status === "pending_marking" ? "Pending Marking" : "Not started");
+      const attemptSuffix = tmplEntries.length > 1 ? ` (Attempt ${index + 1})` : "";
+      
+      const clickAction = isAssessor ? 
+         `window.location.href='/assessments/quiz/${escapeHtml(t.id)}?enrolmentId=${escapeHtml(selectedEnrolId)}&entryId=${escapeHtml(entry.id)}'` :
+         `openQuizModal('${escapeHtml(t.id)}','${escapeHtml(selectedEnrolId)}','${escapeHtml(t.title)}',${done ? 1 : 0}, '${escapeHtml(entry.id)}')`;
+
+      const isLatest = index === tmplEntries.length - 1;
+      const showRetake = !isAssessor && done && isLatest;
+      const icon = done ? "✅" : "📝";
+
+      return `
+      <div class="assess-tile ${done ? "assess-tile--done" : ""}" data-template-id="${escapeHtml(t.id)}" data-enrolment-id="${escapeHtml(selectedEnrolId)}">
+        <div class="assess-tile-icon" onclick="${clickAction}" style="cursor:pointer">${icon}</div>
+        <div class="assess-tile-body">
+          <h3 onclick="${clickAction}" style="cursor:pointer;margin:0 0 .25rem;font-size:1rem;font-weight:700;color:var(--text)">${escapeHtml(t.title)}${attemptSuffix}</h3>
+          <p style="margin:0 0 .5rem;font-size:.875rem;color:var(--muted)">${escapeHtml(t.description ?? "")}</p>
+          <div class="assess-tile-meta" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+            <span class="meta-chip" style="background:#f1f5f9;padding:.25rem .5rem;border-radius:12px;font-size:.75rem;font-weight:600">${t.max_points} pts</span>
+            ${done ? `<span class="meta-chip chip-green" style="background:#dcfce7;color:#166534;padding:.25rem .5rem;border-radius:12px;font-size:.75rem;font-weight:600">${escapeHtml(scoreText)}</span>` : `<span class="meta-chip chip-grey" style="background:#e2e8f0;color:#475569;padding:.25rem .5rem;border-radius:12px;font-size:.75rem;font-weight:600">${escapeHtml(scoreText)}</span>`}
+            ${showRetake ? `<button class="btn btn-secondary btn-sm" onclick="openQuizModal('${escapeHtml(t.id)}','${escapeHtml(selectedEnrolId)}','${escapeHtml(t.title)}',0,'',1)" style="margin-left:auto;padding:0.25rem 0.5rem;font-size:0.75rem;">Retake</button>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join("");
   }).join("");
 }
 
@@ -7911,7 +7950,7 @@ function renderStudentAssessmentsPage(identity: Identity, templates: AssessmentT
       .modal-large{max-width:700px;width:95vw}
     </style>
     <script>
-    function openQuizModal(templateId, enrolmentId, title, isDone) {
+    function openQuizModal(templateId, enrolmentId, title, isDone, entryId, isRetake) {
       document.getElementById('quizModalTitle').textContent = title;
       const body = document.getElementById('quizModalBody');
       const footer = document.getElementById('quizModalFooter');
@@ -10008,7 +10047,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       <div class="tracker-section">
         <h3>📝 Assessments & Quizzes</h3>
         <div class="assess-tiles">
-          ${buildAssessmentTilesHtml(templates, entries, selectedEnrolment.id) || "<p class='muted-text'>No active assessments assigned.</p>"}
+          ${buildAssessmentTilesHtml(templates, entries, selectedEnrolment.id, true) || "<p class='muted-text'>No active assessments assigned.</p>"}
         </div>
       </div>
 
@@ -11014,6 +11053,7 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
         }
         
         const payload = { template_id: templateId, enrolment_id: enrolmentId, answers };
+        if (entryId) payload.entry_id = entryId;
         document.getElementById('submitBtn').disabled = true;
         document.getElementById('submitBtn').textContent = 'Submitting...';
 
