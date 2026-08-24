@@ -8611,7 +8611,7 @@ OTH4: Not known.`;
                       <div style="display:flex; align-items:center; gap:0.75rem; padding:0.5rem 0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
                         <span style="font-weight:700; color:#64748b; font-size:0.875rem; min-width:24px; text-align:center;">#${idx + 1}</span>
                         <input type="hidden" name="existing_ids[]" value="${escapeHtml(item.id)}">
-                        <input type="text" name="existing_text_${escapeHtml(item.id)}" value="${escapeHtml(item.text)}" class="form-input" style="flex:1;" required>
+                        <span style="font-size:0.9375rem; font-weight:500; color:#334155; flex:1;">${escapeHtml(item.text)}</span>
                         <span style="background:#f1f5f9;color:#475569;font-size:0.75rem;padding:0.3rem 0.65rem;border-radius:6px;font-weight:600;white-space:nowrap;">⏳ In Progress</span>
                       </div>
                     `;
@@ -8803,7 +8803,7 @@ OTH4: Not known.`;
                       <div style="display:flex; align-items:center; gap:0.75rem; padding:0.5rem 0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
                         <span style="font-weight:700; color:#64748b; font-size:0.875rem; min-width:24px; text-align:center;">#${idx + 1}</span>
                         <input type="hidden" name="existing_ids[]" value="${escapeHtml(item.id)}">
-                        <input type="text" name="existing_text_${escapeHtml(item.id)}" value="${escapeHtml(item.text)}" class="form-input" style="flex:1;" required>
+                        <span style="font-size:0.9375rem; font-weight:500; color:#334155; flex:1;">${escapeHtml(item.text)}</span>
                         <span style="background:#f1f5f9;color:#475569;font-size:0.75rem;padding:0.3rem 0.65rem;border-radius:6px;font-weight:600;white-space:nowrap;">⏳ In Progress</span>
                       </div>
                     `;
@@ -9473,14 +9473,10 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
       } else {
         const updatedExisting = existingList.map(item => {
           const isAchieved = item.achieved === true || (item.achieved as any) === "true";
-          if (isAchieved) {
-            return { id: item.id, text: item.text, achieved: true };
-          }
-          const formText = (formData.get(`existing_text_${item.id}`) as string)?.trim();
           return {
             id: item.id,
-            text: formText && formText.length > 0 ? formText : item.text,
-            achieved: false
+            text: item.text,
+            achieved: isAchieved
           };
         });
 
@@ -9523,14 +9519,10 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
       } else {
         const updatedExisting = existingList.map(item => {
           const isAchieved = item.achieved === true || (item.achieved as any) === "true";
-          if (isAchieved) {
-            return { id: item.id, text: item.text, achieved: true };
-          }
-          const formText = (formData.get(`existing_text_${item.id}`) as string)?.trim();
           return {
             id: item.id,
-            text: formText && formText.length > 0 ? formText : item.text,
-            achieved: false
+            text: item.text,
+            achieved: isAchieved
           };
         });
 
