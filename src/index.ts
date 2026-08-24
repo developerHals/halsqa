@@ -1188,7 +1188,7 @@ function renderMyClassPage(identity: Identity, courseInstanceId: string, courseT
       e.CourseCode ?? "",
       e.CourseTitle ?? "",
       attended,
-      withdraw,
+
       e.CourseTypeCategory ?? "",
       e.LearnStartDate ?? "",
       e.LearnActEndDate ?? "",
