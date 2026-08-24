@@ -2491,6 +2491,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
   const qualification = url.searchParams.get("qualification") || "";
   const dateFrom = url.searchParams.get("date_from") || "";
   const dateTo = url.searchParams.get("date_to") || "";
+  const classId = url.searchParams.get("class_id") || "";
 
   const displayYears = [anchorYear, anchorYear - 1, anchorYear - 2];
   const minYear = Math.min(...displayYears);
@@ -2755,7 +2756,98 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
       </section>`
     : "";
 
-  const noReportSelected = !trackerTable && !iqafTrackerTable && !assessmentsTrackerTable
+  let studentTrackerRows: any[] = [];
+  if (reportType === "student-tracker" && classId) {
+    const res = await env.esol_marking_db.prepare(`
+      SELECT e.student_label, e.course_instance_id, t.tailored_purpose, t.tailored_outcomes, t.clos_status, t.goals_status, t.destination_data, t.course_learning_objectives, t.smart_goals
+      FROM student_enrolments e
+      JOIN student_trackers t ON e.id = t.enrolment_id
+      WHERE e.course_instance_id LIKE ?
+      ORDER BY e.student_label ASC
+    `).bind(\`%\${classId}%\`).all();
+    studentTrackerRows = res.results || [];
+  }
+
+  const purposeMap: Record<string, string> = {
+    "1": "Engaging and/or building confidence",
+    "2": "Preparation for further learning",
+    "3": "Preparation for employment",
+    "4": "Improving essential skills (English, ESOL, maths, and digital)",
+    "5": "Equipping parents/carers to support children's learning",
+    "6": "Health and well-being",
+    "7": "Developing stronger communities"
+  };
+
+  const outcomesMap: Record<string, string> = {
+    "1": "Increased confidence",
+    "2": "Improved skills for progressing to further learning",
+    "3": "Improved skills for work",
+    "4": "Improved essential skills",
+    "5": "Improved ability to support a child's learning",
+    "6": "Improved physical health",
+    "7": "Improved mental health and well-being",
+    "8": "Improved skills to participate in community life",
+    "9": "Increased understanding of democratic values",
+    "10": "Improved skills for Independent Living"
+  };
+
+  const studentTrackerHtml = reportType === "student-tracker" 
+    ? `
+      <section class="panel reports-panel">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Tracker</p>
+            <h2>Student Tracker Report</h2>
+          </div>
+        </div>
+        \${!classId ? \`<p class="hint">Please enter a Class ID to view student trackers.</p>\` : 
+          \`<div class="reports-table-wrap">
+            <table class="reports-table">
+              <thead>
+                <tr>
+                  <th>Student Name</th>
+                  <th>Tailored Purpose</th>
+                  <th>Tailored Outcomes</th>
+                  <th>CLOs Status</th>
+                  <th>SMART Goals Status</th>
+                  <th>Destination</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${studentTrackerRows.length === 0 ? \`<tr><td colspan="6" class="empty-cell">No student tracker records found for this class.</td></tr>\` : 
+                  studentTrackerRows.map(row => {
+                    const closObj = JSON.parse(row.course_learning_objectives || "[]");
+                    const goalsObj = JSON.parse(row.smart_goals || "[]");
+                    
+                    const closTotal = closObj.length;
+                    const closAchieved = closObj.filter((o: any) => o.achieved === true || o.achieved === "true").length;
+                    const closStatusText = closTotal === 0 ? "Not Started" : (row.clos_status === "completed" ? (closAchieved === closTotal ? "Achieved" : (closAchieved > 0 ? "Partial" : "Submitted")) : "Draft");
+                    
+                    const goalsTotal = goalsObj.length;
+                    const goalsAchieved = goalsObj.filter((o: any) => o.achieved === true || o.achieved === "true").length;
+                    const goalsStatusText = goalsTotal === 0 ? "Not Started" : (row.goals_status === "completed" ? (goalsAchieved === goalsTotal ? "Achieved" : (goalsAchieved > 0 ? "Partial" : "Submitted")) : "Draft");
+
+                    return \`
+                      <tr>
+                        <td style="font-weight:600">\${escapeHtml(row.student_label || "Unknown Student")}</td>
+                        <td>\${escapeHtml(purposeMap[row.tailored_purpose] || row.tailored_purpose || "Not set")}</td>
+                        <td>\${escapeHtml(outcomesMap[row.tailored_outcomes] || row.tailored_outcomes || "Not set")}</td>
+                        <td>\${escapeHtml(closStatusText)} (\${closAchieved}/\${closTotal})</td>
+                        <td>\${escapeHtml(goalsStatusText)} (\${goalsAchieved}/\${goalsTotal})</td>
+                        <td>\${escapeHtml(row.destination_data || "Not set")}</td>
+                      </tr>
+                    \`;
+                  }).join("")
+                }
+              </tbody>
+            </table>
+          </div>\`
+        }
+      </section>
+    `
+    : "";
+
+  const noReportSelected = !trackerTable && !iqafTrackerTable && !assessmentsTrackerTable && !studentTrackerHtml
     ? `<section class="panel reports-panel"><p class="hint">Select a category to begin.</p></section>`
     : "";
 
@@ -2774,8 +2866,14 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                   <option value="learning-walk-tracker" ${reportType === "learning-walk-tracker" ? "selected" : ""}>Learning Walks tracker</option>
                   <option value="iqa-forms-tracker" ${reportType === "iqa-forms-tracker" ? "selected" : ""}>IQA forms tracker</option>
                   <option value="assessments-tracker" ${reportType === "assessments-tracker" ? "selected" : ""}>Assessments tracker</option>
+                  <option value="student-tracker" ${reportType === "student-tracker" ? "selected" : ""}>Student tracker</option>
                 </select>
               </label>
+              ${reportType === "student-tracker" ? `
+              <label>Class ID
+                <input type="text" name="class_id" value="${escapeHtml(classId)}" placeholder="Enter Class ID...">
+              </label>
+              ` : ""}
               <label>Academic Year
                 <input type="number" name="year" value="${anchorYear}" min="2000" max="2100" placeholder="YYYY">
               </label>
@@ -2825,6 +2923,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
         ${trackerTable}
         ${iqafTrackerTable}
         ${assessmentsTrackerTable}
+        ${studentTrackerHtml}
         ${noReportSelected}
       </section>
     </main>
@@ -8725,7 +8824,8 @@ OTH4: Not known.`;
         `;
       }
     } else {
-      // Staff view: mark achievements on all objectives
+      // Staff view: mark achievements on all objectives and smart goals
+      const goalsList = JSON.parse(tracker?.smart_goals || "[]");
       formHtml = `
         <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=clos">
           <p class="muted-text" style="margin-bottom:1.5rem">Check the Course Learning Objectives achieved by this student:</p>
@@ -8741,7 +8841,21 @@ OTH4: Not known.`;
               </div>
             `).join("") : "<p class='muted-text'>No learning objectives submitted by the student yet.</p>"}
           </div>
-          ${list.length > 0 ? `<button type="submit" name="action" value="tutor_save" class="btn btn-primary">Save Achievement Status</button>` : ""}
+
+          <p class="muted-text" style="margin-bottom:1.5rem">Check the SMART Goals achieved by this student:</p>
+          <div style="margin-bottom:1.5rem">
+            ${goalsList.length > 0 ? goalsList.map((item: any, idx: number) => `
+              <div style="display:flex; align-items:center; gap:1rem; padding:0.75rem 1rem; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:0.75rem; background:#f8fafc;">
+                <span style="font-weight:700;min-width:24px;color:#64748b">#${idx+1}</span>
+                <span style="flex:1;font-weight:500">${escapeHtml(item.text)}</span>
+                <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:600; user-select:none;">
+                  <input type="checkbox" name="achieved_${escapeHtml(item.id)}" value="true" ${item.achieved === true || item.achieved === "true" ? "checked" : ""} style="width:1.2rem; height:1.2rem; accent-color:var(--primary);">
+                  Achieved
+                </label>
+              </div>
+            `).join("") : "<p class='muted-text'>No SMART goals submitted by the student yet.</p>"}
+          </div>
+          ${list.length > 0 || goalsList.length > 0 ? `<button type="submit" name="action" value="tutor_save" class="btn btn-primary">Save Achievement Status</button>` : ""}
         </form>
       `;
     }
@@ -9581,9 +9695,16 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
           achieved: formData.get(`achieved_${item.id}`) === "true" || formData.get(`achieved_${idx}`) === "true"
         };
       });
+      const goalsList = JSON.parse(tracker.smart_goals || "[]");
+      const updatedGoals = goalsList.map((item: any, idx: number) => {
+        return {
+          ...item,
+          achieved: formData.get(`achieved_${item.id}`) === "true"
+        };
+      });
       await env.esol_marking_db.prepare(`
-        UPDATE student_trackers SET course_learning_objectives=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
-      `).bind(JSON.stringify(updated), enrolmentId).run();
+        UPDATE student_trackers SET course_learning_objectives=?, smart_goals=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
+      `).bind(JSON.stringify(updated), JSON.stringify(updatedGoals), enrolmentId).run();
 
     } else if (tile === "goals") {
       const list = JSON.parse(tracker.smart_goals || "[]");
