@@ -2764,7 +2764,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
       JOIN student_trackers t ON e.id = t.enrolment_id
       WHERE e.course_instance_id LIKE ?
       ORDER BY e.student_label ASC
-    `).bind(\`%\${classId}%\`).all();
+    `).bind(`%${classId}%`).all();
     studentTrackerRows = res.results || [];
   }
 
@@ -2800,8 +2800,8 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
             <h2>Student Tracker Report</h2>
           </div>
         </div>
-        \${!classId ? \`<p class="hint">Please enter a Class ID to view student trackers.</p>\` : 
-          \`<div class="reports-table-wrap">
+        ${!classId ? `<p class="hint">Please enter a Class ID to view student trackers.</p>` : 
+          `<div class="reports-table-wrap">
             <table class="reports-table">
               <thead>
                 <tr>
@@ -2814,7 +2814,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                 </tr>
               </thead>
               <tbody>
-                \${studentTrackerRows.length === 0 ? \`<tr><td colspan="6" class="empty-cell">No student tracker records found for this class.</td></tr>\` : 
+                ${studentTrackerRows.length === 0 ? `<tr><td colspan="6" class="empty-cell">No student tracker records found for this class.</td></tr>` : 
                   studentTrackerRows.map(row => {
                     const closObj = JSON.parse(row.course_learning_objectives || "[]");
                     const goalsObj = JSON.parse(row.smart_goals || "[]");
@@ -2827,21 +2827,21 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                     const goalsAchieved = goalsObj.filter((o: any) => o.achieved === true || o.achieved === "true").length;
                     const goalsStatusText = goalsTotal === 0 ? "Not Started" : (row.goals_status === "completed" ? (goalsAchieved === goalsTotal ? "Achieved" : (goalsAchieved > 0 ? "Partial" : "Submitted")) : "Draft");
 
-                    return \`
+                    return `
                       <tr>
-                        <td style="font-weight:600">\${escapeHtml(row.student_label || "Unknown Student")}</td>
-                        <td>\${escapeHtml(purposeMap[row.tailored_purpose] || row.tailored_purpose || "Not set")}</td>
-                        <td>\${escapeHtml(outcomesMap[row.tailored_outcomes] || row.tailored_outcomes || "Not set")}</td>
-                        <td>\${escapeHtml(closStatusText)} (\${closAchieved}/\${closTotal})</td>
-                        <td>\${escapeHtml(goalsStatusText)} (\${goalsAchieved}/\${goalsTotal})</td>
-                        <td>\${escapeHtml(row.destination_data || "Not set")}</td>
+                        <td style="font-weight:600">${escapeHtml(row.student_label || "Unknown Student")}</td>
+                        <td>${escapeHtml(purposeMap[row.tailored_purpose] || row.tailored_purpose || "Not set")}</td>
+                        <td>${escapeHtml(outcomesMap[row.tailored_outcomes] || row.tailored_outcomes || "Not set")}</td>
+                        <td>${escapeHtml(closStatusText)} (${closAchieved}/${closTotal})</td>
+                        <td>${escapeHtml(goalsStatusText)} (${goalsAchieved}/${goalsTotal})</td>
+                        <td>${escapeHtml(row.destination_data || "Not set")}</td>
                       </tr>
-                    \`;
+                    `;
                   }).join("")
                 }
               </tbody>
             </table>
-          </div>\`
+          </div>`
         }
       </section>
     `
