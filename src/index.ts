@@ -10832,6 +10832,16 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
   const enrolment = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE id=?").bind(enrolmentId).first<StudentEnrolment>();
   if (!enrolment) return htmlResponse(pageShell("Not Found", "<h2>Enrolment Not Found</h2>"), 404);
 
+  let entry: AssessmentEntry | null = null;
+  const entryId = url.searchParams.get("entryId");
+  const isRetake = url.searchParams.get("retake") === "1";
+  
+  if (entryId) {
+    entry = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE id=?").bind(entryId).first<AssessmentEntry>() || null;
+  } else if (!isRetake) {
+    entry = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE template_id=? AND enrolment_id=? ORDER BY created_at DESC").bind(templateId, enrolmentId).first<AssessmentEntry>() || null;
+  }
+
   let studentLabel = enrolment.student_label || "";
   if (!studentLabel || studentLabel.trim() === "" || studentLabel === enrolment.learner_id) {
     try {
@@ -10856,7 +10866,7 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
 
   const { results: questions } = await env.esol_marking_db.prepare("SELECT * FROM assessment_template_questions WHERE template_id=? ORDER BY sort_order").bind(templateId).all<AssessmentTemplateQuestion>();
   
-  const entry = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE template_id=? AND enrolment_id=?").bind(templateId, enrolmentId).first<AssessmentEntry>();
+  // Removed duplicate entry fetch
   
   let answers = {};
   if (entry && entry.answers_json) {
