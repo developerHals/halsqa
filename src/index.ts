@@ -970,7 +970,7 @@ async function renderRolesPage(request: Request, env: Env, identity: Identity): 
         if (roleRecord) {
           let functionalities = [];
           try {
-            functionalities = JSON.parse(roleRecord.functionalities);
+            functionalities = safeJsonParse<string[]>(roleRecord.functionalities, []);
           } catch(e) {}
           const checkboxes = document.querySelectorAll('.func-checkbox');
           checkboxes.forEach(cb => {
@@ -1807,7 +1807,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
           banners: [],
           userId: currentUser.id,
           userRole: currentUser.role,
-          customColors: JSON.parse(localStorage.getItem("qc_custom_colors") || "[]").slice(0, MAX_CUSTOM_COLORS)
+          customColors: safeJsonParse<string[]>(localStorage.getItem("qc_custom_colors"), []).slice(0, MAX_CUSTOM_COLORS)
         };
 
         function getMonday(d) {
@@ -2816,8 +2816,8 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
               <tbody>
                 ${studentTrackerRows.length === 0 ? `<tr><td colspan="6" class="empty-cell">No student tracker records found for this class.</td></tr>` : 
                   studentTrackerRows.map(row => {
-                    const closObj = JSON.parse(row.course_learning_objectives || "[]");
-                    const goalsObj = JSON.parse(row.smart_goals || "[]");
+                    const closObj = safeJsonParse<any[]>(row.course_learning_objectives, []);
+                    const goalsObj = safeJsonParse<any[]>(row.smart_goals, []);
                     
                     const closTotal = closObj.length;
                     const closAchieved = closObj.filter((o: any) => o.achieved === true || o.achieved === "true").length;
@@ -2947,7 +2947,7 @@ async function getIdentity(email: string, name: string | null, env: Env): Promis
     try {
       const roleRecord = await env.esol_marking_db.prepare("SELECT functionalities FROM roles WHERE role = ?").bind(activeRole).first<{ functionalities: string }>();
       if (roleRecord) {
-        functionalities = JSON.parse(roleRecord.functionalities);
+        functionalities = safeJsonParse<string[]>(roleRecord.functionalities, []);
       } else {
         functionalities = getDefaultFunctionalitiesForRole(activeRole);
       }
@@ -3368,7 +3368,7 @@ async function getLWTemplateWithQuestions(env: Env, templateId: string): Promise
   const tmpl = await env.esol_marking_db.prepare("SELECT id, title, description, is_active, created_by, created_at FROM lw_templates WHERE id = ? LIMIT 1").bind(templateId).first<LWTemplateRecord>();
   if (!tmpl) return null;
   const qs = await env.esol_marking_db.prepare("SELECT id, template_id, question_text, question_type, options, has_text_entry, text_entry_label, is_required, sort_order FROM lw_template_questions WHERE template_id = ? ORDER BY sort_order ASC").bind(templateId).all<LWTemplateQuestion & { options: string | null }>();
-  const questions: LWTemplateQuestion[] = qs.results.map(q => ({ ...q, options: q.options ? JSON.parse(q.options) as QuestionOption[] : null }));
+  const questions: LWTemplateQuestion[] = qs.results.map(q => ({ ...q, options: safeJsonParse<QuestionOption[]>(q.options, []) }));
   return { ...tmpl, questions };
 }
 
@@ -5131,7 +5131,7 @@ function renderLWEntryViewPage(
     const questionId = `question-${q.id}`;
 
     let inputHtml = "";
-    const options = q.options ? JSON.parse(q.options) : [];
+    const options = safeJsonParse<any[]>(q.options, []);
 
     switch (q.question_type) {
       case "yes_no":
@@ -5816,7 +5816,7 @@ async function getIQAFTemplateWithQuestions(env: Env, templateId: string): Promi
   const tmpl = await env.esol_marking_db.prepare("SELECT id, title, description, is_active, created_by, created_at FROM iqaf_templates WHERE id = ? LIMIT 1").bind(templateId).first<IQAFTemplateRecord>();
   if (!tmpl) return null;
   const qs = await env.esol_marking_db.prepare("SELECT id, template_id, question_text, question_type, options, has_text_entry, text_entry_label, is_required, sort_order FROM iqaf_template_questions WHERE template_id = ? ORDER BY sort_order ASC").bind(templateId).all<IQAFTemplateQuestion & { options: string | null }>();
-  const questions: IQAFTemplateQuestion[] = qs.results.map(q => ({ ...q, options: q.options ? JSON.parse(q.options) as QuestionOption[] : null }));
+  const questions: IQAFTemplateQuestion[] = qs.results.map(q => ({ ...q, options: safeJsonParse<QuestionOption[]>(q.options, []) }));
   return { ...tmpl, questions };
 }
 
@@ -6529,6 +6529,17 @@ function roleToStage(role: Role): Stage | null { return role === "iqa" ? "iqa" :
 function canEditStage(user: UserRecord, status: EntryStatus, stage: Stage) { return user.role === "superuser" || user.role === "admin" || (status === "assessment" && stage === "assess") || (status === "iqa" && stage === "iqa") || (status === "eqa" && stage === "eqa"); }
 function parseItems(structure: string): ChecklistItem[] { try { const parsed = JSON.parse(structure) as { items?: ChecklistItem[] }; return parsed.items ?? []; } catch { return []; } }
 function parseData(data: string | null): Record<string, string> { try { return data ? JSON.parse(data) as Record<string, string> : {}; } catch { return {}; } }
+
+function safeJsonParse<T>(data: any, fallback: T): T {
+  if (typeof data !== 'string' || !data.trim()) return fallback;
+  try {
+    const parsed = JSON.parse(data);
+    return (parsed !== null && typeof parsed !== 'undefined') ? parsed : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
 function wantsJson(request: Request) { return request.headers.get("accept")?.includes("application/json"); }
 function json(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: jsonHeaders }); }
 
@@ -8325,7 +8336,7 @@ async function saveStudentCourseHandler(request: Request, env: Env, identity: Id
 function formatObjectiveListHtml(jsonStr: string | null): string {
   if (!jsonStr) return "";
   try {
-    const list = JSON.parse(jsonStr);
+    const list = safeJsonParse<any[]>(jsonStr, []);
     if (Array.isArray(list) && list.length > 0) {
       return `<ul style="margin:0;padding-left:1.2rem;list-style-type:disc">
         ${list.map((item: any) => `
@@ -8344,7 +8355,7 @@ function getCloStatus(tracker: StudentTracker | null): "new" | "draft" | "comple
   if (!tracker || !tracker.clos_status || tracker.clos_status === "new") return "new";
   if (tracker.clos_status === "draft") return "draft";
   try {
-    const list = JSON.parse(tracker.course_learning_objectives || "[]");
+    const list = safeJsonParse<any[]>(tracker.course_learning_objectives, []);
     if (!Array.isArray(list) || list.length === 0) return "completed";
     const allAchieved = list.every((item: any) => item.achieved === true || item.achieved === "true");
     const someAchieved = list.some((item: any) => item.achieved === true || item.achieved === "true");
@@ -8358,7 +8369,7 @@ function getGoalsStatus(tracker: StudentTracker | null): "new" | "draft" | "comp
   if (!tracker || !tracker.goals_status || tracker.goals_status === "new") return "new";
   if (tracker.goals_status === "draft") return "draft";
   try {
-    const list = JSON.parse(tracker.smart_goals || "[]");
+    const list = safeJsonParse<any[]>(tracker.smart_goals, []);
     if (!Array.isArray(list) || list.length === 0) return "completed";
     const allAchieved = list.every((item: any) => item.achieved === true || item.achieved === "true");
     const someAchieved = list.some((item: any) => item.achieved === true || item.achieved === "true");
@@ -8726,7 +8737,7 @@ OTH3: Unable to contact learner.
 OTH4: Not known.`;
 
   if (tile === "clos") {
-    const list = JSON.parse(tracker?.course_learning_objectives || "[]");
+    const list = safeJsonParse<any[]>(tracker?.course_learning_objectives, []);
 
     if (isStudent) {
       if (list.length > 0) {
@@ -8876,7 +8887,7 @@ OTH4: Not known.`;
       }
     } else {
       // Staff view: mark achievements on all objectives and smart goals
-      const goalsList = JSON.parse(tracker?.smart_goals || "[]");
+      const goalsList = safeJsonParse<any[]>(tracker?.smart_goals, []);
       formHtml = `
         <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=clos">
           <p class="muted-text" style="margin-bottom:1.5rem">Check the Course Learning Objectives achieved by this student:</p>
@@ -8931,7 +8942,7 @@ OTH4: Not known.`;
       </form>
     `;
   } else if (tile === "goals") {
-    const list = JSON.parse(tracker?.smart_goals || "[]");
+    const list = safeJsonParse<any[]>(tracker?.smart_goals, []);
 
     if (isStudent) {
       if (list.length > 0) {
@@ -9162,7 +9173,7 @@ OTH4: Not known.`;
       ` : ""}
     `;
   } else if (tile === "profile") {
-    const data = JSON.parse(tracker?.learner_profile_json || "{}");
+    const data = safeJsonParse<Record<string,string>>(tracker?.learner_profile_json, {});
     const disabledAttr = (isLocked || !isStudent) ? "disabled" : "";
     const showFormActions = isStudent && !isLocked;
 
@@ -9345,7 +9356,7 @@ OTH4: Not known.`;
       </form>
     `;
   } else if (tile === "feedback") {
-    const data = JSON.parse(tracker?.course_feedback_json || "{}");
+    const data = safeJsonParse<Record<string,string>>(tracker?.course_feedback_json, {});
     const disabledAttr = (isLocked || !isStudent) ? "disabled" : "";
     const showFormActions = isStudent && !isLocked;
 
@@ -9622,7 +9633,7 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
     const statusVal = action === "save" ? "completed" : "draft";
 
     if (tile === "clos") {
-      const existingList: Array<{ id: string; text: string; achieved: boolean }> = JSON.parse(tracker.course_learning_objectives || "[]");
+      const existingList: Array<{ id: string; text: string; achieved: boolean }> = safeJsonParse<any[]>(tracker.course_learning_objectives, []);
       const newIds = formData.getAll("objective_ids[]") as string[];
       const initTexts = formData.getAll("objective_texts[]") as string[];
       const newTexts = (formData.getAll("new_objective_texts[]") as string[]).concat(formData.getAll("new_texts[]") as string[]);
@@ -9668,7 +9679,7 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
       `).bind(tailoredPurpose, statusVal, enrolmentId).run();
 
     } else if (tile === "goals") {
-      const existingList: Array<{ id: string; text: string; achieved: boolean }> = JSON.parse(tracker.smart_goals || "[]");
+      const existingList: Array<{ id: string; text: string; achieved: boolean }> = safeJsonParse<any[]>(tracker.smart_goals, []);
       const newIds = formData.getAll("goal_ids[]") as string[];
       const initTexts = formData.getAll("goal_texts[]") as string[];
       const newTexts = (formData.getAll("new_goal_texts[]") as string[]).concat(formData.getAll("new_texts[]") as string[]);
@@ -9739,14 +9750,14 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
 
   } else {
     if (tile === "clos") {
-      const list = JSON.parse(tracker.course_learning_objectives || "[]");
+      const list = safeJsonParse<any[]>(tracker.course_learning_objectives, []);
       const updated = list.map((item: any, idx: number) => {
         return {
           ...item,
           achieved: formData.get(`achieved_${item.id}`) === "true" || formData.get(`achieved_${idx}`) === "true"
         };
       });
-      const goalsList = JSON.parse(tracker.smart_goals || "[]");
+      const goalsList = safeJsonParse<any[]>(tracker.smart_goals, []);
       const updatedGoals = goalsList.map((item: any, idx: number) => {
         return {
           ...item,
@@ -9758,7 +9769,7 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
       `).bind(JSON.stringify(updated), JSON.stringify(updatedGoals), enrolmentId).run();
 
     } else if (tile === "goals") {
-      const list = JSON.parse(tracker.smart_goals || "[]");
+      const list = safeJsonParse<any[]>(tracker.smart_goals, []);
       const updated = list.map((item: any, idx: number) => {
         return {
           ...item,
@@ -9799,7 +9810,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
   let profileSummary = "";
   let feedbackSummary = "";
   if (tracker && selectedEnrolment) {
-    const profileData = JSON.parse(tracker.learner_profile_json || "{}");
+    const profileData = safeJsonParse<Record<string,string>>(tracker.learner_profile_json, {});
     const hasProfile = Object.keys(profileData).length > 0;
     profileSummary = hasProfile ? `
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; font-size:0.9375rem">
@@ -9811,7 +9822,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       </div>
     ` : "<em class='muted-text'>Not filled in by student yet.</em>";
 
-    const feedbackData = JSON.parse(tracker.course_feedback_json || "{}");
+    const feedbackData = safeJsonParse<Record<string,string>>(tracker.course_feedback_json, {});
     const hasFeedback = Object.keys(feedbackData).length > 0;
     feedbackSummary = hasFeedback ? `
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; font-size:0.9375rem">
@@ -9881,7 +9892,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
           ${(() => {
             if (!tracker.course_learning_objectives) return "<em class='muted-text'>No objectives added by student yet.</em>";
             try {
-              const list = JSON.parse(tracker.course_learning_objectives);
+              const list = safeJsonParse<any[]>(tracker.course_learning_objectives, []);
               if (!Array.isArray(list) || list.length === 0) return "<em class='muted-text'>No objectives added by student yet.</em>";
               return list.map((item: any, idx: number) => `
                 <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
@@ -10380,7 +10391,7 @@ function renderAssessmentTemplateBuilderPage(identity: Identity, template: any |
     let parsedOptions = [];
     if (q.options) {
       try {
-        parsedOptions = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
+        parsedOptions = typeof q.options === "string" ? safeJsonParse(q.options, []) : q.options;
       } catch (e) {
         parsedOptions = [];
       }
@@ -10811,7 +10822,7 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
   let answers = {};
   if (entry && entry.answers_json) {
     try {
-      answers = JSON.parse(entry.answers_json as string);
+      answers = safeJsonParse<Record<string,string>>(entry.answers_json, {});
     } catch(e) {}
   }
 
@@ -10865,7 +10876,7 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
   const renderQ = (q: AssessmentTemplateQuestion, index: number) => {
     let opts = [];
     if (q.options) {
-      try { opts = typeof q.options === 'string' ? JSON.parse(q.options) : q.options; } catch(e) {}
+      try { opts = typeof q.options === "string" ? safeJsonParse(q.options, []) : q.options; } catch(e) {}
     }
     const val = answers[q.id] ?? '';
     let inputHtml = '';
@@ -11099,7 +11110,7 @@ async function tutorMarkAssessmentEntry(request: Request, env: Env, identity: Id
 
   let answers: Record<string, any> = {};
   try {
-     answers = JSON.parse(entry.answers_json as string || "{}");
+     answers = safeJsonParse<Record<string,string>>(entry.answers_json, {});
   } catch(e) {}
 
   // Apply tutor marks
@@ -11353,7 +11364,7 @@ async function renderITTicketsPage(tickets: ITTicket[], search: string, isSuperu
             try {
               const ticketsEl = document.getElementById('tickets-data');
               if (!ticketsEl) return;
-              const tickets = JSON.parse(ticketsEl.getAttribute('data-tickets') || '[]');
+              const tickets = safeJsonParse<any[]>(ticketsEl.getAttribute("data-tickets"), []);
               
               const headers = ['Ticket ID', 'User Email', 'User Name', 'Description', 'Status', 'Submitted At', 'In Progress At', 'Closed At'];
               const csvRows = [headers.join(',')];
