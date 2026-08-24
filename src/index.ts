@@ -1179,7 +1179,7 @@ function renderCoursesPage(identity: Identity, courses: LearnerTrackCourse[], er
 }
 
 function renderMyClassPage(identity: Identity, courseInstanceId: string, courseTitle: string, enrolments: LearnerTrackEnrolment[], error: string | null): string {
-  const header = ["Learner ID", "Student", "Course Code", "Course Title", "Attended", "Withdraw Reason", "Category", "Start Date", "End Date", "Times", "Weeks", "Status", "Academic Year"];
+  const header = ["Learner ID", "Student", "Course Code", "Course Title", "Completed", "Category", "Start Date", "End Date", "Times", "Weeks", "Status", "Academic Year"];
   const rows = enrolments.map(e => {
     const attended = e.HasAttended != null ? Math.round(e.HasAttended * 100) + "%" : "";
     const withdraw = e.WithdrawReason != null && e.WithdrawReason !== 0 ? String(e.WithdrawReason) : "";
@@ -1218,7 +1218,7 @@ function renderMyClassPage(identity: Identity, courseInstanceId: string, courseT
           stroke-dashoffset="0" stroke-linecap="round" transform="rotate(-90 100 100)"/>
         <text x="100" y="108" text-anchor="middle" font-size="28" font-weight="700" fill="var(--text)">${avgAttendanceNum}%</text>
       </svg>
-      <span class="pie-chart-label">Avg Attendance (active students)</span>
+      <span class="pie-chart-label">Completion rate %</span>
     </div>` : "";
   return pageShell("My Class", `
     <main class="dashboard-shell">
@@ -1240,7 +1240,7 @@ function renderMyClassPage(identity: Identity, courseInstanceId: string, courseT
               <div class="stat-card"><span class="stat-label">Total Students</span><span class="stat-value">${total}</span></div>
               <div class="stat-card"><span class="stat-label">Withdrawn</span><span class="stat-value">${withdrawn}</span></div>
               <div class="stat-card"><span class="stat-label">Active Students</span><span class="stat-value">${active}</span></div>
-              <div class="stat-card"><span class="stat-label">Avg Attendance (active)</span><span class="stat-value">${avgAttendance}</span></div>
+              <div class="stat-card"><span class="stat-label">Completion rate %</span><span class="stat-value">${avgAttendance}</span></div>
             </div>
             ${pieChart}
             <div class="courses-table-wrap">
@@ -1317,7 +1317,7 @@ function renderStudentsPage(identity: Identity, learnerId: string, enrolments: L
         </div>
       </div>
     </div>` : "";
-  const enrolHeader = ["Course Code", "Course Title", "Category", "Attended", "Withdraw Reason", "Start Date", "End Date", "Times", "Weeks", "Status"];
+  const enrolHeader = ["Course Code", "Course Title", "Category", "Completed", "Start Date", "End Date", "Times", "Weeks", "Status"];
   const enrolRows = enrolments.map(e => [
     e.CourseCode ?? "",
     e.CourseTitle ?? "",
@@ -2847,7 +2847,67 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
     `
     : "";
 
-  const noReportSelected = !trackerTable && !iqafTrackerTable && !assessmentsTrackerTable && !studentTrackerHtml
+    let assessmentsReportHtml = "";
+  if (reportType === "assessments" && classId) {
+    const { results: enrols } = await env.esol_marking_db.prepare(
+      SELECT id, student_label, learner_id, course_instance_id
+      FROM student_enrolments
+      WHERE course_instance_id LIKE ?
+    ).bind(% + classId + %).all<{ id: string, student_label: string, learner_id: string, course_instance_id: string }>();
+    
+    const { results: quizTemplates } = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE type='quiz' ORDER BY title ASC").all<AssessmentTemplate>();
+    const { results: entries } = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE status='completed'").all<AssessmentEntry>();
+    
+    const enrolIds = enrols.map(e => e.id);
+    const relevantEntries = entries.filter(e => enrolIds.includes(e.enrolment_id));
+    
+    let tableHtml = "";
+    if (enrols.length === 0) {
+      tableHtml = "<p>No students found for this class.</p>";
+    } else if (quizTemplates.length === 0) {
+      tableHtml = "<p>No quiz templates found.</p>";
+    } else {
+      let tHead = "<tr><th>Learner ID</th><th>Student</th>";
+      quizTemplates.forEach(t => { tHead += <th> + escapeHtml(t.title) + </th>; });
+      tHead += "</tr>";
+      
+      let tBody = "";
+      enrols.forEach(e => {
+        const studentName = e.student_label || e.learner_id;
+        let row = <tr><td> + escapeHtml(e.learner_id) + </td><td> + escapeHtml(studentName) + </td>;
+        quizTemplates.forEach(t => {
+          // find latest completed entry for this template and enrolment
+          const studentEntries = relevantEntries.filter(ent => ent.enrolment_id === e.id && ent.template_id === t.id);
+          let cellText = "-";
+          if (studentEntries.length > 0) {
+            // sort by created_at desc to get latest
+            studentEntries.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+            const latest = studentEntries[0];
+            cellText = latest.score_earned + " / " + latest.max_score;
+          }
+          row += <td> + escapeHtml(cellText) + </td>;
+        });
+        row += "</tr>";
+        tBody += row;
+      });
+      
+      tableHtml = <div class="table-responsive"><table class="data-table"><thead> + tHead + </thead><tbody> + tBody + </tbody></table></div>;
+    }
+    
+    assessmentsReportHtml = 
+      <section class="panel reports-panel">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Assessments Report</p>
+            <h2>Class </h2>
+          </div>
+        </div>
+        
+      </section>
+    ;
+  }
+
+  const noReportSelected = !trackerTable && !iqafTrackerTable && !assessmentsTrackerTable && !studentTrackerHtml && !assessmentsReportHtml
     ? `<section class="panel reports-panel"><p class="hint">Select a category to begin.</p></section>`
     : "";
 
@@ -2866,10 +2926,10 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                   <option value="learning-walk-tracker" ${reportType === "learning-walk-tracker" ? "selected" : ""}>Learning Walks tracker</option>
                   <option value="iqa-forms-tracker" ${reportType === "iqa-forms-tracker" ? "selected" : ""}>IQA forms tracker</option>
                   <option value="assessments-tracker" ${reportType === "assessments-tracker" ? "selected" : ""}>Assessments tracker</option>
-                  <option value="student-tracker" ${reportType === "student-tracker" ? "selected" : ""}>Student tracker</option>
+                  <option value="assessments" ${reportType === "assessments" ? "selected" : ""}>Assessments</option>`r`n                  <option value="student-tracker" ${reportType === "student-tracker" ? "selected" : ""}>Student tracker</option>
                 </select>
               </label>
-              ${reportType === "student-tracker" ? `
+              ${reportType === "student-tracker" || reportType === "assessments" ? `
               <label>Class ID
                 <input type="text" name="class_id" value="${escapeHtml(classId)}" placeholder="Enter Class ID...">
               </label>
@@ -2923,7 +2983,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
         ${trackerTable}
         ${iqafTrackerTable}
         ${assessmentsTrackerTable}
-        ${studentTrackerHtml}
+        ${studentTrackerHtml}`r`n        ${assessmentsReportHtml}
         ${noReportSelected}
       </section>
     </main>
@@ -10881,7 +10941,16 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
        <main class="dashboard-shell">
          ${renderSidebar(identity, "assessments")}
          <div class="content">
-           ${renderTopbar(identity, tmpl.title)}
+           <header class="topbar">
+          <div style="display:flex;align-items:center;gap:1rem;">
+            $" + "{isStaff ? <button class="small-action" style="width:auto;padding:0.5rem 1rem;cursor:pointer;border:none;" onclick="history.back()">? Back</button> : ''}" + @"
+            <div><p class="eyebrow">Dashboard</p><h1>$" + "{escapeHtml(tmpl.title)}" + @"</h1></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:1rem;">
+            <div class="profile-pill">$" + "{escapeHtml(identity.email)}" + @"</div>
+            <a class="logout-link" href="/logout">Sign out</a>
+          </div>
+        </header>
            <section class="page-section">
              <div style="background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05);padding:2rem;">
                <h1 style="margin-bottom:1rem">${escapeHtml(tmpl.title)}</h1>
@@ -10903,7 +10972,16 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
        <main class="dashboard-shell">
          ${renderSidebar(identity, "assessments")}
          <div class="content">
-           ${renderTopbar(identity, tmpl.title)}
+           <header class="topbar">
+          <div style="display:flex;align-items:center;gap:1rem;">
+            $" + "{isStaff ? <button class="small-action" style="width:auto;padding:0.5rem 1rem;cursor:pointer;border:none;" onclick="history.back()">? Back</button> : ''}" + @"
+            <div><p class="eyebrow">Dashboard</p><h1>$" + "{escapeHtml(tmpl.title)}" + @"</h1></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:1rem;">
+            <div class="profile-pill">$" + "{escapeHtml(identity.email)}" + @"</div>
+            <a class="logout-link" href="/logout">Sign out</a>
+          </div>
+        </header>
            <section class="page-section">
              <div style="background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05);padding:2rem;">
                <h1 style="margin-bottom:1rem">${escapeHtml(tmpl.title)}</h1>
@@ -11004,7 +11082,16 @@ async function renderQuizPageHandler(request: Request, env: Env, identity: Ident
     <main class="dashboard-shell">
       ${renderSidebar(identity, "assessments")}
       <div class="content">
-        ${renderTopbar(identity, tmpl.title)}
+        <header class="topbar">
+          <div style="display:flex;align-items:center;gap:1rem;">
+            $" + "{isStaff ? <button class="small-action" style="width:auto;padding:0.5rem 1rem;cursor:pointer;border:none;" onclick="history.back()">? Back</button> : ''}" + @"
+            <div><p class="eyebrow">Dashboard</p><h1>$" + "{escapeHtml(tmpl.title)}" + @"</h1></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:1rem;">
+            <div class="profile-pill">$" + "{escapeHtml(identity.email)}" + @"</div>
+            <a class="logout-link" href="/logout">Sign out</a>
+          </div>
+        </header>
         <section class="page-section">
           <div style="padding:2rem;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)">
             <h1 style="margin-bottom:.5rem;color:var(--text)">${escapeHtml(tmpl.title)}</h1>
