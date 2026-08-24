@@ -9924,7 +9924,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
 
       <!-- Student Goals (Read-only for staff, with edit/discuss links) -->
       <div class="tracker-section">
-        <h3>📚 Course Learning Objectives</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;"><h3 style="margin:0;">📚 Course Learning Objectives</h3><button type="submit" class="btn btn-primary" style="padding: 4px 12px; font-size: 0.85rem; height: auto;">Save</button></div>
         ${formatObjectiveListHtml(tracker.course_learning_objectives) || "<em class='muted-text'>Not filled in by student yet.</em>"}
         <div style="margin-top:0.75rem">
           <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=clos" style="text-decoration:none;display:inline-block">✏️ Mark Achievements & Discuss</a>
@@ -9940,7 +9940,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
       </div>
 
       <div class="tracker-section">
-        <h3>📋 SMART Goals</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;"><h3 style="margin:0;">📋 SMART Goals</h3><button type="submit" class="btn btn-primary" style="padding: 4px 12px; font-size: 0.85rem; height: auto;">Save</button></div>
         ${formatObjectiveListHtml(tracker.smart_goals) || "<em class='muted-text'>Not filled in by student yet.</em>"}
         <div style="margin-top:0.75rem">
           <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=goals" style="text-decoration:none;display:inline-block">✏️ Mark Achievements & Discuss</a>
@@ -9957,7 +9957,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
 
       <!-- CLOs Achieved Confirmation -->
       <div class="tracker-section">
-        <h3>✅ CLOs Achieved Confirmation</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;"><h3 style="margin:0;">✅ CLOs Achieved Confirmation</h3><button type="submit" class="btn btn-primary" style="padding: 4px 12px; font-size: 0.85rem; height: auto;">Save</button></div>
         <p class="form-hint" style="margin-bottom:0.75rem">Have the Course Learning Objectives been achieved?</p>
         <div style="margin-bottom: 1.25rem;">
           ${(() => {
@@ -9981,7 +9981,7 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
 
       <!-- Destination -->
       <div class="tracker-section">
-        <h3>🚀 Destination & Progression</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;"><h3 style="margin:0;">🚀 Destination & Progression</h3><button type="submit" class="btn btn-primary" style="padding: 4px 12px; font-size: 0.85rem; height: auto;">Save</button></div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Destination</label>
