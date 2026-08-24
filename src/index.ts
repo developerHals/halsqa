@@ -2850,10 +2850,8 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
     let assessmentsReportHtml = "";
   if (reportType === "assessments" && classId) {
     const { results: enrols } = await env.esol_marking_db.prepare(
-      SELECT id, student_label, learner_id, course_instance_id
-      FROM student_enrolments
-      WHERE course_instance_id LIKE ?
-    ).bind(% + classId + %).all<{ id: string, student_label: string, learner_id: string, course_instance_id: string }>();
+      "SELECT id, student_label, learner_id, course_instance_id FROM student_enrolments WHERE course_instance_id LIKE ?"
+    ).bind('%' + classId + '%').all<{ id: string, student_label: string, learner_id: string, course_instance_id: string }>();
     
     const { results: quizTemplates } = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE type='quiz' ORDER BY title ASC").all<AssessmentTemplate>();
     const { results: entries } = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE status='completed'").all<AssessmentEntry>();
