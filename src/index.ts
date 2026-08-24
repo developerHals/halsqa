@@ -2759,7 +2759,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
   let studentTrackerRows: any[] = [];
   if (reportType === "student-tracker" && classId) {
     const res = await env.esol_marking_db.prepare(`
-      SELECT e.student_label, e.course_instance_id, t.tailored_purpose, t.tailored_outcomes, t.clos_status, t.goals_status, t.destination_data, t.course_learning_objectives, t.smart_goals
+      SELECT e.student_label, e.course_instance_id, t.tailored_purpose, t.tailored_outcomes, t.clos_status, t.goals_status, t.destination_type, t.course_learning_objectives, t.smart_goals
       FROM student_enrolments e
       JOIN student_trackers t ON e.id = t.enrolment_id
       WHERE e.course_instance_id LIKE ?
@@ -2834,7 +2834,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                         <td>${escapeHtml(outcomesMap[row.tailored_outcomes] || row.tailored_outcomes || "Not set")}</td>
                         <td>${escapeHtml(closStatusText)} (${closAchieved}/${closTotal})</td>
                         <td>${escapeHtml(goalsStatusText)} (${goalsAchieved}/${goalsTotal})</td>
-                        <td>${escapeHtml(row.destination_data || "Not set")}</td>
+                        <td>${escapeHtml(row.destination_type || "Not set")}</td>
                       </tr>
                     `;
                   }).join("")
