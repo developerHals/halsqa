@@ -2741,19 +2741,6 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
       </section>`
     : "";
 
-  const assessmentsTrackerTable = reportType === "all" || reportType === "assessments-tracker"
-    ? `
-      <section class="panel reports-panel">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Tracker</p>
-            <h2>Assessments Tracker</h2>
-          </div>
-        </div>
-        <p class="hint">Assessments tracker is coming soon.</p>
-      </section>`
-    : "";
-
   let studentTrackerRows: any[] = [];
   if (reportType === "student-tracker" && classId) {
     const res = await env.esol_marking_db.prepare(`
@@ -2851,7 +2838,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
       "SELECT id, student_label, learner_id, course_instance_id FROM student_enrolments WHERE course_instance_id LIKE ?"
     ).bind('%' + classId + '%').all<{ id: string, student_label: string, learner_id: string, course_instance_id: string }>();
     
-    const { results: quizTemplates } = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE type='quiz' ORDER BY title ASC").all<AssessmentTemplate>();
+    const { results: quizTemplates } = await env.esol_marking_db.prepare("SELECT * FROM assessment_templates WHERE template_type='quiz' ORDER BY title ASC").all<AssessmentTemplate>();
     const { results: entries } = await env.esol_marking_db.prepare("SELECT * FROM assessment_entries WHERE status='completed'").all<AssessmentEntry>();
     
     const enrolIds = enrols.map(e => e.id);
@@ -2893,7 +2880,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
     assessmentsReportHtml = '<section class="panel reports-panel"><div class="section-header"><div><p class="eyebrow">Assessments Report</p><h2>Class ' + escapeHtml(classId) + '</h2></div></div>' + tableHtml + '</section>';
   }
 
-  const noReportSelected = !trackerTable && !iqafTrackerTable && !assessmentsTrackerTable && !studentTrackerHtml && !assessmentsReportHtml
+  const noReportSelected = !trackerTable && !iqafTrackerTable && !studentTrackerHtml && !assessmentsReportHtml
     ? `<section class="panel reports-panel"><p class="hint">Select a category to begin.</p></section>`
     : "";
 
@@ -2911,8 +2898,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                   <option value="all" ${reportType === "all" ? "selected" : ""}>All</option>
                   <option value="learning-walk-tracker" ${reportType === "learning-walk-tracker" ? "selected" : ""}>Learning Walks tracker</option>
                   <option value="iqa-forms-tracker" ${reportType === "iqa-forms-tracker" ? "selected" : ""}>IQA forms tracker</option>
-                  <option value="assessments-tracker" ${reportType === "assessments-tracker" ? "selected" : ""}>Assessments tracker</option>
-                  <option value="assessments" ${reportType === "assessments" ? "selected" : ""}>Assessments</option><option value="student-tracker" ${reportType === "student-tracker" ? "selected" : ""}>Student tracker</option>
+                  <option value="assessments" ${reportType === "assessments" ? "selected" : ""}>Assessments tracker</option><option value="student-tracker" ${reportType === "student-tracker" ? "selected" : ""}>Student tracker</option>
                 </select>
               </label>
               ${reportType === "student-tracker" || reportType === "assessments" ? `
@@ -2930,7 +2916,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                     ? templates.map((t) => `<option value="${t.id}" ${rawTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")
                     : reportType === "iqa-forms-tracker"
                     ? iqafTemplates.map((t) => `<option value="${t.id}" ${rawTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")
-                    : reportType === "assessments-tracker"
+                    : reportType === "assessments"
                     ? `<option value="" disabled>No templates yet</option>`
                     : `${templates.length ? `<optgroup label="Learning Walks">${templates.map((t) => `<option value="${t.id}" ${rawTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")}</optgroup>` : ""}${iqafTemplates.length ? `<optgroup label="IQA Forms">${iqafTemplates.map((t) => `<option value="${t.id}" ${rawTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")}</optgroup>` : ""}`
                   }
@@ -2968,7 +2954,6 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
         </section>
         ${trackerTable}
         ${iqafTrackerTable}
-        ${assessmentsTrackerTable}
         ${studentTrackerHtml}
         ${assessmentsReportHtml}
         ${noReportSelected}
