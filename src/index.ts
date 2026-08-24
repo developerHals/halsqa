@@ -8133,13 +8133,21 @@ async function renderTrackerPageHandler(request: Request, env: Env, identity: Id
 
     const rCourses = await env.esol_marking_db.prepare("SELECT DISTINCT course_instance_id, course_title FROM student_enrolments WHERE course_instance_id IS NOT NULL AND course_instance_id != '' ORDER BY course_title ASC").all<{course_instance_id: string, course_title: string}>();
     const allCourses = rCourses.results;
-    const courseInstanceId = url.searchParams.get("courseId") ?? "";
+    let courseInstanceId = url.searchParams.get("courseId") ?? "";
     const studentEnrolId = url.searchParams.get("enrolId") ?? "";
     let enrolments: StudentEnrolment[] = [];
     let trackers: StudentTracker[] = [];
     let selectedTracker: StudentTracker | null = null;
     let selectedEnrolment: StudentEnrolment | null = null;
     let comments: AssessmentComment[] = [];
+
+    if (studentEnrolId && !courseInstanceId) {
+      selectedEnrolment = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE id=?").bind(studentEnrolId).first<StudentEnrolment>();
+      if (selectedEnrolment) {
+        courseInstanceId = selectedEnrolment.course_instance_id;
+      }
+    }
+
     if (courseInstanceId) {
       const r1 = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE course_instance_id=? ORDER BY student_label ASC").bind(courseInstanceId).all<StudentEnrolment>();
       enrolments = r1.results;
@@ -8148,7 +8156,9 @@ async function renderTrackerPageHandler(request: Request, env: Env, identity: Id
     }
     if (studentEnrolId) {
       selectedTracker = trackers.find(t => t.enrolment_id === studentEnrolId) || await env.esol_marking_db.prepare("SELECT * FROM student_trackers WHERE enrolment_id=?").bind(studentEnrolId).first<StudentTracker>();
-      selectedEnrolment = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE id=?").bind(studentEnrolId).first<StudentEnrolment>();
+      if (!selectedEnrolment) {
+        selectedEnrolment = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE id=?").bind(studentEnrolId).first<StudentEnrolment>();
+      }
       const r3 = await env.esol_marking_db.prepare("SELECT * FROM assessment_comments WHERE entity_id=? AND entity_type='tracker' ORDER BY created_at ASC").bind(studentEnrolId).all<AssessmentComment>();
       comments = r3.results;
     }
@@ -8197,7 +8207,7 @@ function formatObjectiveListHtml(jsonStr: string | null): string {
         ${list.map((item: any) => `
           <li style="margin-bottom:0.25rem;${item.achieved === true || item.achieved === "true" ? "text-decoration:line-through;color:var(--muted)" : ""}">
             ${escapeHtml(item.text)}
-            ${item.achieved === true || item.achieved === "true" ? " <span style='font-size:0.75rem;color:var(--success);font-weight:600'>(Achieved)</span>" : ""}
+            ${item.achieved === true || item.achieved === "true" ? " <span style='font-size:0.75rem;color:var(--success);font-weight:700'>✅ (Achieved)</span>" : ""}
           </li>
         `).join("")}
       </ul>`;
@@ -8567,79 +8577,165 @@ OTH4: Not known.`;
 
   if (tile === "clos") {
     const list = JSON.parse(tracker?.course_learning_objectives || "[]");
+
     if (isStudent) {
-      formHtml = `
-        <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=clos">
-          <p class="muted-text" style="margin-bottom:1.5rem">Enter your course learning objectives below. You can add new learning objectives at any stage.</p>
-          ${isLocked ? `
-            <div class="alert alert-info" style="margin-bottom:1.5rem;">
-              <span>You have previously submitted learning objectives. You can edit existing ones or click <strong>Add new</strong> below to add new objectives for the next stage.</span>
+      if (list.length > 0) {
+        formHtml = `
+          <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=clos">
+            <div class="alert alert-info" style="margin-bottom:1.5rem; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; border-radius:8px; padding:1rem;">
+              <strong>Course Learning Objectives</strong>
+              <p style="margin:0.25rem 0 0;font-size:0.9rem">Review and edit your learning objectives below. Achieved objectives marked by your assessor cannot be edited.</p>
             </div>
-          ` : ""}
-          <div id="objectives-container"></div>
-          <div style="margin-top:1rem; display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
-            <button type="button" id="add-clo-btn" class="btn btn-secondary" onclick="addObjectiveField('','')" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;">➕ Add new</button>
-          </div>
-          
-          <div style="margin-top:2rem; display:flex; gap:1rem;">
-            <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
-            <button type="submit" name="action" value="save" class="btn btn-primary">${isLocked ? "Save Changes" : "Save"}</button>
-          </div>
-        </form>
-      `;
-      pageScript = `
-        <script>
-          const list = ${JSON.stringify(list)};
-          function addObjectiveField(id = "", val = "") {
-            const container = document.getElementById('objectives-container');
-            const div = document.createElement('div');
-            div.style = "display:flex; gap:0.75rem; align-items:center; margin-bottom:0.75rem;";
+
+            <div style="margin-bottom:1.5rem;">
+              <h4 style="margin:0 0 0.75rem; font-size:1rem; font-weight:700; color:#334155;">Your Learning Objectives (${list.length})</h4>
+              <div style="display:flex; flex-direction:column; gap:0.75rem;">
+                ${list.map((item: any, idx: number) => {
+                  const isAchieved = item.achieved === true || item.achieved === "true";
+                  if (isAchieved) {
+                    return `
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.75rem 1rem; border:1px solid #bbf7d0; border-radius:8px; background:#f0fdf4;">
+                        <div style="display:flex; align-items:center; gap:0.75rem; flex:1;">
+                          <span style="font-weight:700; color:#166534; font-size:0.875rem; min-width:24px;">#${idx + 1}</span>
+                          <span style="font-size:0.9375rem; font-weight:500; color:#15803d; text-decoration:line-through;">${escapeHtml(item.text)}</span>
+                          <input type="hidden" name="existing_ids[]" value="${escapeHtml(item.id)}">
+                          <input type="hidden" name="existing_text_${escapeHtml(item.id)}" value="${escapeHtml(item.text)}">
+                        </div>
+                        <div>
+                          <span style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:0.75rem;padding:0.3rem 0.65rem;border-radius:6px;font-weight:700;display:inline-flex;align-items:center;gap:0.25rem;">✅ Achieved</span>
+                        </div>
+                      </div>
+                    `;
+                  } else {
+                    return `
+                      <div style="display:flex; align-items:center; gap:0.75rem; padding:0.5rem 0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                        <span style="font-weight:700; color:#64748b; font-size:0.875rem; min-width:24px; text-align:center;">#${idx + 1}</span>
+                        <input type="hidden" name="existing_ids[]" value="${escapeHtml(item.id)}">
+                        <input type="text" name="existing_text_${escapeHtml(item.id)}" value="${escapeHtml(item.text)}" class="form-input" style="flex:1;" required>
+                        <span style="background:#f1f5f9;color:#475569;font-size:0.75rem;padding:0.3rem 0.65rem;border-radius:6px;font-weight:600;white-space:nowrap;">⏳ In Progress</span>
+                      </div>
+                    `;
+                  }
+                }).join("")}
+              </div>
+            </div>
+
+            <div style="border-top:2px solid #e2e8f0; padding-top:1.5rem;">
+              <h4 style="margin:0 0 0.5rem; font-size:1rem; font-weight:700; color:#0f172a;">➕ Add New Learning Objectives</h4>
+              <p class="muted-text" style="margin-bottom:1rem; font-size:0.875rem;">Enter any additional learning objectives below.</p>
+              
+              <div id="new-objectives-container"></div>
+              
+              <div style="margin-top:0.75rem; display:flex; gap:0.75rem; align-items:center;">
+                <button type="button" id="add-clo-btn" class="btn btn-secondary" onclick="addNewObjectiveField()" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;">➕ Add new</button>
+              </div>
+              
+              <div style="margin-top:1.75rem; display:flex; gap:1rem;">
+                <button type="submit" name="action" value="save" class="btn btn-primary">Save & Submit</button>
+              </div>
+            </div>
+          </form>
+        `;
+        pageScript = `
+          <script>
+            function addNewObjectiveField() {
+              const container = document.getElementById('new-objectives-container');
+              const div = document.createElement('div');
+              div.style = "display:flex; gap:0.75rem; align-items:center; margin-bottom:0.75rem;";
+
+              const txt = document.createElement('input');
+              txt.type = 'text';
+              txt.name = 'new_objective_texts[]';
+              txt.className = 'form-input';
+              txt.style = 'flex:1;';
+              txt.placeholder = 'e.g. Pass Entry 3 Speaking Assessment';
+              txt.required = true;
+              div.appendChild(txt);
+
+              const del = document.createElement('button');
+              del.type = 'button';
+              del.className = 'btn btn-danger';
+              del.innerHTML = '🗑️';
+              del.title = 'Remove';
+              del.onclick = () => div.remove();
+              div.appendChild(del);
+
+              container.appendChild(div);
+              txt.focus();
+            }
+          </script>
+        `;
+      } else {
+        // Initial submission
+        formHtml = `
+          <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=clos">
+            <p class="muted-text" style="margin-bottom:1.5rem">Enter your course learning objectives below. You can add multiple objectives.</p>
+            <div id="objectives-container"></div>
+            <div style="margin-top:1rem; display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+              <button type="button" id="add-clo-btn" class="btn btn-secondary" onclick="addObjectiveField('','')" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;">➕ Add learning objective</button>
+            </div>
             
-            const idInput = document.createElement('input');
-            idInput.type = 'hidden';
-            idInput.name = 'objective_ids[]';
-            idInput.value = id;
-            div.appendChild(idInput);
+            <div style="margin-top:2rem; display:flex; gap:1rem;">
+              <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+              <button type="submit" name="action" value="save" class="btn btn-primary">Save & Submit</button>
+            </div>
+          </form>
+        `;
+        pageScript = `
+          <script>
+            const list = ${JSON.stringify(list)};
+            function addObjectiveField(id = "", val = "") {
+              const container = document.getElementById('objectives-container');
+              const div = document.createElement('div');
+              div.style = "display:flex; gap:0.75rem; align-items:center; margin-bottom:0.75rem;";
+              
+              const idInput = document.createElement('input');
+              idInput.type = 'hidden';
+              idInput.name = 'objective_ids[]';
+              idInput.value = id;
+              div.appendChild(idInput);
 
-            const txt = document.createElement('input');
-            txt.type = 'text';
-            txt.name = 'objective_texts[]';
-            txt.value = val;
-            txt.className = 'form-input';
-            txt.style = 'flex:1;';
-            txt.placeholder = 'e.g. Improve speaking in daily life';
-            txt.required = true;
-            div.appendChild(txt);
+              const txt = document.createElement('input');
+              txt.type = 'text';
+              txt.name = 'objective_texts[]';
+              txt.value = val;
+              txt.className = 'form-input';
+              txt.style = 'flex:1;';
+              txt.placeholder = 'e.g. Improve speaking in daily life';
+              txt.required = true;
+              div.appendChild(txt);
 
-            const del = document.createElement('button');
-            del.type = 'button';
-            del.className = 'btn btn-danger';
-            del.innerHTML = '🗑️';
-            del.title = 'Remove';
-            del.onclick = () => div.remove();
-            div.appendChild(del);
+              const del = document.createElement('button');
+              del.type = 'button';
+              del.className = 'btn btn-danger';
+              del.innerHTML = '🗑️';
+              del.title = 'Remove';
+              del.onclick = () => div.remove();
+              div.appendChild(del);
 
-            container.appendChild(div);
-            if (!id && !val) txt.focus();
-          }
-          if (list.length === 0) {
-            addObjectiveField("", "");
-          } else {
-            list.forEach(item => addObjectiveField(item.id, item.text));
-          }
-        </script>
-      `;
+              container.appendChild(div);
+              if (!id && !val) txt.focus();
+            }
+            if (list.length === 0) {
+              addObjectiveField("", "");
+            } else {
+              list.forEach(item => addObjectiveField(item.id, item.text));
+            }
+          </script>
+        `;
+      }
     } else {
+      // Staff view: mark achievements on all objectives
       formHtml = `
         <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=clos">
-          <p class="muted-text" style="margin-bottom:1.5rem">Check the objectives achieved by this student:</p>
+          <p class="muted-text" style="margin-bottom:1.5rem">Check the Course Learning Objectives achieved by this student:</p>
           <div style="margin-bottom:1.5rem">
             ${list.length > 0 ? list.map((item: any, idx: number) => `
-              <div style="display:flex; align-items:center; gap:1rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:0.75rem; background:#f8fafc;">
-                <span style="font-weight:600;min-width:24px">#${idx+1}</span>
-                <span style="flex:1">${escapeHtml(item.text)}</span>
-                <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:600">
-                  <input type="checkbox" name="achieved_${idx}" value="true" ${item.achieved ? "checked" : ""} style="width:1.2rem; height:1.2rem; accent-color:var(--primary);">
+              <div style="display:flex; align-items:center; gap:1rem; padding:0.75rem 1rem; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:0.75rem; background:#f8fafc;">
+                <span style="font-weight:700;min-width:24px;color:#64748b">#${idx+1}</span>
+                <span style="flex:1;font-weight:500">${escapeHtml(item.text)}</span>
+                <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:600; user-select:none;">
+                  <input type="checkbox" name="achieved_${escapeHtml(item.id)}" value="true" ${item.achieved === true || item.achieved === "true" ? "checked" : ""} style="width:1.2rem; height:1.2rem; accent-color:var(--primary);">
                   Achieved
                 </label>
               </div>
@@ -8671,85 +8767,173 @@ OTH4: Not known.`;
     `;
   } else if (tile === "goals") {
     const list = JSON.parse(tracker?.smart_goals || "[]");
+
     if (isStudent) {
-      formHtml = `
-        <div class="alert alert-info" style="margin-bottom:1.5rem; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; border-radius:8px; padding:1rem">
-          <h4 style="margin:0 0 0.5rem 0;font-size:1.05rem">What is a SMART Goal?</h4>
-          <p style="margin:0;font-size:0.9rem;line-height:1.4">
-            A SMART goal is one that is <strong>Specific</strong> (clear and defined), <strong>Measurable</strong> (can track progress), <strong>Achievable</strong> (realistic to complete), <strong>Relevant</strong> (aligns with your needs), and <strong>Time-bound</strong> (has a target date).
-          </p>
-        </div>
-        <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=goals">
-          <p class="muted-text" style="margin-bottom:1.5rem">Enter your personal goals for doing the course. You can add new SMART goals at any stage.</p>
-          ${isLocked ? `
-            <div class="alert alert-info" style="margin-bottom:1.5rem;">
-              <span>You have previously submitted SMART goals. You can edit existing ones or click <strong>Add new</strong> below to add new goals for the next stage.</span>
+      if (list.length > 0) {
+        formHtml = `
+          <div class="alert alert-info" style="margin-bottom:1.5rem; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; border-radius:8px; padding:1rem">
+            <h4 style="margin:0 0 0.5rem 0;font-size:1.05rem">What is a SMART Goal?</h4>
+            <p style="margin:0;font-size:0.9rem;line-height:1.4">
+              A SMART goal is one that is <strong>Specific</strong> (clear and defined), <strong>Measurable</strong> (can track progress), <strong>Achievable</strong> (realistic to complete), <strong>Relevant</strong> (aligns with your needs), and <strong>Time-bound</strong> (has a target date).
+            </p>
+          </div>
+
+          <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=goals">
+            <div style="margin-bottom:1.5rem;">
+              <h4 style="margin:0 0 0.75rem; font-size:1rem; font-weight:700; color:#334155;">Your SMART Goals (${list.length})</h4>
+              <div style="display:flex; flex-direction:column; gap:0.75rem;">
+                ${list.map((item: any, idx: number) => {
+                  const isAchieved = item.achieved === true || item.achieved === "true";
+                  if (isAchieved) {
+                    return `
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.75rem 1rem; border:1px solid #bbf7d0; border-radius:8px; background:#f0fdf4;">
+                        <div style="display:flex; align-items:center; gap:0.75rem; flex:1;">
+                          <span style="font-weight:700; color:#166534; font-size:0.875rem; min-width:24px;">#${idx + 1}</span>
+                          <span style="font-size:0.9375rem; font-weight:500; color:#15803d; text-decoration:line-through;">${escapeHtml(item.text)}</span>
+                          <input type="hidden" name="existing_ids[]" value="${escapeHtml(item.id)}">
+                          <input type="hidden" name="existing_text_${escapeHtml(item.id)}" value="${escapeHtml(item.text)}">
+                        </div>
+                        <div>
+                          <span style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:0.75rem;padding:0.3rem 0.65rem;border-radius:6px;font-weight:700;display:inline-flex;align-items:center;gap:0.25rem;">✅ Achieved</span>
+                        </div>
+                      </div>
+                    `;
+                  } else {
+                    return `
+                      <div style="display:flex; align-items:center; gap:0.75rem; padding:0.5rem 0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                        <span style="font-weight:700; color:#64748b; font-size:0.875rem; min-width:24px; text-align:center;">#${idx + 1}</span>
+                        <input type="hidden" name="existing_ids[]" value="${escapeHtml(item.id)}">
+                        <input type="text" name="existing_text_${escapeHtml(item.id)}" value="${escapeHtml(item.text)}" class="form-input" style="flex:1;" required>
+                        <span style="background:#f1f5f9;color:#475569;font-size:0.75rem;padding:0.3rem 0.65rem;border-radius:6px;font-weight:600;white-space:nowrap;">⏳ In Progress</span>
+                      </div>
+                    `;
+                  }
+                }).join("")}
+              </div>
             </div>
-          ` : ""}
-          <div id="goals-container"></div>
-          <div style="margin-top:1rem; display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
-            <button type="button" id="add-goal-btn" class="btn btn-secondary" onclick="addGoalField('','')" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;">➕ Add new</button>
+
+            <div style="border-top:2px solid #e2e8f0; padding-top:1.5rem;">
+              <h4 style="margin:0 0 0.5rem; font-size:1rem; font-weight:700; color:#0f172a;">➕ Add New SMART Goals</h4>
+              <p class="muted-text" style="margin-bottom:1rem; font-size:0.875rem;">Enter any additional SMART goals below.</p>
+              
+              <div id="new-goals-container"></div>
+              
+              <div style="margin-top:0.75rem; display:flex; gap:0.75rem; align-items:center;">
+                <button type="button" id="add-goal-btn" class="btn btn-secondary" onclick="addNewGoalField()" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;">➕ Add new</button>
+              </div>
+              
+              <div style="margin-top:1.75rem; display:flex; gap:1rem;">
+                <button type="submit" name="action" value="save" class="btn btn-primary">Save & Submit</button>
+              </div>
+            </div>
+          </form>
+        `;
+        pageScript = `
+          <script>
+            function addNewGoalField() {
+              const container = document.getElementById('new-goals-container');
+              const div = document.createElement('div');
+              div.style = "display:flex; gap:0.75rem; align-items:center; margin-bottom:0.75rem;";
+
+              const txt = document.createElement('input');
+              txt.type = 'text';
+              txt.name = 'new_goal_texts[]';
+              txt.className = 'form-input';
+              txt.style = 'flex:1;';
+              txt.placeholder = 'e.g. S: Write a CV M: Done A: Yes R: Work TB: Term 2';
+              txt.required = true;
+              div.appendChild(txt);
+
+              const del = document.createElement('button');
+              del.type = 'button';
+              del.className = 'btn btn-danger';
+              del.innerHTML = '🗑️';
+              del.title = 'Remove';
+              del.onclick = () => div.remove();
+              div.appendChild(del);
+
+              container.appendChild(div);
+              txt.focus();
+            }
+          </script>
+        `;
+      } else {
+        // Initial submission
+        formHtml = `
+          <div class="alert alert-info" style="margin-bottom:1.5rem; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; border-radius:8px; padding:1rem">
+            <h4 style="margin:0 0 0.5rem 0;font-size:1.05rem">What is a SMART Goal?</h4>
+            <p style="margin:0;font-size:0.9rem;line-height:1.4">
+              A SMART goal is one that is <strong>Specific</strong> (clear and defined), <strong>Measurable</strong> (can track progress), <strong>Achievable</strong> (realistic to complete), <strong>Relevant</strong> (aligns with your needs), and <strong>Time-bound</strong> (has a target date).
+            </p>
           </div>
-          
-          <div style="margin-top:2rem; display:flex; gap:1rem;">
-            <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
-            <button type="submit" name="action" value="save" class="btn btn-primary">${isLocked ? "Save Changes" : "Save"}</button>
-          </div>
-        </form>
-      `;
-      pageScript = `
-        <script>
-          const list = ${JSON.stringify(list)};
-          function addGoalField(id = "", val = "") {
-            const container = document.getElementById('goals-container');
-            const div = document.createElement('div');
-            div.style = "display:flex; gap:0.75rem; align-items:center; margin-bottom:0.75rem;";
+          <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=goals">
+            <p class="muted-text" style="margin-bottom:1.5rem">Enter your personal goals for doing the course. These goals must be SMART.</p>
+            <div id="goals-container"></div>
+            <div style="margin-top:1rem; display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+              <button type="button" id="add-goal-btn" class="btn btn-secondary" onclick="addGoalField('','')" style="display:inline-flex; align-items:center; gap:0.4rem; font-weight:600;">➕ Add SMART Goal</button>
+            </div>
             
-            const idInput = document.createElement('input');
-            idInput.type = 'hidden';
-            idInput.name = 'goal_ids[]';
-            idInput.value = id;
-            div.appendChild(idInput);
+            <div style="margin-top:2rem; display:flex; gap:1rem;">
+              <button type="submit" name="action" value="draft" class="btn btn-secondary">Save as draft</button>
+              <button type="submit" name="action" value="save" class="btn btn-primary">Save & Submit</button>
+            </div>
+          </form>
+        `;
+        pageScript = `
+          <script>
+            const list = ${JSON.stringify(list)};
+            function addGoalField(id = "", val = "") {
+              const container = document.getElementById('goals-container');
+              const div = document.createElement('div');
+              div.style = "display:flex; gap:0.75rem; align-items:center; margin-bottom:0.75rem;";
+              
+              const idInput = document.createElement('input');
+              idInput.type = 'hidden';
+              idInput.name = 'goal_ids[]';
+              idInput.value = id;
+              div.appendChild(idInput);
 
-            const txt = document.createElement('input');
-            txt.type = 'text';
-            txt.name = 'goal_texts[]';
-            txt.value = val;
-            txt.className = 'form-input';
-            txt.style = 'flex:1;';
-            txt.placeholder = 'e.g. S: Pass reading test M: Yes A: Yes R: Yes TB: Term 2';
-            txt.required = true;
-            div.appendChild(txt);
+              const txt = document.createElement('input');
+              txt.type = 'text';
+              txt.name = 'goal_texts[]';
+              txt.value = val;
+              txt.className = 'form-input';
+              txt.style = 'flex:1;';
+              txt.placeholder = 'e.g. S: Pass reading test M: Yes A: Yes R: Yes TB: Term 2';
+              txt.required = true;
+              div.appendChild(txt);
 
-            const del = document.createElement('button');
-            del.type = 'button';
-            del.className = 'btn btn-danger';
-            del.innerHTML = '🗑️';
-            del.title = 'Remove';
-            del.onclick = () => div.remove();
-            div.appendChild(del);
+              const del = document.createElement('button');
+              del.type = 'button';
+              del.className = 'btn btn-danger';
+              del.innerHTML = '🗑️';
+              del.title = 'Remove';
+              del.onclick = () => div.remove();
+              div.appendChild(del);
 
-            container.appendChild(div);
-            if (!id && !val) txt.focus();
-          }
-          if (list.length === 0) {
-            addGoalField("", "");
-          } else {
-            list.forEach(item => addGoalField(item.id, item.text));
-          }
-        </script>
-      `;
+              container.appendChild(div);
+              if (!id && !val) txt.focus();
+            }
+            if (list.length === 0) {
+              addGoalField("", "");
+            } else {
+              list.forEach(item => addGoalField(item.id, item.text));
+            }
+          </script>
+        `;
+      }
     } else {
+      // Staff view: mark achievements on all SMART goals
       formHtml = `
         <form method="POST" action="/tracker/edit?enrolId=${enrolmentId}&tile=goals">
           <p class="muted-text" style="margin-bottom:1.5rem">Check the SMART goals achieved by this student:</p>
           <div style="margin-bottom:1.5rem">
             ${list.length > 0 ? list.map((item: any, idx: number) => `
-              <div style="display:flex; align-items:center; gap:1rem; padding:0.75rem; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:0.75rem; background:#f8fafc;">
-                <span style="font-weight:600;min-width:24px">#${idx+1}</span>
-                <span style="flex:1">${escapeHtml(item.text)}</span>
-                <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:600">
-                  <input type="checkbox" name="achieved_${idx}" value="true" ${item.achieved ? "checked" : ""} style="width:1.2rem; height:1.2rem; accent-color:var(--primary);">
+              <div style="display:flex; align-items:center; gap:1rem; padding:0.75rem 1rem; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:0.75rem; background:#f8fafc;">
+                <span style="font-weight:700;min-width:24px;color:#64748b">#${idx+1}</span>
+                <span style="flex:1;font-weight:500">${escapeHtml(item.text)}</span>
+                <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:600; user-select:none;">
+                  <input type="checkbox" name="achieved_${escapeHtml(item.id)}" value="true" ${item.achieved === true || item.achieved === "true" ? "checked" : ""} style="width:1.2rem; height:1.2rem; accent-color:var(--primary);">
                   Achieved
                 </label>
               </div>
@@ -9273,21 +9457,48 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
     const statusVal = action === "save" ? "completed" : "draft";
 
     if (tile === "clos") {
-      const existingList = JSON.parse(tracker.course_learning_objectives || "[]");
+      const existingList: Array<{ id: string; text: string; achieved: boolean }> = JSON.parse(tracker.course_learning_objectives || "[]");
       const newIds = formData.getAll("objective_ids[]") as string[];
-      const newTexts = formData.getAll("objective_texts[]") as string[];
-      const newList = newTexts.map((txt, index) => {
-        const id = newIds[index] || generateId();
-        const match = existingList.find((x: any) => x.id === id);
-        return {
-          id: id,
+      const initTexts = formData.getAll("objective_texts[]") as string[];
+      const newTexts = (formData.getAll("new_objective_texts[]") as string[]).concat(formData.getAll("new_texts[]") as string[]);
+
+      let finalList: Array<{ id: string; text: string; achieved: boolean }> = [];
+
+      if (existingList.length === 0 && initTexts.length > 0) {
+        finalList = initTexts.map((txt, index) => ({
+          id: newIds[index] || generateId(),
           text: txt.trim(),
-          achieved: match ? (match.achieved === true || match.achieved === "true" || match.achieved === 1) : false
-        };
-      });
+          achieved: false
+        })).filter(item => item.text.length > 0);
+      } else {
+        const updatedExisting = existingList.map(item => {
+          const isAchieved = item.achieved === true || (item.achieved as any) === "true";
+          if (isAchieved) {
+            return { id: item.id, text: item.text, achieved: true };
+          }
+          const formText = (formData.get(`existing_text_${item.id}`) as string)?.trim();
+          return {
+            id: item.id,
+            text: formText && formText.length > 0 ? formText : item.text,
+            achieved: false
+          };
+        });
+
+        const validNewItems = newTexts
+          .map(t => t.trim())
+          .filter(t => t.length > 0)
+          .map(txt => ({
+            id: generateId(),
+            text: txt,
+            achieved: false
+          }));
+
+        finalList = [...updatedExisting, ...validNewItems];
+      }
+
       await env.esol_marking_db.prepare(`
         UPDATE student_trackers SET course_learning_objectives=?, clos_status=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
-      `).bind(JSON.stringify(newList), statusVal, enrolmentId).run();
+      `).bind(JSON.stringify(finalList), statusVal, enrolmentId).run();
 
     } else if (tile === "purpose") {
       const tailoredPurpose = formData.get("tailored_purpose") as string;
@@ -9296,21 +9507,48 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
       `).bind(tailoredPurpose, statusVal, enrolmentId).run();
 
     } else if (tile === "goals") {
-      const existingList = JSON.parse(tracker.smart_goals || "[]");
+      const existingList: Array<{ id: string; text: string; achieved: boolean }> = JSON.parse(tracker.smart_goals || "[]");
       const newIds = formData.getAll("goal_ids[]") as string[];
-      const newTexts = formData.getAll("goal_texts[]") as string[];
-      const newList = newTexts.map((txt, index) => {
-        const id = newIds[index] || generateId();
-        const match = existingList.find((x: any) => x.id === id);
-        return {
-          id: id,
+      const initTexts = formData.getAll("goal_texts[]") as string[];
+      const newTexts = (formData.getAll("new_goal_texts[]") as string[]).concat(formData.getAll("new_texts[]") as string[]);
+
+      let finalList: Array<{ id: string; text: string; achieved: boolean }> = [];
+
+      if (existingList.length === 0 && initTexts.length > 0) {
+        finalList = initTexts.map((txt, index) => ({
+          id: newIds[index] || generateId(),
           text: txt.trim(),
-          achieved: match ? (match.achieved === true || match.achieved === "true" || match.achieved === 1) : false
-        };
-      });
+          achieved: false
+        })).filter(item => item.text.length > 0);
+      } else {
+        const updatedExisting = existingList.map(item => {
+          const isAchieved = item.achieved === true || (item.achieved as any) === "true";
+          if (isAchieved) {
+            return { id: item.id, text: item.text, achieved: true };
+          }
+          const formText = (formData.get(`existing_text_${item.id}`) as string)?.trim();
+          return {
+            id: item.id,
+            text: formText && formText.length > 0 ? formText : item.text,
+            achieved: false
+          };
+        });
+
+        const validNewItems = newTexts
+          .map(t => t.trim())
+          .filter(t => t.length > 0)
+          .map(txt => ({
+            id: generateId(),
+            text: txt,
+            achieved: false
+          }));
+
+        finalList = [...updatedExisting, ...validNewItems];
+      }
+
       await env.esol_marking_db.prepare(`
         UPDATE student_trackers SET smart_goals=?, goals_status=?, updated_at=CURRENT_TIMESTAMP WHERE enrolment_id=?
-      `).bind(JSON.stringify(newList), statusVal, enrolmentId).run();
+      `).bind(JSON.stringify(finalList), statusVal, enrolmentId).run();
 
     } else if (tile === "outcomes") {
       const tailoredOutcomes = formData.get("tailored_outcomes") as string;
@@ -9348,7 +9586,7 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
       const updated = list.map((item: any, idx: number) => {
         return {
           ...item,
-          achieved: formData.get(`achieved_${idx}`) === "true"
+          achieved: formData.get(`achieved_${item.id}`) === "true" || formData.get(`achieved_${idx}`) === "true"
         };
       });
       await env.esol_marking_db.prepare(`
@@ -9360,7 +9598,7 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
       const updated = list.map((item: any, idx: number) => {
         return {
           ...item,
-          achieved: formData.get(`achieved_${idx}`) === "true"
+          achieved: formData.get(`achieved_${item.id}`) === "true" || formData.get(`achieved_${idx}`) === "true"
         };
       });
       await env.esol_marking_db.prepare(`
@@ -9369,6 +9607,11 @@ async function saveTrackerEditHandler(request: Request, env: Env, identity: Iden
     }
   }
 
+  const isStaff = isStaffRole(identity.user.role);
+  const enrol = await env.esol_marking_db.prepare("SELECT * FROM student_enrolments WHERE id=?").bind(enrolmentId).first<StudentEnrolment>();
+  if (isStaff && enrol?.course_instance_id) {
+    return Response.redirect(`${url.origin}/tracker?courseId=${encodeURIComponent(enrol.course_instance_id)}&enrolId=${encodeURIComponent(enrolmentId)}`, 302);
+  }
   return Response.redirect(`${url.origin}/tracker?enrolId=${enrolmentId}`, 302);
 }
 
