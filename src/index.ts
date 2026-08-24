@@ -7963,18 +7963,18 @@ function renderStudentAssessmentsPage(identity: Identity, templates: AssessmentT
           // Load questions for this template
           return fetch('/api/assessment/templates/' + encodeURIComponent(templateId) + '?questions=1');
         })
-        .catch(() => loadQuestionsDirectly(templateId, enrolmentId, title, isDone));
-      loadQuestionsDirectly(templateId, enrolmentId, title, isDone);
+        .catch(() => loadQuestionsDirectly(templateId, enrolmentId, title, isDone, entryId, isRetake));
+      loadQuestionsDirectly(templateId, enrolmentId, title, isDone, entryId, isRetake);
     }
-    function loadQuestionsDirectly(templateId, enrolmentId, title, isDone) {
+    function loadQuestionsDirectly(templateId, enrolmentId, title, isDone, entryId, isRetake) {
       // For now show a placeholder - full quiz player loaded server-side via redirect
       const body = document.getElementById('quizModalBody');
       const footer = document.getElementById('quizModalFooter');
-      if (isDone) {
+      if (isDone && !isRetake && !entryId) {
         body.innerHTML = '<div class="score-result"><p>You have already completed this assessment.</p><p>Contact your tutor to review your results.</p></div>';
         footer.innerHTML = '<button class="btn btn-secondary" onclick="closeQuizModal()">Close</button>';
       } else {
-        window.location.href = '/assessments/quiz/' + encodeURIComponent(templateId) + '?enrolmentId=' + encodeURIComponent(enrolmentId);
+        let url = '/assessments/quiz/' + encodeURIComponent(templateId) + '?enrolmentId=' + encodeURIComponent(enrolmentId); if (entryId) url += '&entryId=' + encodeURIComponent(entryId); if (isRetake) url += '&retake=1'; window.location.href = url;
       }
     }
     function closeQuizModal() {
