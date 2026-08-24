@@ -9458,22 +9458,6 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
         </div>
       </div>
 
-      <!-- Term Reviews -->
-      ${[1, 2, 3].map(n => `
-      <div class="tracker-section">
-        <h3>📊 Term ${n} Review</h3>
-        <p class="form-hint">Select a RAG status — the date is recorded automatically when you save.</p>
-        ${ragSelector("term" + n + "_rag", (tracker as any)["term" + n + "_rag"])}
-        <div class="form-group" style="margin-top:.75rem">
-          <label class="form-label">Feedback Comments</label>
-          <textarea class="form-input" id="f-t${n}-comments" rows="3">${escapeHtml((tracker as any)["term" + n + "_comments"] ?? "")}</textarea>
-        </div>
-        <div style="margin-top:0.75rem">
-          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=term${n}" style="text-decoration:none;display:inline-block">💬 Discuss Term ${n} Review</a>
-        </div>
-      </div>
-      `).join("")}
-
       <div class="tracker-section">
         <h3>✨ Tailored Learning Outcomes</h3>
         <p>${tracker.tailored_outcomes ? escapeHtml(formatOutcomeType(tracker.tailored_outcomes)) : "<em class='muted-text'>Not filled in by student yet.</em>"}</p>
@@ -9562,6 +9546,22 @@ function renderStaffTrackerPage(identity: Identity, enrolments: StudentEnrolment
           <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=diagnostic" style="text-decoration:none;display:inline-block">💬 Discuss Diagnostic</a>
         </div>
       </div>
+
+      <!-- Term Reviews -->
+      ${[1, 2, 3].map(n => `
+      <div class="tracker-section">
+        <h3>📊 Term ${n} Review</h3>
+        <p class="form-hint">Select a RAG status — the date is recorded automatically when you save.</p>
+        ${ragSelector("term" + n + "_rag", (tracker as any)["term" + n + "_rag"])}
+        <div class="form-group" style="margin-top:.75rem">
+          <label class="form-label">Feedback Comments</label>
+          <textarea class="form-input" id="f-t${n}-comments" rows="3">${escapeHtml((tracker as any)["term" + n + "_comments"] ?? "")}</textarea>
+        </div>
+        <div style="margin-top:0.75rem">
+          <a class="btn btn-secondary" href="/tracker/edit?enrolId=${selectedEnrolment.id}&tile=term${n}" style="text-decoration:none;display:inline-block">💬 Discuss Term ${n} Review</a>
+        </div>
+      </div>
+      `).join("")}
 
       <div style="padding:1rem 0;text-align:right">
         <button class="btn btn-primary" onclick="saveTrackerRecord()">💾 Save All Changes</button>
