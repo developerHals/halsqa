@@ -2914,7 +2914,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                   <option value="learning-walk-tracker" ${reportType === "learning-walk-tracker" ? "selected" : ""}>Learning Walks tracker</option>
                   <option value="iqa-forms-tracker" ${reportType === "iqa-forms-tracker" ? "selected" : ""}>IQA forms tracker</option>
                   <option value="assessments-tracker" ${reportType === "assessments-tracker" ? "selected" : ""}>Assessments tracker</option>
-                  <option value="assessments" ${reportType === "assessments" ? "selected" : ""}>Assessments</option>`r`n                  <option value="student-tracker" ${reportType === "student-tracker" ? "selected" : ""}>Student tracker</option>
+                  <option value="assessments" ${reportType === "assessments" ? "selected" : ""}>Assessments</option><option value="student-tracker" ${reportType === "student-tracker" ? "selected" : ""}>Student tracker</option>
                 </select>
               </label>
               ${reportType === "student-tracker" || reportType === "assessments" ? `
