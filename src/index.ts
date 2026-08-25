@@ -2764,8 +2764,6 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                 <th>Assessor name</th>
                 <th>IQA name</th>
                 <th>IQA date (Submitted by IQA)</th>
-                <th>Actions</th>
-                <th>Action completed date (Submitted by IQA)</th>
                 <th>Assessor date (Marked by assessor)</th>
                 <th>Completed date (Marked as completed by IQA)</th>
               </tr>
@@ -2779,12 +2777,6 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                 let modDate = ans["Moderation date"];
                 let iqaDateStr = isRag ? evalDate : modDate;
                 let iqaDateHtml = iqaDateStr ? formatReportDate(iqaDateStr) : '<span class="empty-cell">—</span>';
-
-                let actionAns = ans["Write here below the action points stating a clear deadline"];
-                let actionHtml = isRag ? 'n/a' : (actionAns ? escapeHtml(actionAns) : '<span class="empty-cell">—</span>');
-                
-                let completionDate = ans["Action points completion date"];
-                let actionCompletedHtml = isRag ? 'n/a' : (completionDate ? formatReportDate(completionDate) : '<span class="empty-cell">—</span>');
                 
                 return `
                 <tr>
@@ -2793,14 +2785,12 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                   <td>${escapeHtml(e.assessor_name || "-")}</td>
                   <td>${escapeHtml(e.iqa_name || "-")}</td>
                   <td>${iqaDateHtml}</td>
-                  <td>${actionHtml}</td>
-                  <td>${actionCompletedHtml}</td>
                   <td>${e.assessor_submitted_at ? `<a href="/iqa-forms/entries/${e.id}">${formatReportDate(e.assessor_submitted_at)}</a>` : '<span class="empty-cell">—</span>'}</td>
                   <td>${e.completed_at ? `<a href="/iqa-forms/entries/${e.id}">${formatReportDate(e.completed_at)}</a>` : '<span class="empty-cell">—</span>'}</td>
                 </tr>
                 `;
               }).join("")}
-              ${sortedEntries.length === 0 ? `<tr><td colspan="9" class="hint" style="text-align: center; padding: 2rem;">No entries found.</td></tr>` : ""}
+              ${sortedEntries.length === 0 ? `<tr><td colspan="7" class="hint" style="text-align: center; padding: 2rem;">No entries found.</td></tr>` : ""}
             </tbody>
           </table>
         </div>
