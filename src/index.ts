@@ -2580,7 +2580,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
 
   const iqafEntriesResult = await env.esol_marking_db
     .prepare(
-      `SELECT e.id, e.template_id, t.title AS template_title, e.allocated_assessor_id, e.assessor_name, e.academic_year, e.planned_date, e.course_name, e.allocated_iqa_id
+      `SELECT e.id, e.template_id, t.title AS template_title, e.allocated_assessor_id, e.assessor_name, e.academic_year, e.planned_date, e.course_id, e.course_name, e.allocated_iqa_id, e.iqa_name, e.status, e.assessor_submitted_at, e.iqa_reviewed_at, e.completed_at
        FROM iqaf_entries e
        JOIN iqaf_templates t ON t.id = e.template_id
        WHERE (? = '' OR e.template_id = ?)
@@ -2599,9 +2599,9 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
       dateTo, dateTo,
       minYear, maxYear
     )
-    .all<{ id: string; allocated_assessor_id: string; assessor_name: string; academic_year: number; planned_date: string }>();
+    .all<{ id: string; allocated_assessor_id: string; assessor_name: string; academic_year: number; planned_date: string; course_id: string; course_name: string; allocated_iqa_id: string; iqa_name: string; status: string; assessor_submitted_at: string; iqa_reviewed_at: string; completed_at: string; }>();
 
-  const iqafObservations = new Map<string, Map<number, { id: string; date: string }[]>>();
+  const iqafObservations = new Map<string, any[]>();
   for (const row of iqafEntriesResult.results || []) {
     let key = row.allocated_assessor_id || "";
     let user = userById.get(key);
@@ -2617,25 +2617,23 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
       teachers.push(t);
       teacherByKey.set(key, t);
     }
-    const teacherMap = iqafObservations.get(key) || new Map<number, { id: string; date: string }[]>();
-    const yearList = teacherMap.get(row.academic_year) || [];
-    yearList.push({ id: row.id, date: row.planned_date });
-    teacherMap.set(row.academic_year, yearList);
-    iqafObservations.set(key, teacherMap);
+    const list = iqafObservations.get(key) || [];
+    list.push(row);
+    iqafObservations.set(key, list);
   }
 
   teachers.sort(sortByRole);
   const displayTeachers = teacherId ? teachers.filter((t) => t.key === teacherId) : teachers;
 
-  const iqafYearMaxCounts: Record<number, number> = {};
-  for (const y of displayYears) {
-    let max = 0;
-    for (const t of displayTeachers) {
-      const count = iqafObservations.get(t.key)?.get(y)?.length || 0;
-      if (count > max) max = count;
-    }
-    iqafYearMaxCounts[y] = Math.max(max, 1);
+  // Sort each teacher's entries from newest to oldest
+  let maxIqafObs = 0;
+  for (const t of displayTeachers) {
+    const list = iqafObservations.get(t.key) || [];
+    list.sort((a, b) => new Date(b.planned_date).getTime() - new Date(a.planned_date).getTime());
+    if (list.length > maxIqafObs) maxIqafObs = list.length;
+    iqafObservations.set(t.key, list);
   }
+  maxIqafObs = Math.max(maxIqafObs, 1);
 
   const trackerTable = reportType === "all" || reportType === "learning-walk-tracker"
     ? `
@@ -2697,41 +2695,26 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
             <p class="eyebrow">Tracker</p>
             <h2>IQA Forms Tracker</h2>
           </div>
-          <div class="year-nav">
-            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear - 1) })}">↵ Previous year</a>
-            <span class="year-label">${anchorYear}</span>
-            <a class="small-action" href="${buildReportUrl(url, { year: String(anchorYear + 1) })}">Next year →</a>
-          </div>
         </div>
         <div class="reports-table-wrap">
           <table class="reports-table">
             <thead>
               <tr>
-                <th class="sticky-col" rowspan="2">Teacher</th>
-                ${displayYears.map((y) => `<th colspan="${iqafYearMaxCounts[y]}" class="year-header">${y}${y === currentYear ? " (current)" : ""}</th>`).join("")}
-              </tr>
-              <tr>
-                ${displayYears.map((y) => Array.from({ length: iqafYearMaxCounts[y] }, (_, i) => `<th>Obs ${i + 1}</th>`).join("")).join("")}
+                <th class="sticky-col">Teacher</th>
+                ${Array.from({ length: maxIqafObs }, (_, i) => `<th>${i + 1}</th>`).join("")}
               </tr>
             </thead>
             <tbody>
               ${displayTeachers
                 .map((t) => {
-                  const teacherObs = iqafObservations.get(t.key) || new Map<number, { id: string; date: string }[]>();
-                  const hasCurrent = (teacherObs.get(currentYear)?.length || 0) > 0;
-                  const highlight = !hasCurrent ? "brand-highlight" : "";
-                  const cells = displayYears
-                    .flatMap((y) => {
-                      const list = teacherObs.get(y) || [];
-                      return Array.from({ length: iqafYearMaxCounts[y] }, (_, i) => {
-                        const obs = list[i];
-                        return obs
-                          ? `<td><a href="/iqa-forms/entries/${obs.id}">${formatReportDate(obs.date)}</a></td>`
-                          : `<td class="empty-cell">—</td>`;
-                      });
-                    })
-                    .join("");
-                  return `<tr class="${highlight}"><td class="sticky-col teacher-name">${escapeHtml(t.email || t.key || "Unknown")}</td>${cells}</tr>`;
+                  const list = iqafObservations.get(t.key) || [];
+                  const cells = Array.from({ length: maxIqafObs }, (_, i) => {
+                    const obs = list[i];
+                    return obs
+                      ? `<td><a href="/iqa-forms/entries/${obs.id}">${formatReportDate(obs.planned_date)}</a></td>`
+                      : `<td class="empty-cell">—</td>`;
+                  }).join("");
+                  return `<tr><td class="sticky-col teacher-name">${escapeHtml(t.email || t.key || "Unknown")}</td>${cells}</tr>`;
                 })
                 .join("")}
             </tbody>
@@ -2740,6 +2723,54 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
         ${displayTeachers.length === 0 ? `<p class="hint">No teachers found.</p>` : ""}
       </section>`
     : "";
+
+  let iqaCourseViewHtml = "";
+  if (reportType === "iqa-course-view") {
+    const sortedEntries = [...(iqafEntriesResult.results || [])].sort((a, b) => new Date(b.planned_date).getTime() - new Date(a.planned_date).getTime());
+    iqaCourseViewHtml = `
+      <section class="panel reports-panel">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Log</p>
+            <h2>IQA Course View</h2>
+          </div>
+        </div>
+        <div class="reports-table-wrap">
+          <table class="reports-table" style="text-align: left;">
+            <thead>
+              <tr>
+                <th>Course ID</th>
+                <th>Course Label</th>
+                <th>Assessor name</th>
+                <th>IQA name</th>
+                <th>IQA date (Submitted by IQA)</th>
+                <th>Actions</th>
+                <th>Action completed date (Submitted by IQA)</th>
+                <th>Assessor date (Marked by assessor)</th>
+                <th>Completed date (Marked as completed by IQA)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sortedEntries.map(e => `
+                <tr>
+                  <td><a href="/iqa-forms/entries/${e.id}" style="color:var(--primary); font-weight: 500;">${escapeHtml(e.course_id || "-")}</a></td>
+                  <td>${escapeHtml(e.course_name || "-")}</td>
+                  <td>${escapeHtml(e.assessor_name || "-")}</td>
+                  <td>${escapeHtml(e.iqa_name || "-")}</td>
+                  <td>${e.iqa_reviewed_at ? `<a href="/iqa-forms/entries/${e.id}">${formatReportDate(e.iqa_reviewed_at)}</a>` : '<span class="empty-cell">—</span>'}</td>
+                  <td><span class="empty-cell">—</span></td>
+                  <td><span class="empty-cell">—</span></td>
+                  <td>${e.assessor_submitted_at ? `<a href="/iqa-forms/entries/${e.id}">${formatReportDate(e.assessor_submitted_at)}</a>` : '<span class="empty-cell">—</span>'}</td>
+                  <td>${e.completed_at ? `<a href="/iqa-forms/entries/${e.id}">${formatReportDate(e.completed_at)}</a>` : '<span class="empty-cell">—</span>'}</td>
+                </tr>
+              `).join("")}
+              ${sortedEntries.length === 0 ? `<tr><td colspan="9" class="hint" style="text-align: center; padding: 2rem;">No entries found.</td></tr>` : ""}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }
 
   let studentTrackerRows: any[] = [];
   if (reportType === "student-tracker" && classId) {
@@ -2880,7 +2911,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
     assessmentsReportHtml = '<section class="panel reports-panel"><div class="section-header"><div><p class="eyebrow">Assessments Report</p><h2>Class ' + escapeHtml(classId) + '</h2></div></div>' + tableHtml + '</section>';
   }
 
-  const noReportSelected = !trackerTable && !iqafTrackerTable && !studentTrackerHtml && !assessmentsReportHtml
+  const noReportSelected = !trackerTable && !iqafTrackerTable && !iqaCourseViewHtml && !studentTrackerHtml && !assessmentsReportHtml
     ? `<section class="panel reports-panel"><p class="hint">Select a category to begin.</p></section>`
     : "";
 
@@ -2898,6 +2929,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                   <option value="all" ${reportType === "all" ? "selected" : ""}>All</option>
                   <option value="learning-walk-tracker" ${reportType === "learning-walk-tracker" ? "selected" : ""}>Learning Walks tracker</option>
                   <option value="iqa-forms-tracker" ${reportType === "iqa-forms-tracker" ? "selected" : ""}>IQA forms tracker</option>
+                  <option value="iqa-course-view" ${reportType === "iqa-course-view" ? "selected" : ""}>IQA course view</option>
                   <option value="assessments" ${reportType === "assessments" ? "selected" : ""}>Assessments tracker</option><option value="student-tracker" ${reportType === "student-tracker" ? "selected" : ""}>Student tracker</option>
                 </select>
               </label>
@@ -2914,7 +2946,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                   <option value="">All templates</option>
                   ${reportType === "learning-walk-tracker"
                     ? templates.map((t) => `<option value="${t.id}" ${rawTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")
-                    : reportType === "iqa-forms-tracker"
+                    : reportType === "iqa-forms-tracker" || reportType === "iqa-course-view"
                     ? iqafTemplates.map((t) => `<option value="${t.id}" ${rawTemplateId === t.id ? "selected" : ""}>${escapeHtml(t.title)}</option>`).join("")
                     : reportType === "assessments"
                     ? `<option value="" disabled>No templates yet</option>`
@@ -2954,6 +2986,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
         </section>
         ${trackerTable}
         ${iqafTrackerTable}
+        ${iqaCourseViewHtml}
         ${studentTrackerHtml}
         ${assessmentsReportHtml}
         ${noReportSelected}
@@ -6511,7 +6544,7 @@ function renderIQAFEntryViewPage(identity: Identity, entry: IQAFEntryRecord, tem
     <main class="dashboard-shell">
       ${renderSidebar(identity, "iqa-forms")}
       <section class="content">
-        <header class="topbar"><div><p class="eyebrow"><a href="/iqa-forms" style="color:var(--primary)">↵ IQA Forms</a></p><h1>${escapeHtml(entry.template_title)}</h1></div><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></header>
+        <header class="topbar"><div style="display:flex;align-items:center;gap:1rem;"><button class="small-action" style="width:auto;padding:0.5rem 1rem;cursor:pointer;border:none;" onclick="history.back()">↵ Back</button><div><p class="eyebrow">IQA Forms</p><h1>${escapeHtml(entry.template_title)}</h1></div></div><div style="display:flex;align-items:center;gap:1rem;"><div class="profile-pill">${escapeHtml(identity.email)}</div><a class="logout-link" href="/logout">Sign out</a></div></header>
 
         <section class="panel"><div class="meta-panel">
           <div class="lw-meta-item"><label class="lw-meta-label">Course</label><span>${escapeHtml(entry.course_name)} (${escapeHtml(entry.course_id)})</span></div>
