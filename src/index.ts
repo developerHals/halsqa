@@ -2760,6 +2760,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
             <thead>
               <tr>
                 <th>Course ID</th>
+                <th>Form Type</th>
                 <th>Course Label</th>
                 <th>Assessor name</th>
                 <th>IQA name</th>
@@ -2781,6 +2782,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                 return `
                 <tr>
                   <td><a href="/iqa-forms/entries/${e.id}" style="color:var(--primary); font-weight: 500;">${escapeHtml(e.course_id || "-")}</a></td>
+                  <td>${escapeHtml(e.template_title || "-")}</td>
                   <td>${escapeHtml(e.course_name || "-")}</td>
                   <td>${escapeHtml(e.assessor_name || "-")}</td>
                   <td>${escapeHtml(e.iqa_name || "-")}</td>
@@ -2790,7 +2792,7 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
                 </tr>
                 `;
               }).join("")}
-              ${sortedEntries.length === 0 ? `<tr><td colspan="7" class="hint" style="text-align: center; padding: 2rem;">No entries found.</td></tr>` : ""}
+              ${sortedEntries.length === 0 ? `<tr><td colspan="8" class="hint" style="text-align: center; padding: 2rem;">No entries found.</td></tr>` : ""}
             </tbody>
           </table>
         </div>
