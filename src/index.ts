@@ -2727,6 +2727,26 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
   let iqaCourseViewHtml = "";
   if (reportType === "iqa-course-view") {
     const sortedEntries = [...(iqafEntriesResult.results || [])].sort((a, b) => new Date(b.planned_date).getTime() - new Date(a.planned_date).getTime());
+    
+    const answersByEntry = new Map<string, Record<string, string>>();
+    const entryIds = sortedEntries.map(e => e.id);
+    const chunkSize = 50;
+    for (let i = 0; i < entryIds.length; i += chunkSize) {
+      const chunk = entryIds.slice(i, i + chunkSize);
+      if (chunk.length === 0) break;
+      const res = await env.esol_marking_db.prepare(`
+        SELECT a.entry_id, a.answer, q.question_text
+        FROM iqaf_answers a
+        JOIN iqaf_template_questions q ON a.question_id = q.id
+        WHERE a.entry_id IN (${chunk.map(() => '?').join(',')})
+      `).bind(...chunk).all<{ entry_id: string; answer: string; question_text: string }>();
+      for (const row of res.results || []) {
+        const map = answersByEntry.get(row.entry_id) || {};
+        map[row.question_text.trim()] = row.answer;
+        answersByEntry.set(row.entry_id, map);
+      }
+    }
+
     iqaCourseViewHtml = `
       <section class="panel reports-panel">
         <div class="section-header">
@@ -2751,19 +2771,35 @@ async function renderReportsPage(request: Request, env: Env, identity: Identity)
               </tr>
             </thead>
             <tbody>
-              ${sortedEntries.map(e => `
+              ${sortedEntries.map((e: any) => {
+                const ans = answersByEntry.get(e.id) || {};
+                const isRag = (e.template_title || "").toLowerCase().includes("rag");
+                
+                let evalDate = ans["Evaluation date"];
+                let modDate = ans["Moderation date"];
+                let iqaDateStr = isRag ? evalDate : modDate;
+                let iqaDateHtml = iqaDateStr ? formatReportDate(iqaDateStr) : '<span class="empty-cell">—</span>';
+
+                let actionAns = ans["Write here below the action points stating a clear deadline"];
+                let actionHtml = isRag ? 'n/a' : (actionAns ? escapeHtml(actionAns) : '<span class="empty-cell">—</span>');
+                
+                let completionDate = ans["Action points completion date"];
+                let actionCompletedHtml = isRag ? 'n/a' : (completionDate ? formatReportDate(completionDate) : '<span class="empty-cell">—</span>');
+                
+                return `
                 <tr>
                   <td><a href="/iqa-forms/entries/${e.id}" style="color:var(--primary); font-weight: 500;">${escapeHtml(e.course_id || "-")}</a></td>
                   <td>${escapeHtml(e.course_name || "-")}</td>
                   <td>${escapeHtml(e.assessor_name || "-")}</td>
                   <td>${escapeHtml(e.iqa_name || "-")}</td>
-                  <td>${e.iqa_reviewed_at ? `<a href="/iqa-forms/entries/${e.id}">${formatReportDate(e.iqa_reviewed_at)}</a>` : '<span class="empty-cell">—</span>'}</td>
-                  <td><span class="empty-cell">—</span></td>
-                  <td><span class="empty-cell">—</span></td>
+                  <td>${iqaDateHtml}</td>
+                  <td>${actionHtml}</td>
+                  <td>${actionCompletedHtml}</td>
                   <td>${e.assessor_submitted_at ? `<a href="/iqa-forms/entries/${e.id}">${formatReportDate(e.assessor_submitted_at)}</a>` : '<span class="empty-cell">—</span>'}</td>
                   <td>${e.completed_at ? `<a href="/iqa-forms/entries/${e.id}">${formatReportDate(e.completed_at)}</a>` : '<span class="empty-cell">—</span>'}</td>
                 </tr>
-              `).join("")}
+                `;
+              }).join("")}
               ${sortedEntries.length === 0 ? `<tr><td colspan="9" class="hint" style="text-align: center; padding: 2rem;">No entries found.</td></tr>` : ""}
             </tbody>
           </table>
