@@ -1818,7 +1818,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
         function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
         function formatISO(d) { const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, "0"); const day = String(d.getDate()).padStart(2, "0"); return y + "-" + m + "-" + day; }
         function isWeekend(d) { const day = d.getDay(); return day === 0 || day === 6; }
-        function formatDisplay(d) { return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); }
+        function formatDisplay(d) { return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); }
         function dayMatches(d, dateStr) { return formatISO(d) === dateStr; }
 
         function isEditable(event) {
@@ -2022,7 +2022,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
           dates.forEach((d, i) => {
             const cell = document.createElement("div");
             cell.className = "qc-header-cell";
-            cell.innerHTML = \`<div class="qc-day-name">\${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][d.getDay() === 0 ? 6 : d.getDay() - 1]}</div>
+            cell.innerHTML = \`<div class="qc-day-name">\${["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][d.getDay() === 0 ? 6 : d.getDay() - 1]}</div>
               <div class="qc-day-date">\${formatDisplay(d)}</div>
               <button type="button" class="qc-day-add" data-date="\${formatISO(d)}" title="Add event">+</button>\`;
             if (isWeekend(d)) cell.classList.add("qc-weekend");
