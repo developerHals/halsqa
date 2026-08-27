@@ -1805,7 +1805,7 @@ function renderQualityCalendarPage(identity: Identity): Response {
           banners: [],
           userId: currentUser.id,
           userRole: currentUser.role,
-          customColors: safeJsonParse<string[]>(localStorage.getItem("qc_custom_colors"), []).slice(0, MAX_CUSTOM_COLORS)
+          customColors: safeJsonParse(localStorage.getItem("qc_custom_colors"), []).slice(0, MAX_CUSTOM_COLORS)
         };
 
         function getMonday(d) {
